@@ -47,6 +47,11 @@ export class ModelHarness {
     private clientOptions!: Record<string, any>;
     private baml!: BamlAsyncClient;
     private logger: Logger;
+    private planner?: {
+        vocabulary: Pick<ActionDefinition<any>, 'name' | 'description' | 'schema'>[];
+        tb: TypeBuilder;
+        clientRegistry: ClientRegistry;
+    };
 
     constructor(options: ModelHarnessOptions) {
         this.options = {
@@ -59,6 +64,7 @@ export class ModelHarness {
 
     async setup() {
         // Must be called after constructor
+        this.planner = undefined;
         this.clientOptions = await convertToBamlClientOptions(this.options.llm);
         this.cr = this.createClientRegistry(this.clientOptions);
         this.baml = b.withOptions({ clientRegistry: this.cr });
@@ -244,13 +250,23 @@ export class ModelHarness {
         data: MultiMediaContentPart[],
         actionVocabulary: ActionDefinition<T>[]
     ): Promise<PlannerResponse> {
-        const tb = new TypeBuilder();
         // Notes have one planner path: a required review before browser actions.
         // Keep memory:note registered on Agent for execution and explicit callers.
         actionVocabulary = actionVocabulary.filter(action => action.name !== 'memory:note');
-        tb.PartialRecipe.addProperty('memory_updates', convertZodToBaml(tb, memoryUpdatesSchema)).description(memoryUpdatesSchema.description!);
-        tb.PartialRecipe.addProperty('actions', tb.list(convertActionDefinitionsToBaml(tb, actionVocabulary))).description('Always provide at least one action');
-        const clientRegistry = this.clientForSchema(plannerSchema(actionVocabulary));
+        if (!this.planner || this.planner.vocabulary.length !== actionVocabulary.length
+            || actionVocabulary.some((action, index) => {
+                const saved = this.planner!.vocabulary[index];
+                return action.name !== saved.name || action.description !== saved.description || action.schema !== saved.schema;
+            })) {
+            const tb = new TypeBuilder();
+            tb.PartialRecipe.addProperty('memory_updates', convertZodToBaml(tb, memoryUpdatesSchema)).description(memoryUpdatesSchema.description!);
+            tb.PartialRecipe.addProperty('actions', tb.list(convertActionDefinitionsToBaml(tb, actionVocabulary))).description('Always provide at least one action');
+            this.planner = {
+                vocabulary: actionVocabulary.map(({ name, description, schema }) => ({ name, description, schema })),
+                tb, clientRegistry: this.clientForSchema(plannerSchema(actionVocabulary)),
+            };
+        }
+        const { tb, clientRegistry } = this.planner;
 
         for (let attempt = 0; ; attempt++) {
             try {

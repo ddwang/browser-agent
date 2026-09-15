@@ -33,7 +33,8 @@ export interface AgentMemoryOptions {
 }
 
 export interface MemoryRenderOptions {
-
+    /** Full audit history bypasses actor retention without changing actor visibility or cache state. */
+    history?: 'retained' | 'full';
 }
 
 // export interface FreezeState {
@@ -75,6 +76,15 @@ export class AgentMemory {
     }
 
     public async render(options?: MemoryRenderOptions): Promise<MultiMediaMessage[]> {
+        if (options?.history === 'full') {
+            const messages: MultiMediaMessage[] = [];
+            for (const [index, observation] of this.observations.entries()) {
+                messages.push(await observation.render({ prefix: this.observationPrefix(observation, index) }));
+            }
+            const notes = this.notebook.render();
+            if (notes) messages.push({ role: 'user', cacheControl: false, content: [notes] });
+            return messages;
+        }
         if (this.options.promptCaching && this.cacheControlIndices.length >= CACHE_CONTROL_LIMIT) {
             this.freezeMask = undefined;
             this.cacheControlIndices = [];
@@ -113,19 +123,7 @@ export class AgentMemory {
     }
 
     public async simpleRender(): Promise<(BamlImage | string)[]> {
-        // Render with no filtering, no masking, no cache control
-        //let messages: MultiMediaMessage[] = [];
-        const content: (BamlImage | string)[] = [];
-        for (const [index, observation] of this.observations.entries()) {
-            const message = await observation.render({
-                prefix: this.observationPrefix(observation, index),
-            });
-            // ignore message stuff, just push content
-            for (const part of message.content) content.push(part);
-        }
-        const notes = this.notebook.render();
-        if (notes) content.push(notes);
-        return content;
+        return (await this.render({ history: 'full' })).flatMap(message => message.content);
     }
 
     private observationPrefix(observation: Observation, index: number): string[] {

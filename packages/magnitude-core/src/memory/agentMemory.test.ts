@@ -11,6 +11,36 @@ const screen = (n: number) => Observation.fromConnector('fixture', {
 const text = async (memory: AgentMemory) => (await memory.render()).flatMap(message => message.content)
     .filter(part => typeof part === 'string').join('');
 
+for (const promptCaching of [false, true]) test(`full audit bypasses all actor filters without changing actor state, caching ${promptCaching}`, async () => {
+    const memory = new AgentMemory({ promptCaching, thoughtLimit: 1 });
+    memory.recordObservation(screen(0));
+    memory.recordObservation(screen(0)); // Identical screenshots remain separate audit events.
+    memory.recordObservation(Observation.fromActionTaken('memory:note', 'Obsolete fact', { type: 'notebook-write' }));
+    memory.recordObservation(Observation.fromActionResult('memory:note', 'Old result', { type: 'notebook-result', limit: 1 }));
+    memory.recordThought('Old thought');
+    memory.recordObservation(screen(1));
+    memory.recordObservation(screen(2));
+    memory.recordObservation(Observation.fromActionTaken('memory:forget', 'Forget obsolete fact', { type: 'notebook-write' }));
+    memory.recordObservation(Observation.fromActionResult('memory:forget', 'New result', { type: 'notebook-result', limit: 1 }));
+    memory.recordThought('Latest thought');
+    const saved = await memory.toJSON();
+    const control = new AgentMemory({ promptCaching, thoughtLimit: 1 });
+    await control.loadJSON(saved);
+    await memory.render();
+    await control.render();
+    const audit = await memory.render({ history: 'full' });
+    const auditText = audit.flatMap(message => message.content).filter(part => typeof part === 'string').join('');
+    expect(audit).toHaveLength(saved.observations.length);
+    expect(audit.every(message => !message.cacheControl)).toBe(true);
+    for (const expected of ['[Observation 0]', '[Observation 1]', 'Obsolete fact', 'Old result', 'Old thought', 'Forget obsolete fact']) {
+        expect(auditText).toContain(expected);
+    }
+    expect(() => memory.remember({ key: 'hidden', text: 'Audit is not actor visibility', sources: [0] })).toThrow('not shown');
+    expect(await memory.toJSON()).toEqual(saved);
+    expect(await memory.render()).toEqual(await control.render());
+    expect(await text(memory)).not.toContain('Obsolete fact');
+});
+
 for (const promptCaching of [false, true]) test(`notes survive screenshot and thought eviction with prompt caching ${promptCaching}`, async () => {
     const memory = new AgentMemory({ promptCaching, thoughtLimit: 1 });
     memory.recordObservation(screen(0));

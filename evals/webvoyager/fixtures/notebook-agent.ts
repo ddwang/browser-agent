@@ -6,13 +6,14 @@ import { createAction } from '../../../packages/magnitude-core/src/actions';
 import { ActionLimitError } from '../../../packages/magnitude-core/src/agent/errors';
 import { BrowserRecovery } from '../../../packages/magnitude-core/src/web/recovery';
 import { taskActions } from '../../../packages/magnitude-core/src/actions/taskActions';
+import z from 'zod';
 
 const llm = { provider: 'anthropic' as const, options: { model: 'fixture', apiKey: 'unused-no-model-calls' } };
 const note = { variant: 'memory:note', key: 'record', text: 'Observed value: 437.', sources: [0], operation: 'add' as const, expected_text: null };
 const { variant, ...update } = note;
 let observations = 0;
 let hooks = 0;
-const recovery = new BrowserRecovery();
+const recovery = new BrowserRecovery({ noProgress: true });
 for (let i = 0; i < 6; i++) recovery.observe('unchanged', { variant: 'mouse:click' }, undefined);
 const connector = {
     id: 'fixture',
@@ -33,7 +34,7 @@ const connector = {
     assert.equal(observations, 1);
     assert.equal(hooks, 0);
     assert.equal(checkpoints, 1);
-    assert.throws(() => recovery.check({ variant: 'mouse:click' }), /no_progress|repeated|previously/);
+    assert.throws(() => recovery.check(), /no_progress|repeated|previously/);
     assert.equal((await agent.memory.toJSON()).notes?.[0].text, note.text);
     for (const invalid of [
         { ...note, text: 'A different record' },
@@ -93,6 +94,24 @@ const connector = {
     await agent.act('Second task');
     assert.equal(task, 2);
     console.log('PASS: notebook state is isolated between act calls');
+}
+
+{
+    const agent = new Agent({ llm, telemetry: false, connectors: [{ id: 'fixture',
+        getInstructions: async () => 'Fixture instructions', collectObservations: connector.collectObservations }] });
+    agent.models.partialAct = async context => {
+        assert.match(JSON.stringify(context.connectorInstructions), /memory_updates/);
+        return { reasoning: 'Save and finish.', memory_updates: [update], actions: [{ variant: 'task:done', evidence: 'Complete' }] };
+    };
+    await agent.act('Retain evidence');
+    agent.models.query = async context => {
+        assert.deepEqual(context.connectorInstructions, [{ connectorId: 'fixture', instructions: 'Fixture instructions' }]);
+        assert.match(JSON.stringify(context.observationContent), /Observed value: 437/);
+        return 'observed';
+    };
+    assert.equal(await agent.query('Read saved data', z.string()), 'observed');
+    assert.equal(await agent.query('Read full audit', z.string(), { history: 'full' }), 'observed');
+    console.log('PASS: query contexts retain notebook data and connector instructions without planner-only commands');
 }
 
 {

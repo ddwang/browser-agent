@@ -39,7 +39,7 @@ test('entry limits reject updates atomically without evicting old facts', () => 
     expect(notebook.toJSON()).toHaveLength(NOTEBOOK_LIMITS.entries);
 });
 
-test('the byte cap includes Unicode and captured URLs, not just text character counts', () => {
+test('the byte cap includes Unicode and captured URLs, beyond text character counts', () => {
     const notebook = new TaskNotebook();
     notebook.put(entry(), source);
     const before = notebook.toJSON();

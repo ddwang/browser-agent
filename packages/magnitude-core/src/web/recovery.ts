@@ -52,6 +52,8 @@ export function detectBlock(headings: string[], response?: HttpDiagnostic): Brow
 export interface RecoveryOptions {
     maxRateLimitWaitMs?: number;
     repeatedActionLimit?: number;
+    /** Opt in to heuristic loop warnings and automatic no-progress termination. */
+    noProgress?: boolean;
 }
 
 export class BrowserRecovery {
@@ -66,10 +68,12 @@ export class BrowserRecovery {
     private lastFingerprint?: string;
     readonly maxRateLimitWaitMs: number;
     readonly repeatedActionLimit: number;
+    readonly noProgress: boolean;
 
     constructor(options: RecoveryOptions = {}) {
         this.maxRateLimitWaitMs = options.maxRateLimitWaitMs ?? 120_000;
         this.repeatedActionLimit = options.repeatedActionLimit ?? 6;
+        this.noProgress = options.noProgress ?? false;
         if (!Number.isFinite(this.maxRateLimitWaitMs) || this.maxRateLimitWaitMs < 0
             || !Number.isSafeInteger(this.repeatedActionLimit) || this.repeatedActionLimit < 3) {
             throw new Error('Invalid browser recovery limits');
@@ -108,6 +112,7 @@ export class BrowserRecovery {
         // Waiting is deliberate inactivity, not evidence of a navigation loop.
         if (!action || action.variant === 'wait' || action.variant === 'mouse:hover') return;
         if (block) { this.blockedActions++; return; }
+        if (!this.noProgress) return;
         // Returning from different pages is not repeating the same transition.
         // Ignore coordinates so jitter cannot disguise genuinely unchanged clicks.
         const key = JSON.stringify([previousFingerprint, action.variant, fingerprint]);
@@ -119,12 +124,11 @@ export class BrowserRecovery {
             : undefined;
     }
 
-    check(action: Action) {
-        if (['answer', 'task:done', 'task:fail', 'browser:blocked'].includes(action.variant)) return;
+    check() {
         if (this.block && this.block.reason !== 'rate_limit' && this.blockedActions >= 3) {
             throw new BrowserBlockedError(this.block);
         }
-        if (!this.block && this.repetitions >= this.repeatedActionLimit) {
+        if (this.noProgress && !this.block && this.repetitions >= this.repeatedActionLimit) {
             throw new BrowserBlockedError({ reason: 'no_progress', evidence: this.warning! });
         }
     }

@@ -52,8 +52,8 @@ credentials are checked before starting a scored run. An unscored run only needs
 the actor's key; separate `eval` only needs the saved judge's credentials.
 
 Use `--reasoning-effort <level>` and `--max-completion-tokens <number>` to control
-OpenAI reasoning and output limits. The latter includes reasoning tokens, not
-just the visible plan. These options are saved in the manifest and cannot change
+OpenAI reasoning and output limits. The latter includes reasoning tokens and
+the visible plan. These options are saved in the manifest and cannot change
 when resuming a run. No temperature is sent to OpenAI unless explicitly supplied
 with `--temperature`; only set parameters supported by the selected model.
 Other OpenAI models use API-default reasoning unless overridden. Add `--dry-run`
@@ -166,7 +166,11 @@ Older runs that counted only successfully parsed responses underreported cost;
 do not compare their cost totals as if accounting were unchanged.
 
 The judge checks the saved answer and full saved visual/action history, without
-the actor's rolling retention limits. Its verdict is an estimate: inspect a
+actor retention limits, screenshot deduplication, or notebook-write suppression.
+Judge version 3 fixes those filters and removes planner-only notebook instructions
+from query contexts. Saved runs with another judge version require their matching
+source revision; the current evaluator does not silently replace their judgments.
+Its verdict is an estimate: inspect a
 sample of successes and failures in the viewer before
 using the score to compare changes. The judge prompt in this harness is stricter
 than the legacy evaluator, so old scores are not directly comparable.
@@ -238,8 +242,8 @@ Under-budget completed runs receive the normal Sonnet 5 judgment against their
 full saved evidence. Original histories are preserved.
 
 Configure limits with `--max-actions <number>` and `--max-judge-mb <MiB>`. Limits
-are recorded in the manifest; older manifests use the defaults. The numeric judge
-version remains unchanged. Compare runs with matching budgets and preserve old
+are recorded in the manifest; older manifests use the defaults. Compare runs with
+matching judge versions and budgets, and preserve old
 results when replaying histories.
 
 ### Blocking and recovery
@@ -268,8 +272,14 @@ keyboard keys or bypass access controls.
   unrepresented visual changes can look unchanged. The hard action budget remains
   the backstop. New tasks reset both histories and counters.
 
-Configure core browser options with `recovery: { maxRateLimitWaitMs,
-repeatedActionLimit }`, or use `recovery: false` to disable automatic guards.
+The eval runner explicitly enables heuristic loop detection with
+`recovery: { noProgress: true }`. Library consumers must opt in; rate-limit and
+access-barrier handling remain enabled by default. Configure limits with
+`recovery: { noProgress: true, maxRateLimitWaitMs, repeatedActionLimit }`, or use
+`recovery: false` to disable automatic guards. Guards apply to browser-owned
+actions, not caller-defined or terminal actions. Custom actions that operate the
+browser should delegate to the corresponding built-in browser action to retain
+its guards. Every capture records current recovery state, including cleared warnings.
 Core recovery errors carry a structured `block`; the eval records these separately
 and keeps them in the overall success-rate denominator.
 
@@ -284,7 +294,13 @@ evidence. The actor still uses screenshots to read page content.
 `stats --verbose` and the viewer expose live progress. A recent heartbeat means
 `running`; a running checkpoint whose heartbeat is over 15 seconds old is labeled
 `interrupted` rather than automatically declared an agent loop. Large histories
-are checkpointed after observations, not rewritten on every heartbeat.
+use coalesced checkpoints: observation events schedule at most one full-memory
+write per two-second interval, with no overlapping writes. Intermediate write
+failures are logged and later writes can recover. Completion requires a final
+durable save; cleanup failures cannot downgrade that saved outcome.
+
+The actor prompt's date comes from `manifest.createdAt` so resumed or replaced
+attempts use the recorded run date, even when their worker starts on another day.
 
 An explicit existing `--run-dir` resumes unrun tasks. `--failed`, `--failed-only`,
 or `--replace` also rerun selected unsuccessful/all tasks and overwrite their

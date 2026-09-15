@@ -9,7 +9,7 @@ import { AgentConnector } from '@/connectors';
 import { Observation, RenderableContent } from '@/memory/observation';
 import { LLMClient } from "@/ai/types";
 import { ActionLimitError, AgentError } from "@/agent/errors";
-import { AgentMemory, AgentMemoryOptions } from "@/memory";
+import { AgentMemory, AgentMemoryOptions, MemoryRenderOptions } from "@/memory";
 import { ActionDefinition } from "@/actions";
 import { taskActions } from "@/actions/taskActions";
 import { memoryActions } from '@/actions/memoryActions';
@@ -295,10 +295,10 @@ export class Agent {
         })(task));
     }
 
-    private async _buildContext(memory: AgentMemory): Promise<AgentContext> {
-        const messages = await memory.render();
+    private async _buildContext(memory: AgentMemory, options?: MemoryRenderOptions): Promise<AgentContext> {
+        const messages = await memory.render(options);
 
-        const connectorInstructions: ConnectorInstructions[] = [{ connectorId: 'task_memory', instructions: NOTEBOOK_INSTRUCTIONS }];
+        const connectorInstructions: ConnectorInstructions[] = [];
 
         for (const connector of this.connectors) {
             if (connector.getInstructions) {
@@ -367,6 +367,7 @@ export class Agent {
             try {
                 this.events.emit('planningStarted');
                 const memoryContext = await this._buildContext(memory);
+                memoryContext.connectorInstructions.unshift({ connectorId: 'task_memory', instructions: NOTEBOOK_INSTRUCTIONS });
                 await retryOnError(
                     async () => {
                         ({ reasoning, actions, memory_updates: memoryUpdates } = await this.models.partialAct(
@@ -447,10 +448,10 @@ export class Agent {
         //this.currentTaskMemory = null;
     }
 
-    async query<T extends z.Schema>(query: string, schema: T): Promise<z.infer<T>> {
+    async query<T extends z.Schema>(query: string, schema: T, options?: MemoryRenderOptions): Promise<z.infer<T>> {
         // Record observations in case no act() was used beforehand
         await this._recordConnectorObservations(this.latestTaskMemory);
-        const memoryContext = await this._buildContext(this.memory);//this.memory.buildContext(this.connectors);
+        const memoryContext = await this._buildContext(this.memory, options);
         return await this.models.query(memoryContext, query, schema);
     }
 

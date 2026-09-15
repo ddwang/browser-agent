@@ -8,7 +8,7 @@ import { Command, InvalidArgumentError, Option } from 'commander';
 import { DEFAULT_LIMITS } from './budget';
 import { suiteTasks } from './tasks';
 import * as prompts from '@clack/prompts';
-import { emptyUsage, outcome, summarize, writeJson, type Evaluation, type ModelConfig, type RunManifest, type Task, type TaskRecord, type TaskResult, type TaskProgress } from './results';
+import { emptyUsage, outcome, summarize, writeJson, JUDGE_VERSION, type Evaluation, type ModelConfig, type RunManifest, type Task, type TaskRecord, type TaskResult, type TaskProgress } from './results';
 
 const dataPath = join(import.meta.dir, 'data', 'patchedTasks.jsonl');
 const defaultActor = 'claude-haiku-4-5-20251001';
@@ -223,7 +223,7 @@ program.command('run [input]')
             createdAt: new Date().toISOString(),
             revision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: import.meta.dir, encoding: 'utf8' }).trim(),
             dirty: !!execFileSync('git', ['status', '--porcelain'], { cwd: import.meta.dir, encoding: 'utf8' }).trim(),
-            sourceHash: sourceHash(), judgeVersion: 2, workers: options.workers,
+            sourceHash: sourceHash(), judgeVersion: JUDGE_VERSION, workers: options.workers,
             actor, judge, timeoutMs: options.timeout * 1000, judgeTimeoutMs: options.judgeTimeout * 1000, tasks,
             limits: { maxActions: options.maxActions, maxJudgeBytes: options.maxJudgeMb * 1024 * 1024 },
         };
@@ -276,6 +276,7 @@ program.command('eval [input]')
         const runDir = resolve(options.runDir);
         const manifest = readJson<RunManifest>(join(runDir, 'manifest.json'));
         if (manifest.partition === 'holdout') throw new Error('Holdout evaluations are immutable. Score only during the original complete run --eval.');
+        if (manifest.judgeVersion !== JUDGE_VERSION) throw new Error('Judge version differs from the saved run. Use its matching source revision, or start a new run.');
         const records = loadRecords(runDir, manifest).filter(record =>
             (!input || record.task.id === input || record.task.web_name === input)
             && record.run?.status === 'completed'

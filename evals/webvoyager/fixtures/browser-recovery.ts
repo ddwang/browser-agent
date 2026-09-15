@@ -49,7 +49,7 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch(request) {
 
 async function fixture(path: string, maxRateLimitWaitMs = 120_000) {
     const context = await browser.newContext({ viewport: { width: 1024, height: 768 } });
-    const connector = new BrowserConnector({ browser: { context }, url: `http://127.0.0.1:${server.port}${path}`, recovery: { maxRateLimitWaitMs } });
+    const connector = new BrowserConnector({ browser: { context }, url: `http://127.0.0.1:${server.port}${path}`, recovery: { maxRateLimitWaitMs, noProgress: true } });
     await connector.onStart();
     const agent = new Agent({ connectors: [connector], telemetry: false, llm: { provider: 'anthropic', options: { model: 'fixture', apiKey: 'unused-no-model-calls' } } });
     await connector.collectObservations();
@@ -124,6 +124,54 @@ test('repeated unsuccessful clicks warn before the real agent stops', async () =
     } finally { await connector.onStop(); }
 });
 
+test('recovery observations explicitly clear an earlier warning after new evidence', async () => {
+    const { connector, agent, page } = await fixture('/repeat');
+    try {
+        for (let i = 0; i < 3; i++) await agent.exec({ variant: 'mouse:click', x: 70, y: 85 }, agent.memory);
+        assert.match(JSON.stringify(await agent.memory.render()), /different approach/);
+        await page.goto(`http://127.0.0.1:${server.port}/cleared`);
+        for (const observation of await connector.collectObservations()) agent.memory.recordObservation(observation);
+        const rendered = JSON.stringify(await agent.memory.render());
+        assert.ok(!rendered.includes('different approach'));
+        assert.equal(connector.recovery.warning, undefined);
+        const saved = await agent.memory.toJSON();
+        const notices = saved.observations.filter(observation => observation.options?.type === 'browser-recovery');
+        assert.ok(JSON.stringify(notices).includes('different approach'), 'audit retains the warning');
+        assert.deepEqual(JSON.parse((notices.at(-1)!.data as { content: string }).content), { block: null, recovery: null });
+    } finally { await connector.onStop(); }
+});
+
+test('late redirects retry the complete capture; permanent evaluation errors are not hidden', async () => {
+    const { connector, page } = await fixture('/repeat');
+    const evaluate = page.evaluate.bind(page);
+    const capture = connector.getHarness().screenshot.bind(connector.getHarness());
+    let captures = 0;
+    connector.getHarness().screenshot = async () => { captures++; return capture(); };
+    let mode = 'navigation';
+    let fingerprintCalls = 0;
+    page.evaluate = (async (fn: any, arg: any) => {
+        if (String(fn).includes('scrollers')) {
+            fingerprintCalls++;
+            if (mode === 'navigation') {
+                mode = 'ready';
+                await page.goto(`http://127.0.0.1:${server.port}/redirected`);
+                throw new Error('Execution context was destroyed, most likely because of a navigation');
+            }
+            if (mode === 'permanent') throw new Error('Synthetic permanent evaluation failure');
+        }
+        return evaluate(fn, arg);
+    }) as typeof page.evaluate;
+    try {
+        const observations = await connector.collectObservations();
+        assert.equal(captures, 2);
+        assert.equal(fingerprintCalls, 2);
+        assert.equal((observations[0].content as { url: string }).url, page.url());
+        mode = 'permanent';
+        await assert.rejects(connector.collectObservations(), /Synthetic permanent evaluation failure/);
+        assert.equal(fingerprintCalls, 3);
+    } finally { await connector.onStop(); }
+});
+
 test('productive record visits can reuse a directory and a shared return corridor', async () => {
     const { connector, agent, page } = await fixture(root);
     try {
@@ -192,13 +240,32 @@ test('changing a select value counts as progress', async () => {
     try {
         await page.locator('select').focus();
         for (let i = 0; i < 8; i++) {
-            await connector.beforeAction({ variant: 'fixture:select-option' });
+            await connector.beforeAction({ variant: 'mouse:click', x: 0, y: 0 });
             await page.locator('select').selectOption(String(i + 1));
             await connector.collectObservations();
             assert.equal(await page.locator('select').inputValue(), String(i + 1));
             assert.equal(connector.recovery.warning, undefined);
         }
     } finally { await connector.onStop(); }
+});
+
+test('browser guards leave custom and terminal actions available without eval-specific names', async () => {
+    const custom = `finish-${crypto.randomUUID()}`;
+    for (const reason of ['no_progress', 'subscription', 'rate_limit'] as const) {
+        const connector = new BrowserConnector({ recovery: { noProgress: true, maxRateLimitWaitMs: 0 } });
+        for (let i = 0; i < 6; i++) connector.recovery.observe('unchanged', { variant: 'mouse:click' },
+            reason === 'no_progress' ? undefined : { reason, evidence: 'Fixture barrier', retryAt: Date.now() + 60_000 });
+        for (const variant of [custom, 'answer', 'task:done', 'task:fail', 'browser:blocked']) {
+            await connector.beforeAction({ variant });
+            assert.equal(connector.recovery.waitUntil, undefined);
+        }
+        let finished = false;
+        const agent = new Agent({ telemetry: false, connectors: [connector],
+            actions: [createAction({ name: custom, resolver: async ({ agent }) => { finished = true; await agent.queueDone(); } })] });
+        await agent.exec({ variant: custom });
+        assert.equal(finished, true);
+        await assert.rejects(connector.beforeAction({ variant: 'mouse:click', x: 0, y: 0 }), BrowserBlockedError);
+    }
 });
 
 test('entering equal values into different input controls counts as progress', async () => {

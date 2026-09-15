@@ -219,6 +219,18 @@ test('resume rejects changed criteria even when task IDs and source hash match',
     expect(result.stderr).toContain('Tasks differ from the saved run');
 });
 
+test('replacement attempts use the manifest date instead of the worker clock', async () => {
+    const runDir = join(directory, 'prompt-date');
+    const args = ['run', 'Allrecipes--0', '--run-dir', runDir];
+    expect((await cli(args)).code).toBe(0);
+    const path = join(runDir, 'manifest.json');
+    const manifest = { ...JSON.parse(readFileSync(path, 'utf8')), createdAt: '2001-02-03T23:59:59.000Z' };
+    writeJson(path, manifest);
+    const result = await cli([...args, '--replace'], 'prompt-date');
+    expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: '' });
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(manifest);
+});
+
 test('other judge models retain temperature zero', async () => {
     const result = await cli(['run', 'Allrecipes--0', '--judge-model', 'claude-sonnet-4-5-20250929', '--dry-run']);
     expect(result.code).toBe(0);
@@ -263,6 +275,29 @@ test.each(['crash', 'timeout', 'judge', 'judge-timeout', 'blocked', 'action-limi
     expect(summary.counts[failure === 'crash' ? 'error' : failure.startsWith('judge') ? 'judge_error' : failure === 'action-limit' ? 'failure' : failure]).toBe(1);
 });
 
+test.each(['cleanup-agent', 'cleanup-browser', 'checkpoint-once'])('%s preserves a durably saved completed result', async failure => {
+    const runDir = join(directory, failure);
+    const result = await cli(['run', 'Allrecipes--0', '--run-dir', runDir, '--eval'], failure);
+    expect(result.code).toBe(0);
+    const run = JSON.parse(readFileSync(join(runDir, 'Allrecipes--0.json'), 'utf8'));
+    expect(run.status).toBe('completed');
+    expect(run.error).toBeUndefined();
+    expect(run.memory.observations.at(-1).source).toBe('action:taken:answer');
+    expect(JSON.parse(readFileSync(join(runDir, 'summary.json'), 'utf8')).counts.success).toBe(1);
+    if (failure.startsWith('cleanup-')) {
+        expect(result.stderr).toContain('Synthetic agent cleanup attempted');
+        expect(result.stderr).toContain('Synthetic browser cleanup attempted');
+        expect(result.stderr).toContain('cleanup failed');
+    } else expect(result.stderr).toContain('Checkpoint write failed');
+});
+
+test('failure of final persistence cannot produce a completed task', async () => {
+    const runDir = join(directory, 'checkpoint-always');
+    const result = await cli(['run', 'Allrecipes--0', '--run-dir', runDir, '--eval'], 'checkpoint-always');
+    expect(result.code).toBe(1);
+    expect(JSON.parse(readFileSync(join(runDir, 'summary.json'), 'utf8')).counts.error).toBe(1);
+});
+
 test('run without --eval remains unscored and the separate eval command scores it', async () => {
     const runDir = join(directory, 'separate');
     expect((await cli(['run', 'Allrecipes--0', '--run-dir', runDir])).code).toBe(0);
@@ -271,6 +306,18 @@ test('run without --eval remains unscored and the separate eval command scores i
     expect((await cli(['eval', '--run-dir', runDir])).code).toBe(0);
     summary = JSON.parse(readFileSync(join(runDir, 'summary.json'), 'utf8'));
     expect(summary.counts.success).toBe(1);
+});
+
+test('a changed judge version cannot silently rescore a historical run', async () => {
+    const runDir = join(directory, 'judge-version');
+    expect((await cli(['run', 'Allrecipes--0', '--run-dir', runDir, '--eval'])).code).toBe(0);
+    const path = join(runDir, 'manifest.json');
+    writeJson(path, { ...JSON.parse(readFileSync(path, 'utf8')), judgeVersion: 2 });
+    const before = readFileSync(join(runDir, 'Allrecipes--0.eval.json'), 'utf8');
+    const result = await cli(['eval', '--run-dir', runDir, '--replace']);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('Judge version differs');
+    expect(readFileSync(join(runDir, 'Allrecipes--0.eval.json'), 'utf8')).toBe(before);
 });
 
 test('oversized histories fail without calling the judge', async () => {

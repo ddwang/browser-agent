@@ -14,23 +14,32 @@ class FakeAgent {
     constructor(private options?: any) {}
     events = new EventEmitter();
     observations: any[] = [];
+    saves = 0;
     memory = {
         toJSON: async () => {
+            this.saves++;
+            if (process.env.EVAL_TEST_FAILURE === 'checkpoint-always'
+                || (process.env.EVAL_TEST_FAILURE === 'checkpoint-once' && this.saves === 1)) throw new Error('Synthetic checkpoint failure');
             const observations = [...this.observations];
             if (process.env.EVAL_TEST_FAILURE === 'long-history') await Bun.sleep(2);
             return { observations };
         },
         loadJSON: async (memory: { observations: any[] }) => {
-            if (memory.observations.some(observation => observation.options?.limit !== undefined)) {
-                throw new Error('Judge inherited actor retention limits');
-            }
+            assert.equal(memory.observations[0]?.options?.limit, 3, 'Judge must load the saved audit unchanged');
             if (!JSON.stringify(memory.observations[0]?.data).includes('Earlier evidence')) throw new Error('Judge lost earlier evidence');
         },
     };
     async start() {}
     getConnector() { return undefined; }
-    async stop() {}
+    async stop() {
+        if (this.options?.browser && process.env.EVAL_TEST_FAILURE?.startsWith('cleanup-')) {
+            console.error('Synthetic agent cleanup attempted');
+            if (process.env.EVAL_TEST_FAILURE === 'cleanup-agent') throw new Error('Synthetic agent cleanup failure');
+        }
+    }
     async act(prompt: string) {
+        assert.deepEqual(this.options.recovery, { noProgress: true }, 'Eval runner explicitly opts in to heuristic loop termination');
+        if (process.env.EVAL_TEST_FAILURE === 'prompt-date') assert.ok(this.options.prompt.includes('Today is 2001-02-03.'));
         if (process.env.EVAL_TEST_FAILURE === 'mixed-providers') assert.deepEqual(this.options.llm, {
             provider: 'openai', options: { model: 'gpt-5.6-luna', reasoningEffort: 'medium', maxCompletionTokens: 8192 },
         });
@@ -42,6 +51,10 @@ class FakeAgent {
         if (process.env.EVAL_TEST_FAILURE === 'blocked') throw new BrowserBlockedError({ reason: 'rate_limit', evidence: 'HTTP 429 fixture' });
         if (process.env.EVAL_TEST_FAILURE === 'action-limit') throw new ActionLimitError(100);
         this.observations.push({ source: 'connector:web', data: 'Earlier evidence', options: { type: 'screenshot', limit: 3, dedupe: true } });
+        if (process.env.EVAL_TEST_FAILURE === 'checkpoint-once') {
+            this.events.emit('observationsRecorded');
+            await Bun.sleep(2100);
+        }
         if (process.env.EVAL_TEST_FAILURE === 'long-history') {
             this.observations.push({ source: 'connector:web', data: { type: 'primitive', content: 'x'.repeat(21 * 1024 * 1024) } });
             for (let i = 0; i < 95; i++) {
@@ -62,7 +75,8 @@ class FakeAgent {
         this.observations.push({ source: 'action:taken:answer', data: 'Observed answer' });
         this.events.emit('observationsRecorded');
     }
-    async query(prompt: string) {
+    async query(prompt: string, _schema: unknown, options: unknown) {
+        assert.deepEqual(options, { history: 'full' });
         if (process.env.EVAL_TEST_FAILURE === 'mixed-providers') assert.deepEqual(this.options.llm, {
             provider: 'anthropic', options: { model: 'claude-sonnet-5', temperature: 1 },
         });
@@ -82,7 +96,12 @@ function checkCriteria(prompt: string) {
 
 mock.module('../../../packages/magnitude-core/src/agent/browserAgent', () => ({ startBrowserAgent: async (options: any) => new FakeAgent(options) }));
 mock.module('../../../packages/magnitude-core/src/agent', () => ({ Agent: FakeAgent }));
-mock.module('patchright', () => ({ chromium: { launchPersistentContext: async () => ({ close: async () => {} }) } }));
+mock.module('patchright', () => ({ chromium: { launchPersistentContext: async () => ({ close: async () => {
+    if (process.env.EVAL_TEST_FAILURE?.startsWith('cleanup-')) {
+        console.error('Synthetic browser cleanup attempted');
+        if (process.env.EVAL_TEST_FAILURE === 'cleanup-browser') throw new Error('Synthetic browser cleanup failure');
+    }
+} }) } }));
 mock.module('node:child_process', () => ({
     execFileSync: executeFile,
     spawn: (command: string, args: string[], options: any) => spawnProcess(command, ['--preload', import.meta.path, ...args], options),

@@ -11,6 +11,7 @@ import { BrowserBlockedError, type BrowserBlock } from '../../packages/magnitude
 import { ActionLimitError } from '../../packages/magnitude-core/src/agent/errors';
 import { DEFAULT_LIMITS } from './budget';
 import { taskPrompt } from './tasks';
+import { checkpointWriter } from './checkpoint';
 
 // One process and one attempt per task. The parent enforces a final process deadline.
 async function main() {
@@ -26,7 +27,6 @@ async function main() {
     let context: BrowserContext | undefined;
     let agent: BrowserAgent | undefined;
     let actionCount = 0;
-    let checkpoint = Promise.resolve();
     let status: TaskResult['status'] = 'running';
     let error: string | undefined;
     let block: BrowserBlock | undefined;
@@ -71,6 +71,8 @@ async function main() {
         writeJson(join(runDir, `${task.id}.json`), result);
     }
 
+    const checkpoints = checkpointWriter(save, err => console.error(`[${task.id}] Checkpoint write failed: ${err}`));
+
     async function execute() {
         context = await chromium.launchPersistentContext('', {
             channel: 'chrome',
@@ -91,8 +93,9 @@ async function main() {
                 resolver: async ({ agent }) => { await agent.queueDone(); },
             })],
             narrate: true,
-            prompt: `Satisfy the task criteria precisely. If a sequence fails, try one action at a time. Today is ${new Date().toISOString().slice(0, 10)}.`,
+            prompt: `Satisfy the task criteria precisely. If a sequence fails, try one action at a time. Today is ${manifest.createdAt.slice(0, 10)}.`,
             minScreenshots: 3,
+            recovery: { noProgress: true },
             maxActions: (manifest.limits ?? DEFAULT_LIMITS).maxActions,
         });
         agent.events.on('tokensUsed', (event) => addUsage(usage, event));
@@ -102,11 +105,7 @@ async function main() {
             actionCount++;
             setPhase('observing');
         });
-        agent.events.on('observationsRecorded', () => {
-            // Serialize checkpoints so an older snapshot cannot overwrite the final result.
-            checkpoint = checkpoint.then(save);
-            checkpoint.catch(() => {}); // Awaited and reported before the final save.
-        });
+        agent.events.on('observationsRecorded', checkpoints.request);
         await agent.act(taskPrompt(task));
     }
 
@@ -137,25 +136,25 @@ async function main() {
         clearTimeout(deadline);
         clearInterval(heartbeat);
         try {
-            await checkpoint;
-        } catch (err) {
-            status = 'error';
-            error = `Could not save checkpoint: ${err}`;
-        }
-        setPhase('finished');
-        await save();
-        // Stop before exiting, including after a timeout. Bound cleanup in case Chrome hangs.
-        let cleanupDeadline: ReturnType<typeof setTimeout> | undefined;
-        try {
-            await Promise.race([
-                (async () => {
-                    await agent?.stop();
-                    await context?.close();
-                })(),
-                new Promise<void>((resolve) => { cleanupDeadline = setTimeout(resolve, 5000); }),
-            ]);
+            setPhase('finished');
+            await checkpoints.finish();
         } finally {
-            clearTimeout(cleanupDeadline);
+            // Cleanup cannot change a durably saved task outcome. Attempt both
+            // resources even if one rejects or hangs, including after save failure.
+            let cleanupDeadline: ReturnType<typeof setTimeout> | undefined;
+            try {
+                const clean = async (name: string, stop: () => Promise<unknown>) => {
+                    try { await stop(); }
+                    catch (err) { console.error(`[${task.id}] ${name} cleanup failed: ${err}`); }
+                };
+                await Promise.race([
+                    Promise.all([clean('Agent', async () => agent?.stop()), clean('Browser', async () => context?.close())]),
+                    new Promise<void>(resolve => { cleanupDeadline = setTimeout(() => {
+                        console.error(`[${task.id}] Cleanup exceeded 5 seconds`);
+                        resolve();
+                    }, 5000); }),
+                ]);
+            } finally { clearTimeout(cleanupDeadline); }
         }
     }
     return status === 'completed' ? 0 : 1;

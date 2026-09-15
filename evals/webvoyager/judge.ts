@@ -1,5 +1,5 @@
 import { Agent } from '../../packages/magnitude-core/src/agent';
-import { addUsage, emptyUsage, writeJson, type Evaluation, type ModelConfig, type Task, type TaskResult, type RunManifest } from './results';
+import { addUsage, emptyUsage, writeJson, JUDGE_VERSION, type Evaluation, type ModelConfig, type Task, type TaskResult, type RunManifest } from './results';
 import z from 'zod';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -30,17 +30,11 @@ export async function evaluate(task: Task, run: TaskResult, config: ModelConfig,
     try {
         if (!run.memory) throw new Error('No saved observations to evaluate');
         await agent.start();
-        await agent.memory.loadJSON({
-            ...run.memory,
-            observations: run.memory.observations.map(observation => ({
-                ...observation,
-                options: observation.options ? { ...observation.options, limit: undefined } : undefined,
-            })),
-        });
+        await agent.memory.loadJSON(run.memory);
         const verdict = await agent.query(`${INSTRUCTIONS}\n\nTask: ${taskPrompt(task)}`, z.object({
             reasoning: z.string(),
             result: z.enum(['SUCCESS', 'NOT SUCCESS']),
-        }));
+        }), { history: 'full' });
         return { ...verdict, time: Date.now() - started, usage };
     } catch (error) {
         return { error: error instanceof Error ? error.message : String(error), time: Date.now() - started, usage };
@@ -52,6 +46,7 @@ export async function evaluate(task: Task, run: TaskResult, config: ModelConfig,
 if (import.meta.main) {
     const [runDir, taskId] = process.argv.slice(2);
     const manifest: RunManifest = JSON.parse(readFileSync(join(runDir, 'manifest.json'), 'utf8'));
+    if (manifest.judgeVersion !== JUDGE_VERSION) throw new Error('Judge version differs from the saved run. Use its matching source revision, or start a new run.');
     const task = manifest.tasks.find(task => task.id === taskId);
     if (!task) throw new Error(`Unknown task: ${taskId}`);
     const run: TaskResult = JSON.parse(readFileSync(join(runDir, `${taskId}.json`), 'utf8'));

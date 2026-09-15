@@ -596,7 +596,7 @@
                 }
                 
                 // Convert to string and format
-                answerText = String(answerText)
+                answerText = escapeText(answerText)
                     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                     .replace(/\n\n/g, '</p><p>')
                     .replace(/\n/g, '<br>');
@@ -617,9 +617,9 @@
                 const status = currentData.outcome || (currentData.evaluation.result === 'SUCCESS' ? 'success' : 'failure');
                 const isSuccess = status === 'success';
                 html += `<div class="evaluation ${isSuccess ? '' : 'failed'}">`;
-                html += `<div class="evaluation-result">${status.replaceAll('_', ' ').toUpperCase()}</div>`;
+                html += `<div class="evaluation-result">${escapeText(status.replaceAll('_', ' ').toUpperCase())}</div>`;
                 if (currentData.evaluation?.reasoning) {
-                    html += `<div class="evaluation-reasoning">${currentData.evaluation.reasoning}</div>`;
+                    html += `<div class="evaluation-reasoning">${escapeText(currentData.evaluation.reasoning)}</div>`;
                 }
                 html += '</div>';
             }
@@ -690,8 +690,9 @@
                 html += '</div>';
 
                 // Display image if present
-                if (obs.data && obs.data.base64) {
-                    html += `<img class="observation-image" src="data:image/${obs.data.format || 'png'};base64,${obs.data.base64}" alt="Observation ${index + 1}">`;
+                const screenshot = obs.data?.screenshot?.base64 ? obs.data.screenshot : obs.data?.base64 ? obs.data : null;
+                if (screenshot) {
+                    html += `<img class="observation-image" src="data:image/${escapeText(screenshot.format || 'png')};base64,${escapeText(screenshot.base64)}" alt="Observation ${index + 1}">`;
                 }
 
                 // Display other data
@@ -702,16 +703,18 @@
                     if (obs.source) {
                         html += '<div class="data-section">';
                         html += '<div class="data-label">Source:</div>';
-                        html += `<div class="data-content">${obs.source}</div>`;
+                        html += `<div class="data-content">${escapeText(obs.source)}</div>`;
                         html += '</div>';
                     }
 
                     // Display any additional data fields
                     Object.keys(obs.data).forEach(key => {
+                        if (key === 'screenshot' && screenshot === obs.data.screenshot) return;
                         if (key !== 'base64' && key !== 'format' && key !== 'type' && key !== 'storage') {
+                            const value = obs.data[key]?.type === 'primitive' ? obs.data[key].content : obs.data[key];
                             html += '<div class="data-section">';
-                            html += `<div class="data-label">${key}:</div>`;
-                            html += `<div class="data-content">${JSON.stringify(obs.data[key], null, 2)}</div>`;
+                            html += `<div class="data-label">${escapeText(key)}:</div>`;
+                            html += `<div class="data-content">${escapeText(typeof value === 'string' ? value : JSON.stringify(value, null, 2))}</div>`;
                             html += '</div>';
                         }
                     });
@@ -720,7 +723,7 @@
                     if (obs.data.type && obs.data.type !== 'media') {
                         html += '<div class="data-section">';
                         html += '<div class="data-label">Type:</div>';
-                        html += `<div class="data-content">${obs.data.type}</div>`;
+                        html += `<div class="data-content">${escapeText(obs.data.type)}</div>`;
                         html += '</div>';
                     }
                     

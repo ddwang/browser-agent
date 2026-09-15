@@ -34,8 +34,10 @@ const vocabulary = [createAction({ name: 'click', schema: z.object({ x: z.number
 
 async function fixture(sequence: Reply[], providerRetry = false) {
     replies = [...sequence]; requests = [];
+    let registryBuilds = 0;
     class FixtureHarness extends ModelHarness {
         protected createClientRegistry(options: Record<string, any>) {
+            registryBuilds++;
             const registry = new ClientRegistry();
             registry.addLlmClient('Fixture', 'anthropic', { ...options, base_url: `http://127.0.0.1:${server.port}` }, providerRetry ? 'DefaultRetryPolicy' : undefined);
             registry.setPrimary('Fixture');
@@ -47,10 +49,37 @@ async function fixture(sequence: Reply[], providerRetry = false) {
     const usage: ModelUsage[] = [];
     harness.events.on('tokensUsed', entry => { usage.push(entry); return {}; });
     const act = () => harness.partialAct(context, 'Click the button.', [], vocabulary);
-    return { harness, usage, act };
+    return { harness, usage, act, registryBuilds: () => registryBuilds };
 }
 
 try {
+    {
+        const changed = { ...plan, actions: [{ variant: 'tap', x: 'left' }] };
+        const { harness, registryBuilds } = await fixture([
+            { text: valid }, { text: valid }, { text: valid }, { text: valid },
+            { text: JSON.stringify(changed) }, { text: JSON.stringify(changed) },
+        ]);
+        const action = createAction({ name: 'click', schema: z.object({ x: z.number() }), resolver: async () => {} });
+        const actions = [action];
+        const act = () => harness.partialAct(context, 'Fixture', [], actions);
+        await act();
+        await act();
+        assert.equal(registryBuilds(), 2, 'setup and one planner registry, reused on the next step');
+        action.description = 'A changed action description';
+        await act();
+        assert.equal(registryBuilds(), 3);
+        assert.match(JSON.stringify(requests.at(-1).output_config), /A changed action description/);
+        actions.push(createAction({ name: 'other', schema: z.object({ x: z.number() }), resolver: async () => {} }));
+        await act();
+        assert.equal(registryBuilds(), 4, 'changed membership invalidates the cache');
+        actions.splice(0, actions.length, createAction({ name: 'tap', schema: z.object({ x: z.string() }), resolver: async () => {} }) as any);
+        assert.deepEqual(await act(), changed);
+        assert.equal(registryBuilds(), 5);
+        await harness.setup();
+        assert.deepEqual(await act(), changed);
+        assert.equal(registryBuilds(), 7, 'setup invalidates the cached registry and type builder');
+        console.log('PASS: planner setup is reused while action descriptions, membership, names, schemas and model setup invalidate it');
+    }
     {
         const { harness } = await fixture([{ text: '{"answer":true}' }, { text: '{"answer":true}' }]);
         const png = await sharp({ create: { width: 2, height: 3, channels: 3, background: '#123456' } }).png().toBuffer();
