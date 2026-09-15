@@ -346,3 +346,20 @@ and a sample of successes. Keep the website runs separate from local fixture
 scores. The repeated development suite is not a holdout; sequential runs can also
 differ because of time-dependent site state or shared-IP rate limits. Do not use
 the consumed holdout or claim held-out generalization.
+
+Frozen revision `5987bb1` completed both full runs: Luna/Sonnet passed 10/12 and
+Haiku/Sonnet passed 6/12. All 24 attempts remain counted. Luna had one content
+failure and one planner error; Haiku had four content failures, one planner error,
+and one unexplained browser-closure error. No task recorded HTTP 429, and neither
+run hit a timeout, access stop, or action/payload budget. The earlier runner-
+finalization error did not recur. Both source hashes and all non-actor manifest
+fields matched, and the worktree stayed unchanged through both runs.
+
+Luna used 336 actions/207 actor calls and an estimated $1.20597 in 28.2 minutes;
+Haiku used 414 actions/217 calls and $2.66327 in 44.1 minutes. Every notebook
+replayed exactly. Haiku made 97 corrections, including 21 identical rewrites,
+and 18 rejected note attempts; Luna made two corrections and had three
+rejections. Both failed exact dataset-count verification, and Haiku also showed
+unreconciled version facts, an unsupported final value, and filename substitution.
+See the [full paired report and evidence caveats](reports/2026-09-15-luna-haiku-comparison.md).
+No runtime tuning, selective retries, rejudgments, or holdout runs followed.
