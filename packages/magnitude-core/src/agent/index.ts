@@ -13,7 +13,7 @@ import { AgentMemory, AgentMemoryOptions } from "@/memory";
 import { ActionDefinition } from "@/actions";
 import { taskActions } from "@/actions/taskActions";
 import { memoryActions } from '@/actions/memoryActions';
-import { NOTEBOOK_INSTRUCTIONS } from '@/memory/notebook';
+import { NOTEBOOK_INSTRUCTIONS, type NoteInput } from '@/memory/notebook';
 import { ConnectorInstructions, AgentContext, traceAsync, MultiMediaContentPart } from "@/ai/baml_client";
 import { telemetrifyAgent } from '@/telemetry/events';
 import { isClaude } from '@/ai/util';
@@ -190,7 +190,7 @@ export class Agent {
         return actionDefinition;
     }
     
-    async exec(action: Action, memory?: AgentMemory): Promise<void> {
+    async exec(action: Action, memory?: AgentMemory): Promise<unknown> {
         /**
          * Execute an action that belongs to this Agent's action space.
          * Provide memory to record the action taken, its results, and any connector observations to that memory.
@@ -236,6 +236,7 @@ export class Agent {
             if (memoryOnly) this.events.emit('observationsRecorded'); // Checkpoint notes without another browser capture.
             else await this._recordConnectorObservations(memory);
         }
+        return data;
     }
 
     protected async _recordConnectorObservations(memory: AgentMemory) {
@@ -361,13 +362,14 @@ export class Agent {
 
             let reasoning: string = "";
             let actions: Action[] = [];
+            let memoryUpdates: NoteInput[] = [];
 
             try {
                 this.events.emit('planningStarted');
                 const memoryContext = await this._buildContext(memory);
                 await retryOnError(
                     async () => {
-                        ({ reasoning, actions } = await this.models.partialAct(
+                        ({ reasoning, actions, memory_updates: memoryUpdates } = await this.models.partialAct(
                             memoryContext,
                             description,
                             dataContentParts,
@@ -411,13 +413,18 @@ export class Agent {
             this.events.emit('thought', reasoning);
             memory.recordThought(reasoning);
 
-            // Execute partial recipe
-            for (const action of actions) {
+            // Persist the review using the existing audited, budgeted note action.
+            // Empty reviews are free; each attempted write consumes one action.
+            const batch = [...memoryUpdates.map(note => ({ variant: 'memory:note', ...note })), ...actions];
+            for (const action of batch) {
                 await this._waitIfPaused();
                 if (this.doneActing) break;
                 if (actionCount >= this.options.maxActions) throw new ActionLimitError(this.options.maxActions);
-                await this.exec(action, memory);
+                const result = await this.exec(action, memory);
                 actionCount++;
+                // Preserve the current page when an update fails. Successful
+                // earlier writes remain; the next plan sees the failure result.
+                if (action.variant === 'memory:note' && (result as { saved?: unknown })?.saved === false) break;
 
                 // const postActionScreenshot = await this.screenshot();
                 // const actionDescriptor: ActionDescriptor = { ...action, screenshot: postActionScreenshot.image } as ActionDescriptor;

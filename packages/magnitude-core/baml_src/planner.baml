@@ -100,7 +100,9 @@ template_string TaskInstructions(task: string, taskData: MultiMediaContentPart[]
 
     Plan out as many actions as possible, but stopping at the point where you will need to observe to plan further.
 
-    Return exactly one complete JSON object matching the output schema, with "reasoning" and a non-empty "actions" array.
+    Return exactly one complete JSON object matching the output schema, with "reasoning", "memory_updates", and a non-empty "actions" array.
+    First review the current observations: in memory_updates, save exact facts and completed checks needed later, with supporting observation numbers. Update existing keys when facts or pending checks change. Use [] when nothing new needs retaining; do not invent facts or repeat unchanged notes.
+    The host saves memory_updates before executing actions. Record only evidence already observed, never the anticipated results of those actions. Each update consumes one action from the existing budget.
     Keep reasoning concise. Do not include prose outside the JSON, Markdown fences, XML, or simulated tool calls.
     The actions array is executed by the host after you respond. Do not pretend to execute actions or invent their results.
     Base factual comparisons on observed evidence, including retained task notes from earlier observations. You do not need to reopen an unchanged source merely because its screenshot has left context.

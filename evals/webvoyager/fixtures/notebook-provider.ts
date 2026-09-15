@@ -10,7 +10,7 @@ import { webActions } from '../../../packages/magnitude-core/src/actions/webActi
 import { taskActions } from '../../../packages/magnitude-core/src/actions/taskActions';
 
 const note = { key: 'fixture-record', text: 'Observed total: 437.', sources: [0] };
-const plan = { reasoning: 'Keep the observed value before moving on.', actions: [{ variant: 'memory:note', ...note }] };
+const plan = { reasoning: 'Keep the observed value before moving on.', memory_updates: [note], actions: [{ variant: 'wait', seconds: 1 }] };
 let requests: any[] = [];
 const server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request) {
     const body = await request.json();
@@ -53,9 +53,11 @@ try {
         assert.match(JSON.stringify(requests[0]), provider === 'openai' ? /image_url/ : /image\/png/);
         if (provider === 'anthropic') {
             const schema = JSON.stringify(requests[0].output_config.format.schema);
-            assert.match(schema, /memory:note/);
+            assert.ok(!schema.includes('"const":"memory:note"'), 'notes have only one planner path');
+            assert.ok(requests[0].output_config.format.schema.required.includes('memory_updates'));
             assert.match(schema, /memory:forget/);
         }
+        assert.match(JSON.stringify(requests[0]), /memory_updates/);
         memory.remember(note);
         for (let i = 0; i < 5; i++) {
             memory.recordObservation(Observation.fromConnector('fixture', `Other page ${i}`, { type: 'screen', limit: 1 }));

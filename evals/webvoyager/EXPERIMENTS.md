@@ -192,3 +192,29 @@ repeated checks. The random 25-record local check also failed after omitted note
 See the [complete comparison, failure analysis, and judge qualifications](reports/2026-09-15-luna-notebook.md).
 No candidate tuning, selective reruns, or rejudgments followed these results. The
 consumed holdout remains untouched; this is not a general performance win.
+
+### Required memory review experiment
+
+At the user's request, test the smallest next mechanism: require `memory_updates`
+in every plan and save them through the existing note action before executing
+browser actions. Empty reviews are valid; fabricated filler is not required.
+Each attempted update retains its existing action cost. Rejected updates stop
+the batch without navigation and replan with the error. Do not change the model,
+judge, memory bounds, retention windows, task criteria, or recovery thresholds.
+Do not add a new fact schema, completion gate, retrieval tool, or extra model call
+in this experiment. The hypothesis is improved capture, not merely more writes.
+
+Predeclare live checks before calling models: fresh random short/image-window/
+thought-window collections, plus a correction workflow with an irrelevant page
+and a required revisit to a changed source. Measure exact final answers, record
+coverage in source-linked notes before leaving pages, stale facts after correction,
+repeated visits, actions, calls, and cost. Preserve every attempt and failed check.
+The departure metric is intentionally stricter than eventual correctness; the
+last page need not be noted if the answer can immediately use it. Capture and
+correctness are separate from schema conformance.
+
+Use these synthetic families for development only. Reserve unseen layouts and
+workflow families (for example, nested catalogs with cross-page dependencies) for
+a later frozen evaluation; do not call random values in a known template a fresh
+held-out test. Do not reuse the consumed website holdout or selectively rerun the
+website benchmark to select favorable outcomes.

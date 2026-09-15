@@ -179,14 +179,16 @@ still stays in the task-completion denominator; do not quietly drop blocked task
 
 ### Task notebook checks
 
-Actors can save bounded, source-linked notes across screenshot eviction. Notes are
+Every plan reviews current observations in a required `memory_updates` array;
+the host saves these updates before acting. Empty reviews are valid. Actors can
+save bounded, source-linked notes across screenshot eviction. Notes are
 model-written summaries, not new evidence; the judge still receives the full audit.
 See [memory behavior and limits](../../docs/advanced/memory.mdx).
 
 Run the offline memory, lifecycle, and provider checks:
 
 ```sh
-bun test packages/magnitude-core/src/memory evals/webvoyager/notebook.test.ts
+bun test packages/magnitude-core/src/memory evals/webvoyager/notebook.test.ts evals/webvoyager/notebook-metrics.test.ts
 ```
 
 To make paid Luna actor and Sonnet judge calls against fresh random local pages:
@@ -197,9 +199,13 @@ bun evals/webvoyager/fixtures/notebook-live.ts --live
 
 This opt-in check requires both API keys and Chrome. It writes all attempts and
 exact-answer checks to `.context/notebook-live-*`. It includes a one-record control,
-a random 6–10-record collection, and a random 22–28-record collection that exceeds
-the default thought-retention window. These are synthetic mechanism checks, not additional benchmark passes or a fresh
-holdout. No public websites are contacted by the browser tasks.
+a random 6–10-record collection, a random 22–28-record collection that exceeds
+the default thought-retention window, and a random 6–10-record correction workflow
+with an irrelevant page and a changed source. It also reports source-linked exact
+note coverage before first departure and final-note coverage. These diagnostics
+do not prove semantic correctness; final answers are checked separately. These
+are synthetic mechanism checks, not additional benchmark passes or a fresh holdout.
+No public websites are contacted by the browser tasks.
 
 ### Action and payload budgets
 

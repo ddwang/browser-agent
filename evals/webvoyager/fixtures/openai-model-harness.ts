@@ -11,7 +11,7 @@ import { PlannerResponseError } from '../../../packages/magnitude-core/src/ai/pl
 import { ModelResponseError } from '../../../packages/magnitude-core/src/ai/modelResponseError';
 
 // Real BAML Chat Completions transport, parser and collector; no external API.
-const plan = { reasoning: 'Use the observed button.', actions: [{ variant: 'click', x: 12 }] };
+const plan = { reasoning: 'Use the observed button.', memory_updates: [], actions: [{ variant: 'click', x: 12 }] };
 const valid = JSON.stringify(plan);
 type Reply = { text?: string | null; status?: number; finishReason?: string; refusal?: string; inputTokens?: number; cacheWriteTokens?: number };
 let replies: Reply[] = [];
@@ -106,7 +106,7 @@ try {
         }
         console.log('PASS: screenshots reach OpenAI as valid image data URLs');
     }
-    for (const rejected of [`Here is the plan: ${valid}`, '{"reasoning":"bad","actions":[]}']) {
+    for (const rejected of [`Here is the plan: ${valid}`, '{"reasoning":"bad","actions":[]}', JSON.stringify({ reasoning: plan.reasoning, actions: plan.actions })]) {
         const { act, usage } = await fixture([{ text: rejected }, { text: valid }]);
         assert.deepEqual(await act(), plan);
         assert.equal(requests.length, 2);

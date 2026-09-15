@@ -3,6 +3,7 @@ import { z, type Schema } from 'zod';
 import type { LLMClient } from './types';
 import type { ActionDefinition } from '@/actions';
 import { actionInputSchema } from '@/actions/util';
+import { memoryUpdatesSchema } from './plannerResponse';
 
 type JsonSchema = Record<string, any>;
 
@@ -17,6 +18,7 @@ export function plannerSchema(vocabulary: ActionDefinition<any>[]): Schema {
     if (!actions.length) throw new Error('Planner requires at least one action definition');
     return z.object({
         reasoning: z.string(),
+        memory_updates: memoryUpdatesSchema,
         actions: z.array(actions.length === 1 ? actions[0] : z.union(actions as [Schema, Schema, ...Schema[]])).min(1),
     });
 }

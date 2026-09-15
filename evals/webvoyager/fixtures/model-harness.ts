@@ -11,7 +11,7 @@ import { ModelResponseError } from '../../../packages/magnitude-core/src/ai/mode
 import sharp from 'sharp';
 
 // Exercise the actual BAML parser and collector without external model calls.
-const plan = { reasoning: 'Click the visible button.', actions: [{ variant: 'click', x: 12 }] };
+const plan = { reasoning: 'Click the visible button.', memory_updates: [], actions: [{ variant: 'click', x: 12 }] };
 const valid = JSON.stringify(plan);
 const xml = '<function_calls><invoke name="web_action"><parameter name="reasoning">Click</parameter><parameter name="actions">[{"variant":"click","x":12}]</parameter></invoke></function_calls>';
 type Reply = { text?: string; textFor?: (request: any) => string; status?: number; outputTokens?: number; stopReason?: string };
@@ -75,7 +75,7 @@ try {
         assert.equal(usage[0].outputCost, 0.0001);
         console.log('PASS: valid plan and exact cached usage');
     }
-    for (const rejected of [xml, `Here is the plan: ${valid}`]) {
+    for (const rejected of [xml, `Here is the plan: ${valid}`, JSON.stringify({ reasoning: plan.reasoning, actions: plan.actions })]) {
         const { act, usage } = await fixture([{ text: rejected, outputTokens: 4096 }, { text: valid }]);
         assert.deepEqual(await act(), plan);
         assert.equal(requests.length, 2);

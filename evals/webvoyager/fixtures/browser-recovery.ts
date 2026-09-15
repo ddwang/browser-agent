@@ -189,7 +189,7 @@ for (const oversizedBatch of [false, true]) test(`action cap prevents ${oversize
     });
     agent.models.partialAct = async () => {
         planned++;
-        return { reasoning: 'Fixture plan', actions: Array.from({ length: oversizedBatch ? 3 : 1 }, () => ({ variant: 'tick' })) };
+        return { reasoning: 'Fixture plan', memory_updates: [], actions: Array.from({ length: oversizedBatch ? 3 : 1 }, () => ({ variant: 'tick' })) };
     };
     await assert.rejects(agent.act('Continue indefinitely'), ActionLimitError);
     assert.equal(performed, 2);
@@ -201,7 +201,7 @@ test('completion on the final allowed action succeeds', async () => {
         maxActions: 1, telemetry: false,
         llm: { provider: 'anthropic', options: { model: 'fixture', apiKey: 'unused-no-model-calls' } },
     });
-    agent.models.partialAct = async () => ({ reasoning: 'Fixture complete', actions: [{ variant: 'task:done', evidence: 'Verified by fixture' }] });
+    agent.models.partialAct = async () => ({ reasoning: 'Fixture complete', memory_updates: [], actions: [{ variant: 'task:done', evidence: 'Verified by fixture' }] });
     await agent.act('Finish');
 });
 

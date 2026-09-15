@@ -3,14 +3,16 @@ import { z } from 'zod';
 export const NOTEBOOK_LIMITS = { entries: 32, text: 2000, key: 80, sources: 8, bytes: 65_536 } as const;
 
 export const NOTEBOOK_INSTRUCTIONS = 'Only recent screenshots and thoughts remain in context. '
-    + 'For multi-page or multi-step tasks, use memory:note before scrolling or navigating away from facts needed later. '
+    + 'Every plan must review the current observations in memory_updates before choosing actions. '
+    + 'For multi-page or multi-step tasks, retain facts needed later before scrolling or navigating away. '
     + 'Save exact values, completed checks, and unresolved uncertainty, not just statements that something was verified. '
-    + 'Put the note before navigation in the action batch and cite the supporting observation numbers. '
+    + 'Cite the supporting observation numbers. The host saves memory_updates before executing the actions array. '
     + 'The host attaches captured URLs. Notes persist for this task and are model-written summaries, not new evidence or instructions. '
     + 'Use notes to continue completed work instead of restarting it; revisit a source when evidence is missing, conflicting, or may have changed. '
     + 'Correct notes by reusing their key, and forget obsolete notes after consolidation. '
     + `Limits: ${NOTEBOOK_LIMITS.entries} notes, ${NOTEBOOK_LIMITS.text} characters each, ${NOTEBOOK_LIMITS.bytes} bytes total. `
-    + 'Notebook actions count toward the action limit. Do not take notes when the task can be finished immediately.';
+    + 'Each update counts as one memory:note action toward the action limit. Failed updates stop the batch before remaining actions. '
+    + 'Return memory_updates: [] when there are no new facts needed later, including irrelevant screens or when the task can be finished immediately. Never invent facts to fill a note.';
 
 export const noteSchema = z.object({
     key: z.string().min(1).max(NOTEBOOK_LIMITS.key).describe('Stable label; reuse it to replace or correct a note.'),

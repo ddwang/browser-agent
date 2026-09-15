@@ -17,7 +17,7 @@ import { convertActionDefinitionsToBaml, convertZodToBaml } from "@/actions/util
 import { Image } from '@/memory/image';
 import EventEmitter from "eventemitter3";
 import { MultiMediaContentPart } from "@/memory/rendering";
-import { parsePlannerResponse, PlannerResponseError } from './plannerResponse';
+import { parsePlannerResponse, PlannerResponseError, memoryUpdatesSchema, type PlannerResponse } from './plannerResponse';
 import { anthropicOutputFormat, plannerSchema, usesStructuredOutput } from './structuredOutput';
 import { ModelResponseError } from './modelResponseError';
 
@@ -244,9 +244,12 @@ export class ModelHarness {
         task: string,
         data: MultiMediaContentPart[],
         actionVocabulary: ActionDefinition<T>[]
-    ): Promise<{ reasoning: string, actions: Action[] }> {
+    ): Promise<PlannerResponse> {
         const tb = new TypeBuilder();
-
+        // Notes have one planner path: a required review before browser actions.
+        // Keep memory:note registered on Agent for execution and explicit callers.
+        actionVocabulary = actionVocabulary.filter(action => action.name !== 'memory:note');
+        tb.PartialRecipe.addProperty('memory_updates', convertZodToBaml(tb, memoryUpdatesSchema)).description(memoryUpdatesSchema.description!);
         tb.PartialRecipe.addProperty('actions', tb.list(convertActionDefinitionsToBaml(tb, actionVocabulary))).description('Always provide at least one action');
         const clientRegistry = this.clientForSchema(plannerSchema(actionVocabulary));
 
@@ -267,7 +270,7 @@ export class ModelHarness {
                 // No invalid output is appended to memory or executed. Keep the
                 // correction short even when the rejected response is enormous.
                 context = { ...context, observationContent: [...context.observationContent, {
-                    role: 'user', cacheControl: false, content: ['Your previous response was rejected as an invalid plan. No actions were executed. Return only one complete JSON object with concise reasoning and a non-empty actions array matching the schema. No XML, prose, simulated tool calls, or imagined observations. Plan only the next batch from the observations above.'],
+                    role: 'user', cacheControl: false, content: ['Your previous response was rejected as an invalid plan. No actions were executed. Return only one complete JSON object with concise reasoning, a memory_updates array (empty when nothing new needs retaining), and a non-empty actions array matching the schema. No XML, prose, simulated tool calls, or imagined observations. Plan only the next batch from the observations above.'],
                 }] };
             }
         }
