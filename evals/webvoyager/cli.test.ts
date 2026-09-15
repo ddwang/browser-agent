@@ -39,6 +39,26 @@ test('legacy smoke and scroll suites still resolve their original tasks', async 
     }
 });
 
+test('holdout requires explicit exposure and rejects selective runs', async () => {
+    const suite = join(import.meta.dir, 'holdout.json');
+    const reserved = await cli(['run', '--suite', suite, '--dry-run']);
+    expect(reserved.code).toBe(1);
+    expect(reserved.stderr).toContain('Holdout is reserved');
+    for (const extra of [['Amazon--35'], ['--failed'], ['--failed-only'], ['--replace']]) {
+        const result = await cli(['run', ...extra, '--suite', suite, '--allow-holdout', '--dry-run']);
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain('complete suite without selective reruns');
+    }
+    const preview = await cli(['run', '--suite', suite, '--allow-holdout', '--dry-run']);
+    expect(preview.code).toBe(0);
+    const manifest = JSON.parse(preview.stdout);
+    expect(manifest.partition).toBe('holdout');
+    expect(manifest.tasks).toHaveLength(12);
+    const unscored = await cli(['run', '--suite', suite, '--allow-holdout']);
+    expect(unscored.code).toBe(1);
+    expect(unscored.stderr).toContain('require --eval');
+});
+
 test('a suite can be narrowed to one custom task or one site', async () => {
     for (const [input, count] of [['ArXiv Hard--0', 1], ['ArXiv', 4]] as const) {
         const result = await cli(['run', input, '--suite', join(import.meta.dir, 'baseline.json'), '--dry-run']);

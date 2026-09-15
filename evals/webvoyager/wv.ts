@@ -43,6 +43,7 @@ function report(runDir: string, manifest: RunManifest) {
     const records = loadRecords(runDir, manifest);
     const categories = [...new Set(manifest.tasks.map(task => task.web_name))];
     return {
+        partition: manifest.partition ?? 'development',
         ...summarize(records),
         categories: Object.fromEntries(categories.map(category => [category, summarize(records.filter(record => record.task.web_name === category))])),
         capabilities: Object.fromEntries([...new Set(manifest.tasks.flatMap(task => task.capabilities ?? []))]
@@ -173,10 +174,17 @@ program.command('run [input]')
     .option('--max-judge-mb <number>', 'Fail saved traces over this many MiB without calling the judge', positiveInteger, DEFAULT_LIMITS.maxJudgeBytes / 1024 / 1024)
     .option('--eval', 'Score each completed task')
     .option('--dry-run', 'Print selected tasks and configuration without running or writing files')
+    .option('--allow-holdout', 'Acknowledge one-shot holdout exposure; only use after freezing the candidate')
     .option('--failed', 'Resume unrun and unsuccessful tasks in an explicit --run-dir')
     .option('--failed-only', 'Resume only unsuccessful attempts in an explicit --run-dir')
     .option('--replace', 'Replace selected results in an explicit --run-dir')
     .action(async (input, options) => {
+        const holdout = options.suite && readJson<{ partition?: string }>(resolve(options.suite)).partition === 'holdout';
+        if (holdout) {
+            if (!options.allowHoldout) throw new Error('Holdout is reserved. Freeze the candidate, then use --allow-holdout. See EXPERIMENTS.md.');
+            if (input || options.failed || options.failedOnly || options.replace) throw new Error('Holdout runs require the complete suite without selective reruns.');
+            if (!options.eval && !options.dryRun) throw new Error('Holdout runs require --eval.');
+        }
         const tasks = await selectTasks(input, options.suite);
         if (!tasks.length) return;
         const runDir = resolve(options.runDir ?? join(import.meta.dir, 'results', new Date().toISOString().replaceAll(':', '-')));
@@ -185,6 +193,7 @@ program.command('run [input]')
         // Sonnet 5 only accepts the API's default sampling temperature (1).
         const judge: ModelConfig = { provider: options.provider, model: options.judgeModel, temperature: options.judgeModel === 'claude-sonnet-5' ? 1 : 0 };
         let manifest: RunManifest = {
+            partition: holdout ? 'holdout' : 'development',
             createdAt: new Date().toISOString(),
             revision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: import.meta.dir, encoding: 'utf8' }).trim(),
             dirty: !!execFileSync('git', ['status', '--porcelain'], { cwd: import.meta.dir, encoding: 'utf8' }).trim(),
@@ -198,6 +207,7 @@ program.command('run [input]')
         }
         if ((options.failed || options.failedOnly || options.replace) && !options.runDir) throw new Error('Resume/replace flags require --run-dir. Omit them for a fresh first-attempt baseline.');
         const previous = readOptional<RunManifest>(manifestPath);
+        if (holdout && (manifest.dirty || previous)) throw new Error('Holdout runs require a clean committed candidate and a fresh run directory.');
         if (previous) {
             if (JSON.stringify(previous.actor) !== JSON.stringify(actor) || JSON.stringify(previous.judge) !== JSON.stringify(judge) || previous.workers !== manifest.workers || previous.timeoutMs !== manifest.timeoutMs || previous.judgeTimeoutMs !== manifest.judgeTimeoutMs || previous.sourceHash !== manifest.sourceHash || JSON.stringify(previous.limits ?? DEFAULT_LIMITS) !== JSON.stringify(manifest.limits)) {
                 throw new Error('Run configuration differs from its manifest. Use a new --run-dir.');

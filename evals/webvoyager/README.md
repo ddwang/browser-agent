@@ -11,6 +11,10 @@ suite uses distinct IDs and must not be compared directly with the old score.
 It targets multi-step research workflows, not general browser coverage or an
 official WebVoyager score. See [task coverage and reference checks](hard-suite.md).
 
+All previously inspected suites are development data. The separate cross-site
+holdout is reserved for a frozen candidate, not prompt tuning. Read the
+[anti-overfitting protocol](EXPERIMENTS.md) before using `--allow-holdout`.
+
 ## Setup
 
 From the repository root:

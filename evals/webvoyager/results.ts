@@ -26,6 +26,7 @@ export interface ModelConfig {
 }
 
 export interface RunManifest {
+    partition?: 'development' | 'holdout';
     createdAt: string;
     revision: string;
     dirty: boolean;

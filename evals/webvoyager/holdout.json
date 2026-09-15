@@ -1,0 +1,30 @@
+{
+  "name": "Cross-site holdout",
+  "partition": "holdout",
+  "selection": {
+    "seed": "browser-generalization-2026-09-15",
+    "sites": [
+      "Amazon",
+      "ESPN",
+      "Google Map"
+    ],
+    "perSite": 4,
+    "catalogSha256": "b6dbd9d27f67355d835592b284943fdc0052ed67d57e67b70b8f7b2826a21107",
+    "tasksSha256": "839920906a808274fa8f9cd2d9d4fee6646e6dde381d6c17dcbd1849ced0b4eb",
+    "exclusionPattern": "add.{0,20}cart|check.?out|purchase|place.{0,15}order|log.?in|sign.?in|sign.?up|post a|leave a|write a review"
+  },
+  "taskIds": [
+    "Amazon--35",
+    "Amazon--16",
+    "Amazon--38",
+    "Amazon--10",
+    "ESPN--38",
+    "ESPN--11",
+    "ESPN--12",
+    "ESPN--8",
+    "Google Map--2",
+    "Google Map--16",
+    "Google Map--39",
+    "Google Map--30"
+  ]
+}
