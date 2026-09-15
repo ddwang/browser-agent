@@ -68,3 +68,27 @@ A later development cycle needs a newly frozen, disjoint holdout.
    complete development run. Investigate only general failures, not task answers.
 5. Freeze the candidate before the one-shot holdout. Publish all outcomes and
    disclose limitations. Stop tuning against that holdout once consumed.
+
+### Pre-holdout infrastructure checks
+
+The native-output development run completed at `d2ac92f`: 6/12 passes, five content
+failures, one runner-finalization error, no planner/judge-format errors. See
+[the complete result and limitations](reports/2026-09-15-native-output.md).
+
+Before the still-unrun holdout, test these general mechanisms independently:
+
+- Recovery fingerprints omit nested scroll offsets and textarea/select state.
+  Reproduce with randomized local browser panels and controls; preserve genuine
+  no-progress stops and ignore hidden/offscreen scroll changes. Do not change limits.
+- Nested observation serialization omits an `await`, losing object values and
+  affecting hashes. A synthetic nested-object round trip already reproduced this.
+  Test primitives, arrays, objects, omission, media, and arbitrary own property names.
+- Investigate finalization with synthetic large histories and delayed checkpoints.
+  Do not modify the errored development attempt or infer its score from its answer.
+- Prevent direct development selection of reserved holdout sites and prevent
+  replacing/rejudging holdout outcomes through the separate CLI commands.
+
+The recovery, serializer, and CLI issues were identified by code inspection before
+holdout exposure. None justifies adding browser-task answers or site-specific agent
+behavior. Commit a clean candidate after independent verification, then use the
+complete holdout once. Keep this development checkpoint distinct from that candidate.
