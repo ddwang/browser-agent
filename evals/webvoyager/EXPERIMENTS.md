@@ -393,3 +393,19 @@ retry counts, usage accounting, and omission of rejected values also passed.
 Core and evaluation type checks and all five package builds passed. No live model
 calls, website reruns, selective rejudgments, or holdout runs followed; live success
 rate improvement remains unmeasured.
+
+### Haiku rerun after planner diagnostics
+
+The user requested another Haiku run after the bounded-diagnostics change
+(`9fffb29`). Run the complete, unchanged 12-task development suite once in a fresh
+directory. Keep Anthropic `claude-haiku-4-5-20251001` at temperature 0.2 as actor
+and `claude-sonnet-5` at temperature 1 as judge, judge version 2, one worker,
+100 actions, 24 MiB judge preflight, and 1,200/300-second task/judge deadlines.
+Freeze and commit this protocol before calls. Do not tune runtime behavior during
+the run, selectively retry failures, replace judgments, or reuse the holdout.
+
+Compare every outcome, usage, latency, and planner diagnostic with the previous
+Haiku development run at `5987bb1` (6/12). Preserve errors in the denominator.
+Check source/configuration consistency and replay notebooks before reporting.
+This is one repeated development run, not a controlled causal estimate or held-out
+evidence. Better diagnostics may expose causes without improving the score.
