@@ -219,6 +219,18 @@ correction. The rejected response is not executed or added to browser memory. A
 second invalid response fails the task. This is separate from provider transport
 retries and does not restart the browser task. Both attempts' reported usage counts.
 
+Known supporting direct Anthropic models also receive a provider-enforced JSON
+schema derived from the same action/query/extraction definitions. Original Zod
+constraints still validate the response locally. Unsupported schema shapes (such
+as open-ended maps or recursion) keep the prompt-only path; older/unknown models
+and other providers retain it too. Core Anthropic options accept
+`structuredOutputs: false` to opt out, or `true` to opt in for another supported
+model. There is no automatic fallback/retry on an API schema-configuration error.
+
+A provider refusal or output-token truncation is terminal, even if BAML recovers
+a syntactically valid object. Those responses are accounted but not executed or
+retried as formatting mistakes. Output-token limits are not automatically raised.
+
 ## Local verification
 
 ```sh

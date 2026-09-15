@@ -17,6 +17,8 @@ export interface AnthropicClient {
         apiKey?: string,
         temperature?: number,
         promptCaching?: boolean,
+        /** Default: enabled for known supporting models. False retains prompt-only JSON. */
+        structuredOutputs?: boolean,
     }   
 }
 

@@ -1,7 +1,7 @@
 import { convertToBamlClientOptions } from "./util";
 // Import ModularMemoryContext instead of old MemoryContext
 import { b, AgentContext } from "@/ai/baml_client"; 
-import { Image as BamlImage, Collector, ClientRegistry, BamlValidationError, BamlClientFinishReasonError, type FunctionLog } from "@boundaryml/baml";
+import { Image as BamlImage, Collector, ClientRegistry, BamlValidationError, type FunctionLog } from "@boundaryml/baml";
 import { Action, ActionIntent, Intent } from "@/actions/types";
 import { TestStepDefinition } from "@/types";
 import { BamlAsyncClient } from "./baml_client/async_client";
@@ -18,6 +18,8 @@ import { Image } from '@/memory/image';
 import EventEmitter from "eventemitter3";
 import { MultiMediaContentPart } from "@/memory/rendering";
 import { parsePlannerResponse, PlannerResponseError } from './plannerResponse';
+import { anthropicOutputFormat, plannerSchema, usesStructuredOutput } from './structuredOutput';
+import { ModelResponseError } from './modelResponseError';
 
 interface ModelHarnessOptions {
     llm: LLMClient;
@@ -43,6 +45,7 @@ export class ModelHarness {
     public readonly events: EventEmitter<ModelHarnessEvents> = new EventEmitter();
     private options: Required<ModelHarnessOptions>;
     private cr!: ClientRegistry;
+    private clientOptions!: Record<string, any>;
     private baml!: BamlAsyncClient;
     private logger: Logger;
 
@@ -57,17 +60,31 @@ export class ModelHarness {
 
     async setup() {
         // Must be called after constructor
-        this.cr = new ClientRegistry();
-        let bamlClientOptions = await convertToBamlClientOptions(this.options.llm);
-        this.cr.addLlmClient(
+        this.clientOptions = await convertToBamlClientOptions(this.options.llm);
+        this.cr = this.createClientRegistry(this.clientOptions);
+        this.baml = b.withOptions({ clientRegistry: this.cr });
+    }
+
+    protected createClientRegistry(options: Record<string, any>): ClientRegistry {
+        const registry = new ClientRegistry();
+        registry.addLlmClient(
             'Magnus', 
             this.options.llm.provider === 'claude-code' ? 'anthropic' : this.options.llm.provider,
-            bamlClientOptions,
+            options,
             'DefaultRetryPolicy'
         );
-        this.cr.setPrimary('Magnus');
+        registry.setPrimary('Magnus');
+        return registry;
+    }
 
-        this.baml = b.withOptions({ clientRegistry: this.cr });
+    private clientForSchema(schema: Schema): ClientRegistry {
+        if (!usesStructuredOutput(this.options.llm)) return this.cr;
+        const format = anthropicOutputFormat(schema);
+        if (!format) {
+            this.logger.debug('Schema requires prompt-only output; native structured output cannot represent it');
+            return this.cr;
+        }
+        return this.createClientRegistry({ ...this.clientOptions, output_config: { format } });
     }
 
     describeModel(): string {
@@ -79,7 +96,18 @@ export class ModelHarness {
         // retries. A shared cumulative collector can double-count concurrent calls.
         const collector = new Collector('model-call');
         try {
-            return await invoke(collector);
+            try {
+                return await invoke(collector);
+            } finally {
+                // Even syntactically complete JSON must not hide a provider
+                // refusal or a truncated batch. Neither gets a format retry.
+                if (this.options.llm.provider === 'anthropic' || this.options.llm.provider === 'claude-code') {
+                    let reason: unknown;
+                    try { reason = collector.last?.calls.at(-1)?.httpResponse?.body.json()?.stop_reason; }
+                    catch { /* A transport error may not contain JSON. */ }
+                    if (reason === 'refusal' || reason === 'max_tokens') throw new ModelResponseError(reason);
+                }
+            }
         } finally {
             for (const log of collector.logs) {
                 for (const call of log.calls) {
@@ -189,6 +217,7 @@ export class ModelHarness {
         const tb = new TypeBuilder();
 
         tb.PartialRecipe.addProperty('actions', tb.list(convertActionDefinitionsToBaml(tb, actionVocabulary))).description('Always provide at least one action');
+        const clientRegistry = this.clientForSchema(plannerSchema(actionVocabulary));
 
         for (let attempt = 0; ; attempt++) {
             try {
@@ -196,12 +225,12 @@ export class ModelHarness {
                     await this.baml.CreatePartialRecipe(
                         context, task, data,
                         this.options.llm.provider === 'claude-code',
-                        { tb, collector }
+                        { tb, collector, clientRegistry }
                     );
                     return parsePlannerResponse(collector.last?.rawLlmResponse ?? null, actionVocabulary);
                 });
             } catch (error) {
-                if (!(error instanceof PlannerResponseError || error instanceof BamlValidationError || error instanceof BamlClientFinishReasonError)) throw error;
+                if (!(error instanceof PlannerResponseError || error instanceof BamlValidationError)) throw error;
                 if (attempt === 1) throw new PlannerResponseError('Planner returned an invalid plan on both attempts');
                 this.logger.warn('Invalid planner response; retrying once with the same observations');
                 // No invalid output is appended to memory or executed. Keep the
@@ -229,19 +258,20 @@ export class ModelHarness {
 
         // }
 
+        const clientRegistry = this.clientForSchema(schema instanceof z.ZodObject ? schema : z.object({ data: schema }));
         const bamlScreenshot = await screenshot.toBaml();
         const resp = await this._withUsage(collector => this.baml.ExtractData(
             instructions,
             bamlScreenshot,
             domContent,
             this.options.llm.provider === 'claude-code',
-            { tb, collector }
+            { tb, collector, clientRegistry }
         ));
 
         if (schema instanceof z.ZodObject) {
-            return resp;
+            return schema.parse(resp);
         } else {
-            return resp.data;
+            return schema.parse(resp.data);
         }
     }
     // ^ extract could prob be a subset of query w trimmed mem
@@ -259,17 +289,18 @@ export class ModelHarness {
             tb.QueryResponse.addProperty('data', convertZodToBaml(tb, schema));
         }
 
+        const clientRegistry = this.clientForSchema(schema instanceof z.ZodObject ? schema : z.object({ data: schema }));
         const resp = await this._withUsage(collector => this.baml.QueryMemory(
             context,
             query,
             this.options.llm.provider === 'claude-code',
-            { tb, collector }
+            { tb, collector, clientRegistry }
         ));
         
         if (schema instanceof z.ZodObject) {
-            return resp;
+            return schema.parse(resp);
         } else {
-            return resp.data;
+            return schema.parse(resp.data);
         }
     }
 

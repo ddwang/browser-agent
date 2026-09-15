@@ -2,17 +2,18 @@ import assert from 'node:assert/strict';
 import { ClientRegistry } from '@boundaryml/baml';
 import { z } from 'zod';
 import { ModelHarness } from '../../../packages/magnitude-core/src/ai/modelHarness';
-import { b, type AgentContext } from '../../../packages/magnitude-core/src/ai/baml_client';
+import { type AgentContext } from '../../../packages/magnitude-core/src/ai/baml_client';
 import { createAction } from '../../../packages/magnitude-core/src/actions';
 import { Image } from '../../../packages/magnitude-core/src/memory/image';
 import type { ModelUsage } from '../../../packages/magnitude-core/src/ai/types';
 import { PlannerResponseError } from '../../../packages/magnitude-core/src/ai/plannerResponse';
+import { ModelResponseError } from '../../../packages/magnitude-core/src/ai/modelResponseError';
 
 // Exercise the actual BAML parser and collector without external model calls.
 const plan = { reasoning: 'Click the visible button.', actions: [{ variant: 'click', x: 12 }] };
 const valid = JSON.stringify(plan);
 const xml = '<function_calls><invoke name="web_action"><parameter name="reasoning">Click</parameter><parameter name="actions">[{"variant":"click","x":12}]</parameter></invoke></function_calls>';
-type Reply = { text?: string; status?: number; outputTokens?: number };
+type Reply = { text?: string; textFor?: (request: any) => string; status?: number; outputTokens?: number; stopReason?: string };
 let replies: Reply[] = [];
 let requests: any[] = [];
 const server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request) {
@@ -22,7 +23,7 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request) 
     if (reply.status) return new Response('Fixture HTTP error', { status: reply.status });
     return Response.json({
         id: `fixture-${requests.length}`, type: 'message', role: 'assistant', model: 'claude-haiku-4-5-20251001',
-        content: [{ type: 'text', text: reply.text }], stop_reason: 'end_turn', stop_sequence: null,
+        content: [{ type: 'text', text: reply.textFor?.(requests.at(-1)) ?? reply.text }], stop_reason: reply.stopReason ?? 'end_turn', stop_sequence: null,
         usage: { input_tokens: 10, output_tokens: reply.outputTokens ?? 20, cache_creation_input_tokens: 30, cache_read_input_tokens: 40 },
     });
 } });
@@ -31,15 +32,16 @@ const vocabulary = [createAction({ name: 'click', schema: z.object({ x: z.number
 
 async function fixture(sequence: Reply[], providerRetry = false) {
     replies = [...sequence]; requests = [];
-    const harness = new ModelHarness({ llm: { provider: 'anthropic', options: { model: 'claude-haiku-4-5-20251001', apiKey: 'loopback-fixture' } } });
+    class FixtureHarness extends ModelHarness {
+        protected createClientRegistry(options: Record<string, any>) {
+            const registry = new ClientRegistry();
+            registry.addLlmClient('Fixture', 'anthropic', { ...options, base_url: `http://127.0.0.1:${server.port}` }, providerRetry ? 'DefaultRetryPolicy' : undefined);
+            registry.setPrimary('Fixture');
+            return registry;
+        }
+    }
+    const harness = new FixtureHarness({ llm: { provider: 'anthropic', options: { model: 'claude-haiku-4-5-20251001', apiKey: 'loopback-fixture' } } });
     await harness.setup();
-    const registry = new ClientRegistry();
-    registry.addLlmClient('Fixture', 'anthropic', {
-        model: 'claude-haiku-4-5-20251001', api_key: 'loopback-fixture', base_url: `http://127.0.0.1:${server.port}`,
-    }, providerRetry ? 'DefaultRetryPolicy' : undefined);
-    registry.setPrimary('Fixture');
-    // Override only the transport; production option conversion is unchanged.
-    (harness as unknown as { baml: typeof b }).baml = b.withOptions({ clientRegistry: registry });
     const usage: ModelUsage[] = [];
     harness.events.on('tokensUsed', entry => { usage.push(entry); return {}; });
     const act = () => harness.partialAct(context, 'Click the button.', [], vocabulary);
@@ -52,6 +54,8 @@ try {
         assert.deepEqual(await act(), plan);
         assert.equal(requests.length, 1);
         assert.match(JSON.stringify(requests[0]), /Return exactly one complete JSON object/);
+        assert.equal(requests[0].output_config.format.type, 'json_schema');
+        assert.equal(requests[0].output_config.format.schema.properties.actions.items.properties.variant.const, 'click');
         assert.equal(usage.length, 1);
         assert.deepEqual([usage[0].inputTokens, usage[0].outputTokens, usage[0].cacheWriteInputTokens, usage[0].cacheReadInputTokens], [10, 20, 30, 40]);
         assert.ok(Math.abs(usage[0].inputCost! - 0.0000515) < 1e-12);
@@ -117,5 +121,30 @@ try {
         assert.equal(usage.length, 2);
         assert.deepEqual(usage.map(entry => entry.outputTokens).sort(), [21, 22]);
         console.log('PASS: concurrent calls do not duplicate usage');
+    }
+    for (const stopReason of ['refusal', 'max_tokens']) {
+        const { act, usage } = await fixture([{ text: valid, stopReason }]);
+        await assert.rejects(act(), ModelResponseError);
+        assert.equal(requests.length, 1);
+        assert.equal(usage.length, 1);
+        console.log('PASS: terminal provider reason fails without executing or retrying a plan');
+    }
+    {
+        const { harness, usage } = await fixture([{ text: '{"score":99}' }]);
+        await assert.rejects(harness.query(context, 'Return a score.', z.object({ score: z.number().max(5) })));
+        assert.equal(requests[0].output_config.format.schema.properties.score.maximum, undefined);
+        assert.equal(usage.length, 1);
+        console.log('PASS: local constraints still reject native-output responses with usage');
+    }
+    {
+        const reply = { textFor: (request: any) => 'alpha' in request.output_config.format.schema.properties ? '{"alpha":"first"}' : '{"beta":2}' };
+        const { harness, usage } = await fixture([reply, reply]);
+        const responses = await Promise.all([
+            harness.query(context, 'First shape.', z.object({ alpha: z.string() })),
+            harness.query(context, 'Second shape.', z.object({ beta: z.number() })),
+        ]);
+        assert.deepEqual(responses, [{ alpha: 'first' }, { beta: 2 }]);
+        assert.equal(usage.length, 2);
+        console.log('PASS: concurrent native schemas remain isolated per invocation');
     }
 } finally { server.stop(true); }
