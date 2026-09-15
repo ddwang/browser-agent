@@ -259,3 +259,14 @@ candidate or retry selected cases in response. This workflow is new to the live
 checks, but developer-authored and inspectable, not a blinded holdout. Do not
 rerun the website development suite or consumed holdout. Reserve further unseen
 workflow families for a separately approved frozen evaluation.
+
+Candidate `5ed958b` completed all four attempts: 2 passed and 2 hit an existing
+recovery false positive after five productive record visits and directory returns.
+All 31 note writes succeeded (30 adds, one matching correction); no saved record
+was overwritten or forgotten. The host stopped the long and changed-source cases
+before they could validate their intended memory challenges. Capture still included
+transcription errors and weak tab-list citations. Total estimated cost was $0.22129.
+See the [full guarded-update report](reports/2026-09-15-guarded-note-updates.md).
+No runtime tuning, selective retries, rejudgments, website benchmark, or consumed
+holdout runs followed these results. The next proposed change is a general fix for
+productive-return false positives, not a task-specific recovery threshold.

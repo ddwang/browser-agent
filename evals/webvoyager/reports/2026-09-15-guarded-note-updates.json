@@ -1,0 +1,362 @@
+{
+  "experiment": "Guarded note additions and explicit corrections",
+  "rawDirectory": ".context/notebook-live-2026-09-15T17-33-37.923Z",
+  "revision": "5ed958b4118ffe5c27efd2b8e33e5f44b54ede96",
+  "sourceHash": "03269b98b996bd6beb5c6c8ab00fa06ffe083966f91d41a058f578ad91c3ba88",
+  "cleanAtLaunch": true,
+  "cleanAndSourceHashUnchangedAtCompletion": true,
+  "actor": {
+    "provider": "openai",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "medium"
+  },
+  "judge": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "temperature": 1
+  },
+  "workers": 1,
+  "limits": {
+    "maxActions": 100,
+    "maxJudgeBytes": 25165824
+  },
+  "timeoutMs": 1200000,
+  "judgeTimeoutMs": 300000,
+  "validation": {
+    "offlineTests": 315,
+    "failedTests": 0,
+    "assertions": 2774,
+    "testFiles": 31,
+    "packageBuilds": 5,
+    "coreTypecheck": true,
+    "evalTypecheck": true
+  },
+  "summary": {
+    "selected": 4,
+    "attempted": 4,
+    "counts": {
+      "success": 2,
+      "failure": 0,
+      "timeout": 0,
+      "error": 0,
+      "blocked": 2,
+      "running": 0,
+      "interrupted": 0,
+      "judge_error": 0,
+      "unscored": 0,
+      "pending": 0
+    },
+    "successRate": 0.5,
+    "medianTimeMs": 106428,
+    "p95TimeMs": 266128,
+    "averageActions": 20,
+    "inputTokens": 315951,
+    "outputTokens": 13584,
+    "cachedInputTokens": 1792,
+    "estimatedActorCost": 0.07952684,
+    "estimatedJudgeCost": 0.141766
+  },
+  "totals": {
+    "actions": 80,
+    "actorCalls": 51,
+    "judgeCalls": 2,
+    "cost": 0.22129284,
+    "actorTimeMs": 640340,
+    "judgeTimeMs": 53927,
+    "wallTimeMs": 699434.6872558594
+  },
+  "exitCode": 1,
+  "tasks": [
+    {
+      "id": "Local Notebook--1",
+      "site": "Local Notebook",
+      "outcome": "success",
+      "status": "completed",
+      "result": "SUCCESS",
+      "actions": 4,
+      "actorCalls": 2,
+      "plans": 2,
+      "noteActions": 2,
+      "forgetActions": 0,
+      "retainedNotes": 2,
+      "noteErrors": 0,
+      "judgeCalls": 1,
+      "actorTimeMs": 33472,
+      "judgeTimeMs": 10587,
+      "actorCost": 0.0022318399999999997,
+      "judgeCost": 0.013232000000000002,
+      "memoryBytes": 119445,
+      "http429": 0,
+      "check": {
+        "id": "Local Notebook--1",
+        "status": "completed",
+        "exact": true,
+        "allVisited": true,
+        "notebookActions": 2,
+        "renderedNotes": 2,
+        "actions": 4,
+        "actorCalls": 2,
+        "judgeResult": "SUCCESS",
+        "visits": [
+          1
+        ],
+        "error": "",
+        "recordCount": 1,
+        "visitedRecordCount": 1,
+        "sourceLinkedCaptureBeforeFirstDeparture": 1,
+        "originalSourceLinkedFinalNoteCoverage": 1,
+        "latestSourceLinkedFinalNoteCoverage": 1
+      },
+      "writeAudit": {
+        "id": "Local Notebook--1",
+        "status": "completed",
+        "counts": {
+          "adds": 2,
+          "corrections": 0,
+          "rejected": 0
+        },
+        "reconciles": true,
+        "violations": [],
+        "transitions": [],
+        "writes": []
+      }
+    },
+    {
+      "id": "Local Catalog--10",
+      "site": "Local Notebook",
+      "outcome": "success",
+      "status": "completed",
+      "result": "SUCCESS",
+      "actions": 40,
+      "actorCalls": 25,
+      "plans": 25,
+      "noteActions": 15,
+      "forgetActions": 0,
+      "retainedNotes": 14,
+      "noteErrors": 0,
+      "judgeCalls": 1,
+      "actorTimeMs": 234312,
+      "judgeTimeMs": 43340,
+      "actorCost": 0.041914400000000004,
+      "judgeCost": 0.128534,
+      "memoryBytes": 1687322,
+      "http429": 0,
+      "check": {
+        "id": "Local Catalog--10",
+        "status": "completed",
+        "exact": true,
+        "allVisited": true,
+        "notebookActions": 15,
+        "renderedNotes": 14,
+        "actions": 40,
+        "actorCalls": 25,
+        "judgeResult": "SUCCESS",
+        "visits": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "error": "",
+        "recordCount": 10,
+        "visitedRecordCount": 10,
+        "sourceLinkedCaptureBeforeFirstDeparture": 8,
+        "originalSourceLinkedFinalNoteCoverage": 8,
+        "latestSourceLinkedFinalNoteCoverage": 8
+      },
+      "writeAudit": {
+        "id": "Local Catalog--10",
+        "status": "completed",
+        "counts": {
+          "adds": 14,
+          "corrections": 1,
+          "rejected": 0
+        },
+        "reconciles": true,
+        "violations": [],
+        "transitions": [
+          {
+            "index": 21,
+            "key": "group1_directory_order",
+            "lostOriginalRecords": [],
+            "previousText": "Group 1 directory lists four entries in order: Lot-91f25ab8, Lot-54bd640f, Lot-f854f47a, Lot-?d87a04 (the fourth label is partially obscured by the cursor in the screenshot). Directory-only notice says links are not additional stock records. Next group and Audit overview links are present.",
+            "text": "Group 1 directory lists four entries in order: Lot-91f25ab8, Lot-54bd640f, Lot-f854f47a, Lot-6dd87a04. Directory-only notice says links are not additional stock records. Next group and Audit overview links are present."
+          }
+        ],
+        "writes": [
+          {
+            "index": 21,
+            "operation": "correct",
+            "key": "group1_directory_order",
+            "saved": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "Local Catalog--27",
+      "site": "Local Notebook",
+      "outcome": "blocked",
+      "status": "blocked",
+      "actions": 18,
+      "actorCalls": 12,
+      "plans": 12,
+      "noteActions": 7,
+      "forgetActions": 0,
+      "retainedNotes": 7,
+      "noteErrors": 0,
+      "judgeCalls": 0,
+      "actorTimeMs": 266128,
+      "judgeTimeMs": 0,
+      "actorCost": 0.017594000000000002,
+      "judgeCost": 0,
+      "memoryBytes": 900388,
+      "error": "Browser blocked (no_progress): This action has repeatedly produced a previously seen page state. Review tried searches and visited pages; use a materially different approach, or report browser:blocked with reason no_progress. Do not repeat the same search or click without new evidence.",
+      "block": {
+        "reason": "no_progress",
+        "evidence": "This action has repeatedly produced a previously seen page state. Review tried searches and visited pages; use a materially different approach, or report browser:blocked with reason no_progress. Do not repeat the same search or click without new evidence."
+      },
+      "http429": 0,
+      "check": {
+        "id": "Local Catalog--27",
+        "status": "blocked",
+        "exact": false,
+        "allVisited": false,
+        "notebookActions": 7,
+        "renderedNotes": 7,
+        "actions": 18,
+        "actorCalls": 12,
+        "visits": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "error": "Browser blocked (no_progress): This action has repeatedly produced a previously seen page state. Review tried searches and visited pages; use a materially different approach, or report browser:blocked with reason no_progress. Do not repeat the same search or click without new evidence.",
+        "recordCount": 27,
+        "visitedRecordCount": 5,
+        "sourceLinkedCaptureBeforeFirstDeparture": 4,
+        "originalSourceLinkedFinalNoteCoverage": 4,
+        "latestSourceLinkedFinalNoteCoverage": 4
+      },
+      "writeAudit": {
+        "id": "Local Catalog--27",
+        "status": "blocked",
+        "counts": {
+          "adds": 7,
+          "corrections": 0,
+          "rejected": 0
+        },
+        "reconciles": true,
+        "violations": [],
+        "transitions": [],
+        "writes": []
+      }
+    },
+    {
+      "id": "Local Catalog Correction--10",
+      "site": "Local Notebook",
+      "outcome": "blocked",
+      "status": "blocked",
+      "actions": 18,
+      "actorCalls": 12,
+      "plans": 12,
+      "noteActions": 7,
+      "forgetActions": 0,
+      "retainedNotes": 7,
+      "noteErrors": 0,
+      "judgeCalls": 0,
+      "actorTimeMs": 106428,
+      "judgeTimeMs": 0,
+      "actorCost": 0.017786600000000003,
+      "judgeCost": 0,
+      "memoryBytes": 928283,
+      "error": "Browser blocked (no_progress): This action has repeatedly produced a previously seen page state. Review tried searches and visited pages; use a materially different approach, or report browser:blocked with reason no_progress. Do not repeat the same search or click without new evidence.",
+      "block": {
+        "reason": "no_progress",
+        "evidence": "This action has repeatedly produced a previously seen page state. Review tried searches and visited pages; use a materially different approach, or report browser:blocked with reason no_progress. Do not repeat the same search or click without new evidence."
+      },
+      "http429": 0,
+      "check": {
+        "id": "Local Catalog Correction--10",
+        "status": "blocked",
+        "exact": false,
+        "allVisited": false,
+        "notebookActions": 7,
+        "renderedNotes": 7,
+        "correctionRevisited": false,
+        "oldCodeMentionedInFinalNotes": true,
+        "actions": 18,
+        "actorCalls": 12,
+        "visits": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "error": "Browser blocked (no_progress): This action has repeatedly produced a previously seen page state. Review tried searches and visited pages; use a materially different approach, or report browser:blocked with reason no_progress. Do not repeat the same search or click without new evidence.",
+        "recordCount": 10,
+        "visitedRecordCount": 5,
+        "sourceLinkedCaptureBeforeFirstDeparture": 3,
+        "originalSourceLinkedFinalNoteCoverage": 3,
+        "latestSourceLinkedFinalNoteCoverage": 2
+      },
+      "writeAudit": {
+        "id": "Local Catalog Correction--10",
+        "status": "blocked",
+        "counts": {
+          "adds": 7,
+          "corrections": 0,
+          "rejected": 0
+        },
+        "reconciles": true,
+        "violations": [],
+        "transitions": [],
+        "writes": []
+      }
+    }
+  ],
+  "limitations": [
+    "New developer-authored workflow, not a blinded holdout or paired comparison with the prior serial collections.",
+    "Two cases hit the unchanged recovery guard after five distinct record visits, before long retention or changed-source correction could be validated.",
+    "No live duplicate-key or stale-correction rejection occurred; rejection behavior is covered offline.",
+    "Corrected-record text can still omit facts or be wrong; matching text is not semantic verification.",
+    "Source-linked token coverage is diagnostic only. The correction case never reached publication, so its old-code flag does not establish stale-fact use.",
+    "No runtime changes, retries, rejudgments, website benchmark, or consumed holdout exposure followed these outcomes."
+  ]
+}
