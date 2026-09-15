@@ -1,5 +1,11 @@
 # Evaluation and anti-overfitting protocol
 
+**Current status:** the holdout was consumed once on September 15, 2026 by frozen
+candidate `09e24b0`. Recorded result: 9/12 passes, three failures, no replacements
+or rejudging. See [results, evidence, and judging caveats](reports/2026-09-15-holdout.md).
+Do not treat another run of this suite as a fresh holdout. No behavior changes
+were made after seeing its outcomes.
+
 ## Partitions
 
 `baseline.json` (12 hard tasks), `smoke.json` (20 legacy tasks), and
