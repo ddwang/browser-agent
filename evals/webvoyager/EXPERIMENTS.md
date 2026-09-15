@@ -181,3 +181,14 @@ Offline verification of the notebook candidate: 309 tests passed, zero failed
 five packages built. The existing circular-dependency, external-type placement,
 and empty CLI/MCP chunk warnings remain. No live notebook outcome is implied by
 these checks.
+
+The frozen notebook candidate `a768d2d` then completed the full Luna development
+rerun: **9/12**, unchanged from the previous Luna score. Actions fell 351 → 327,
+but total estimated cost rose $0.83789 → $1.10220 and wall time rose 37.0 → 38.2
+minutes. One prior budget failure now passes; the set comparison and milestone
+audit remain unsuccessful; a Chrome-launch error replaces a prior passing task.
+All 28 note writes succeeded, but incomplete notes still caused lost facts and
+repeated checks. The random 25-record local check also failed after omitted notes.
+See the [complete comparison, failure analysis, and judge qualifications](reports/2026-09-15-luna-notebook.md).
+No candidate tuning, selective reruns, or rejudgments followed these results. The
+consumed holdout remains untouched; this is not a general performance win.

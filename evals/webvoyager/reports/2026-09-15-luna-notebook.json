@@ -1,0 +1,509 @@
+{
+  "kind": "complete-development-comparison",
+  "selectiveRetries": 0,
+  "rejudgments": 0,
+  "holdoutReused": false,
+  "benchmarkExitCode": 1,
+  "sameTasks": true,
+  "before": {
+    "run": "evals/webvoyager/results/2026-09-15T13-35-55.369Z",
+    "revision": "5d0f08fbdb3ed7e166b54714602d2066ebab426a",
+    "sourceHash": "5aeadbf83fcd86eeeb2e3c1ca037db14b1c2136061fd7fb77762dea67a60826c",
+    "dirtyAtLaunch": false,
+    "configuration": {
+      "actor": {
+        "provider": "openai",
+        "model": "gpt-5.6-luna",
+        "reasoningEffort": "medium"
+      },
+      "judge": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-5",
+        "temperature": 1
+      },
+      "judgeVersion": 2,
+      "workers": 1,
+      "timeoutMs": 1200000,
+      "judgeTimeoutMs": 300000,
+      "limits": {
+        "maxActions": 100,
+        "maxJudgeBytes": 25165824
+      }
+    },
+    "summary": {
+      "selected": 12,
+      "attempted": 12,
+      "counts": {
+        "success": 9,
+        "failure": 2,
+        "timeout": 0,
+        "error": 0,
+        "blocked": 1,
+        "running": 0,
+        "interrupted": 0,
+        "judge_error": 0,
+        "unscored": 0,
+        "pending": 0
+      },
+      "successRate": 0.75,
+      "medianTimeMs": 82712,
+      "p95TimeMs": 707385,
+      "averageActions": 29.25,
+      "inputTokens": 1354803,
+      "outputTokens": 57016,
+      "cachedInputTokens": 28672,
+      "estimatedActorCost": 0.33995323999999993,
+      "estimatedJudgeCost": 0.49793350000000003
+    },
+    "totals": {
+      "actions": 351,
+      "actorCalls": 259,
+      "judgeCalls": 9,
+      "cost": 0.83788674,
+      "actorTimeMs": 2076955,
+      "judgeTimeMs": 128165,
+      "wallTimeMs": 2218980.6743164062
+    }
+  },
+  "after": {
+    "run": "evals/webvoyager/results/2026-09-15T14-32-12.819Z",
+    "revision": "a768d2dd6f7d8b604aa0ef224b8e0add7157615b",
+    "sourceHash": "75d6f9f2c2ebe437de831b2855887afae684b2efa0f54f9175b72feaf65c2635",
+    "dirtyAtLaunch": false,
+    "configuration": {
+      "actor": {
+        "provider": "openai",
+        "model": "gpt-5.6-luna",
+        "reasoningEffort": "medium"
+      },
+      "judge": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-5",
+        "temperature": 1
+      },
+      "judgeVersion": 2,
+      "workers": 1,
+      "timeoutMs": 1200000,
+      "judgeTimeoutMs": 300000,
+      "limits": {
+        "maxActions": 100,
+        "maxJudgeBytes": 25165824
+      }
+    },
+    "summary": {
+      "selected": 12,
+      "attempted": 12,
+      "counts": {
+        "success": 9,
+        "failure": 2,
+        "timeout": 0,
+        "error": 1,
+        "blocked": 0,
+        "running": 0,
+        "interrupted": 0,
+        "judge_error": 0,
+        "unscored": 0,
+        "pending": 0
+      },
+      "successRate": 0.75,
+      "medianTimeMs": 111068,
+      "p95TimeMs": 503553,
+      "averageActions": 27.25,
+      "inputTokens": 1266824,
+      "outputTokens": 51599,
+      "cachedInputTokens": 29696,
+      "estimatedActorCost": 0.31587752,
+      "estimatedJudgeCost": 0.7863255
+    },
+    "totals": {
+      "actions": 327,
+      "actorCalls": 209,
+      "judgeCalls": 10,
+      "cost": 1.1022030200000001,
+      "actorTimeMs": 2116384,
+      "judgeTimeMs": 162172,
+      "wallTimeMs": 2293468.6286621094
+    },
+    "sourceHashVerifiedAfterRun": true,
+    "cleanAfterRun": true
+  },
+  "tasks": [
+    {
+      "id": "ArXiv Hard--0",
+      "before": {
+        "outcome": "failure",
+        "actions": 100,
+        "actorCalls": 38,
+        "judgeCalls": 0,
+        "noteActions": 0,
+        "retainedNotes": 0,
+        "noteErrors": 0,
+        "actorTimeMs": 464535,
+        "judgeTimeMs": 0,
+        "actorCost": 0.0549798,
+        "judgeCost": 0,
+        "memoryBytes": 21620067,
+        "error": "Task did not finish within 100 actions"
+      },
+      "after": {
+        "outcome": "success",
+        "actions": 20,
+        "actorCalls": 10,
+        "judgeCalls": 1,
+        "noteActions": 3,
+        "retainedNotes": 3,
+        "noteErrors": 0,
+        "actorTimeMs": 111068,
+        "judgeTimeMs": 22253,
+        "actorCost": 0.014167840000000001,
+        "judgeCost": 0.080839,
+        "memoryBytes": 3810054
+      }
+    },
+    {
+      "id": "ArXiv Hard--1",
+      "before": {
+        "outcome": "blocked",
+        "actions": 30,
+        "actorCalls": 23,
+        "judgeCalls": 0,
+        "noteActions": 0,
+        "retainedNotes": 0,
+        "noteErrors": 0,
+        "actorTimeMs": 231106,
+        "judgeTimeMs": 0,
+        "actorCost": 0.0292224,
+        "judgeCost": 0,
+        "memoryBytes": 8649659,
+        "error": "Browser blocked (no_progress): The browser has only directly exposed the complete Title set and one paper page. The Abstract set was described in prior notes but its complete IDs are not present in the current observable state, and repeated Title/Abstract navigation has already produced repeated page states. Therefore the intersection, Title-only IDs, Abstract-only IDs, and required exclusive-paper source URLs cannot be established from current browser evidence without guessing."
+      },
+      "after": {
+        "outcome": "failure",
+        "actions": 53,
+        "actorCalls": 31,
+        "judgeCalls": 1,
+        "noteActions": 2,
+        "retainedNotes": 2,
+        "noteErrors": 0,
+        "actorTimeMs": 416773,
+        "judgeTimeMs": 41394,
+        "actorCost": 0.052277000000000004,
+        "judgeCost": 0.1927895,
+        "memoryBytes": 15621448
+      }
+    },
+    {
+      "id": "ArXiv Hard--2",
+      "before": {
+        "outcome": "success",
+        "actions": 15,
+        "actorCalls": 15,
+        "judgeCalls": 1,
+        "noteActions": 0,
+        "retainedNotes": 0,
+        "noteErrors": 0,
+        "actorTimeMs": 86657,
+        "judgeTimeMs": 18323,
+        "actorCost": 0.01704428,
+        "judgeCost": 0.065379,
+        "memoryBytes": 5427918
+      },
+      "after": {
+        "outcome": "success",
+        "actions": 16,
+        "actorCalls": 12,
+        "judgeCalls": 1,
+        "noteActions": 3,
+        "retainedNotes": 2,
+        "noteErrors": 0,
+        "actorTimeMs": 174421,
+        "judgeTimeMs": 13332,
+        "actorCost": 0.015585640000000001,
+        "judgeCost": 0.060291000000000004,
+        "memoryBytes": 4338693
+      }
+    },
+    {
+      "id": "ArXiv Hard--3",
+      "before": {
+        "outcome": "success",
+        "actions": 5,
+        "actorCalls": 5,
+        "judgeCalls": 1,
+        "noteActions": 0,
+        "retainedNotes": 0,
+        "noteErrors": 0,
+        "actorTimeMs": 23708,
+        "judgeTimeMs": 7189,
+        "actorCost": 0.00470468,
+        "judgeCost": 0.026646500000000004,
+        "memoryBytes": 1931825
+      },
+      "after": {
+        "outcome": "success",
+        "actions": 7,
+        "actorCalls": 5,
+        "judgeCalls": 1,
+        "noteActions": 2,
+        "retainedNotes": 2,
+        "noteErrors": 0,
+        "actorTimeMs": 32695,
+        "judgeTimeMs": 9864,
+        "actorCost": 0.00623244,
+        "judgeCost": 0.030598000000000004,
+        "memoryBytes": 1927149
+      }
+    },
+    {
+      "id": "Huggingface Hard--0",
+      "before": {
+        "outcome": "success",
+        "actions": 28,
+        "actorCalls": 22,
+        "judgeCalls": 1,
+        "noteActions": 0,
+        "retainedNotes": 0,
+        "noteErrors": 0,
+        "actorTimeMs": 147006,
+        "judgeTimeMs": 22821,
+        "actorCost": 0.02696288,
+        "judgeCost": 0.10111400000000001,
+        "memoryBytes": 8025215
+      },
+      "after": {
+        "outcome": "success",
+        "actions": 50,
+        "actorCalls": 28,
+        "judgeCalls": 1,
+        "noteActions": 3,
+        "retainedNotes": 1,
+        "noteErrors": 0,
+        "actorTimeMs": 237215,
+        "judgeTimeMs": 20859,
+        "actorCost": 0.042536279999999996,
+        "judgeCost": 0.11972600000000001,
+        "memoryBytes": 8153844
+      }
+    },
+    {
+      "id": "Huggingface Hard--1",
+      "before": {
+        "outcome": "success",
+        "actions": 15,
+        "actorCalls": 15,
+        "judgeCalls": 1,
+        "noteActions": 0,
+        "retainedNotes": 0,
+        "noteErrors": 0,
+        "actorTimeMs": 82712,
+        "judgeTimeMs": 8770,
+        "actorCost": 0.01663484,
+        "judgeCost": 0.0540265,
+        "memoryBytes": 4538992
+      },
+      "after": {
+        "outcome": "success",
+        "actions": 46,
+        "actorCalls": 41,
+        "judgeCalls": 1,
+        "noteActions": 3,
+        "retainedNotes": 3,
+        "noteErrors": 0,
+        "actorTimeMs": 259787,
+        "judgeTimeMs": 12847,
+        "actorCost": 0.0636462,
+        "judgeCost": 0.153609,
+        "memoryBytes": 12904281
+      }
+    },
+    {
+      "id": "Huggingface Hard--2",
+      "before": {
+        "outcome": "success",
+        "actions": 8,
+        "actorCalls": 8,
+        "judgeCalls": 1,
+        "noteActions": 0,
+        "retainedNotes": 0,
+        "noteErrors": 0,
+        "actorTimeMs": 53508,
+        "judgeTimeMs": 13434,
+        "actorCost": 0.00825268,
+        "judgeCost": 0.03750150000000001,
+        "memoryBytes": 2373546
+      },
+      "after": {
+        "outcome": "error",
+        "actions": 0,
+        "actorCalls": 0,
+        "judgeCalls": 0,
+        "noteActions": 0,
+        "retainedNotes": 0,
+        "noteErrors": 0,
+        "actorTimeMs": 180098,
+        "judgeTimeMs": 0,
+        "actorCost": 0,
+        "judgeCost": 0,
+        "memoryBytes": 0,
+        "error": "persistentContext: Timeout 180000ms exceeded."
+      }
+    },
+    {
+      "id": "Huggingface Hard--3",
+      "before": {
+        "outcome": "success",
+        "actions": 5,
+        "actorCalls": 5,
+        "judgeCalls": 1,
+        "noteActions": 0,
+        "retainedNotes": 0,
+        "noteErrors": 0,
+        "actorTimeMs": 32662,
+        "judgeTimeMs": 26754,
+        "actorCost": 0.00474308,
+        "judgeCost": 0.045399,
+        "memoryBytes": 1698501
+      },
+      "after": {
+        "outcome": "success",
+        "actions": 9,
+        "actorCalls": 7,
+        "judgeCalls": 1,
+        "noteActions": 2,
+        "retainedNotes": 2,
+        "noteErrors": 0,
+        "actorTimeMs": 58117,
+        "judgeTimeMs": 12853,
+        "actorCost": 0.00802804,
+        "judgeCost": 0.038351,
+        "memoryBytes": 2230842
+      }
+    },
+    {
+      "id": "GitHub Hard--0",
+      "before": {
+        "outcome": "success",
+        "actions": 7,
+        "actorCalls": 7,
+        "judgeCalls": 1,
+        "noteActions": 0,
+        "retainedNotes": 0,
+        "noteErrors": 0,
+        "actorTimeMs": 46536,
+        "judgeTimeMs": 9051,
+        "actorCost": 0.00667468,
+        "judgeCost": 0.031429000000000006,
+        "memoryBytes": 2320175
+      },
+      "after": {
+        "outcome": "success",
+        "actions": 10,
+        "actorCalls": 7,
+        "judgeCalls": 1,
+        "noteActions": 3,
+        "retainedNotes": 3,
+        "noteErrors": 0,
+        "actorTimeMs": 49482,
+        "judgeTimeMs": 7586,
+        "actorCost": 0.008144440000000001,
+        "judgeCost": 0.03664400000000001,
+        "memoryBytes": 2321535
+      }
+    },
+    {
+      "id": "GitHub Hard--1",
+      "before": {
+        "outcome": "success",
+        "actions": 12,
+        "actorCalls": 12,
+        "judgeCalls": 1,
+        "noteActions": 0,
+        "retainedNotes": 0,
+        "noteErrors": 0,
+        "actorTimeMs": 70923,
+        "judgeTimeMs": 5998,
+        "actorCost": 0.01296684,
+        "judgeCost": 0.043529,
+        "memoryBytes": 3743429
+      },
+      "after": {
+        "outcome": "success",
+        "actions": 10,
+        "actorCalls": 8,
+        "judgeCalls": 1,
+        "noteActions": 2,
+        "retainedNotes": 2,
+        "noteErrors": 0,
+        "actorTimeMs": 54695,
+        "judgeTimeMs": 9648,
+        "actorCost": 0.00906228,
+        "judgeCost": 0.038108500000000003,
+        "memoryBytes": 2482813
+      }
+    },
+    {
+      "id": "GitHub Hard--2",
+      "before": {
+        "outcome": "failure",
+        "actions": 100,
+        "actorCalls": 90,
+        "judgeCalls": 0,
+        "noteActions": 0,
+        "retainedNotes": 0,
+        "noteErrors": 0,
+        "actorTimeMs": 707385,
+        "judgeTimeMs": 0,
+        "actorCost": 0.13532923999999993,
+        "judgeCost": 0,
+        "memoryBytes": 26013846,
+        "error": "Task did not finish within 100 actions"
+      },
+      "after": {
+        "outcome": "failure",
+        "actions": 100,
+        "actorCalls": 55,
+        "judgeCalls": 0,
+        "noteActions": 4,
+        "retainedNotes": 4,
+        "noteErrors": 0,
+        "actorTimeMs": 503553,
+        "judgeTimeMs": 0,
+        "actorCost": 0.09073988000000002,
+        "judgeCost": 0,
+        "memoryBytes": 25691213,
+        "error": "Task did not finish within 100 actions"
+      }
+    },
+    {
+      "id": "GitHub Hard--3",
+      "before": {
+        "outcome": "success",
+        "actions": 26,
+        "actorCalls": 19,
+        "judgeCalls": 1,
+        "noteActions": 0,
+        "retainedNotes": 0,
+        "noteErrors": 0,
+        "actorTimeMs": 130217,
+        "judgeTimeMs": 15825,
+        "actorCost": 0.02243784,
+        "judgeCost": 0.09290900000000002,
+        "memoryBytes": 6926177
+      },
+      "after": {
+        "outcome": "success",
+        "actions": 6,
+        "actorCalls": 5,
+        "judgeCalls": 1,
+        "noteActions": 1,
+        "retainedNotes": 1,
+        "noteErrors": 0,
+        "actorTimeMs": 38480,
+        "judgeTimeMs": 11536,
+        "actorCost": 0.005457480000000001,
+        "judgeCost": 0.0353695,
+        "memoryBytes": 1720010
+      }
+    }
+  ]
+}
