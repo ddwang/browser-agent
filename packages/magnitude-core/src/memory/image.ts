@@ -44,22 +44,15 @@ export class Image {
      * Convert the image to a JSON representation
      */
     async toJson(): Promise<StoredMedia> {
-        // if (this.type === 'url') {
-        //     return {
-        //         type: 'media',
-        //         mediaType: this.mediaType,//`image/${this.mediaType}`,
-        //         storageType: 'url',
-        //         url: this.content
-        //     };
-        // } else {
+        // Source metadata can describe raw input or a pre-conversion format.
+        // Use the format of the bytes emitted by the Sharp pipeline.
+        const { data, info } = await this.img.clone().toBuffer({ resolveWithObject: true });
         return {
             type: 'media',
-            //mediaType: this.mediaType,//`image/${this.mediaType}`,
-            format: await this.getFormat(),
+            format: info.format,
             storage: 'base64',
-            base64: await this.toBase64()//this.content
+            base64: data.toString('base64')
         };
-        //}
     }
 
     async toBase64(): Promise<string> {
@@ -70,18 +63,8 @@ export class Image {
     }
 
     async toBaml(): Promise<BamlImage> {
-        // if (this.type === 'url') {
-        //     return BamlImage.fromUrl(this.content, this.mediaType);
-        // }
-        // else {//if (this.type === 'base64') {
-        //     return BamlImage.fromBase64(this.mediaType, this.content);
-        // }
-        const format = await this.getFormat();
-        const data = await this.toBase64();
-        //console.log("FORMAT:", format);
-        //console.log("DATA:", data.substring(0, 100));
-        return BamlImage.fromBase64(`image/${format}`, data);
-
+        const { format, base64 } = await this.toJson();
+        return BamlImage.fromBase64(`image/${format}`, base64);
     }
 
     async saveToFile(filepath: string): Promise<void> {

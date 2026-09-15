@@ -92,3 +92,10 @@ The recovery, serializer, and CLI issues were identified by code inspection befo
 holdout exposure. None justifies adding browser-task answers or site-specific agent
 behavior. Commit a clean candidate after independent verification, then use the
 complete holdout once. Keep this development checkpoint distinct from that candidate.
+
+The nested-memory repair passed seven new synthetic tests, including 64 varied
+object cases, own-property safety, media, checkpoint round trips, and deduplication.
+Its media test also reproduced a format-label mismatch for converted images. Saved
+images and model payloads now use the format of the emitted bytes, verified with
+PNG/JPEG requests through the real model client to a loopback provider. This adds no
+browser-task instructions and does not explain the separate runner-status error.

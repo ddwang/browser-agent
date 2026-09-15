@@ -8,6 +8,7 @@ import { Image } from '../../../packages/magnitude-core/src/memory/image';
 import type { ModelUsage } from '../../../packages/magnitude-core/src/ai/types';
 import { PlannerResponseError } from '../../../packages/magnitude-core/src/ai/plannerResponse';
 import { ModelResponseError } from '../../../packages/magnitude-core/src/ai/modelResponseError';
+import sharp from 'sharp';
 
 // Exercise the actual BAML parser and collector without external model calls.
 const plan = { reasoning: 'Click the visible button.', actions: [{ variant: 'click', x: 12 }] };
@@ -49,6 +50,18 @@ async function fixture(sequence: Reply[], providerRetry = false) {
 }
 
 try {
+    {
+        const { harness } = await fixture([{ text: '{"answer":true}' }, { text: '{"answer":true}' }]);
+        const png = await sharp({ create: { width: 2, height: 3, channels: 3, background: '#123456' } }).png().toBuffer();
+        for (const format of ['png', 'jpeg'] as const) {
+            const screenshot = new Image(sharp(png).toFormat(format));
+            assert.deepEqual(await harness.extract('Answer?', z.object({ answer: z.boolean() }), screenshot, '<p>Fixture</p>'), { answer: true });
+            const image = requests.at(-1).messages.flatMap((message: any) => message.content).find((part: any) => part.type === 'image');
+            assert.equal(image.source.media_type, `image/${format}`);
+            assert.equal((await sharp(Buffer.from(image.source.data, 'base64')).metadata()).format, format);
+        }
+        console.log('PASS: model image media type matches the emitted bytes after conversion');
+    }
     {
         const { act, usage } = await fixture([{ text: valid }]);
         assert.deepEqual(await act(), plan);

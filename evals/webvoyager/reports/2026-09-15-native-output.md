@@ -78,7 +78,7 @@ Complete first-attempt development run, with no mid-run code/configuration chang
 | GitHub Hard--3 | Pass | 12 | 12 |
 
 Totals: **6/12 passes (50%)**, five judged failures, one runner error, 362 actions,
-287 actor calls, and 11 judge calls. Every actor call corresponds to a recorded
+289 actor calls, and 11 judge calls. Every actor call corresponds to a recorded
 plan: no extra format retries or malformed plans. No judge-format errors, recorded
 HTTP 429s, timeouts, access-block outcomes, or budget failures occurred. Background
 401/404 responses were recorded; those are not proof of a page rate limit.
