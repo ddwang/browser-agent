@@ -185,6 +185,27 @@ test('a blocked custom task remains in each relevant capability denominator', as
     }
 });
 
+test('resume permits a saved task subset but rejects any task missing from the manifest', async () => {
+    const runDir = join(directory, 'resume-membership');
+    const suite = join(directory, 'resume-suite.json');
+    const tasks = [0, 1, 2].map(index => ({
+        id: `Synthetic--${index}`, web_name: 'Synthetic', web: 'https://example.com', ques: `Read fixture ${index}.`,
+    }));
+    writeJson(suite, { tasks });
+    const options = ['--suite', suite, '--run-dir', runDir];
+    expect((await cli(['run', ...options])).code).toBe(0);
+    const manifestPath = join(runDir, 'manifest.json');
+    const before = readFileSync(manifestPath, 'utf8');
+    const subset = await cli(['run', tasks[1].id, ...options]);
+    expect(subset.code).toBe(0);
+    expect(subset.stdout).toContain('No tasks to run');
+    writeJson(suite, { tasks: [...tasks, { ...tasks[0], id: 'Synthetic--3' }] });
+    const missing = await cli(['run', ...options]);
+    expect(missing.code).toBe(1);
+    expect(missing.stderr).toContain('Tasks differ from the saved run');
+    expect(readFileSync(manifestPath, 'utf8')).toBe(before);
+});
+
 test('resume rejects changed criteria even when task IDs and source hash match', async () => {
     const runDir = join(directory, 'changed-criteria');
     const args = ['run', 'ArXiv Hard--0', '--suite', join(import.meta.dir, 'baseline.json'), '--run-dir', runDir];

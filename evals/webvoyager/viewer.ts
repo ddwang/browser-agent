@@ -2,7 +2,7 @@ import { readdir, readFile } from "fs/promises";
 import { join, resolve } from "path";
 import * as readline from "readline";
 import * as fs from "fs";
-import { outcome, type Task, type Evaluation } from './results';
+import { isTaskResultFile, outcome, type Task, type Evaluation } from './results';
 
 const port = 8000;
 const resultsDir = resolve(process.argv[2] || join(import.meta.dir, 'results'));
@@ -76,7 +76,7 @@ async function getTasksList(): Promise<Response> {
   try {
     const files = await readdir(resultsDir);
     const tasks = files
-      .filter(file => file.endsWith(".json") && !file.endsWith(".eval.json") && !file.endsWith('.status.json') && file !== 'manifest.json' && file !== 'summary.json')
+      .filter(isTaskResultFile)
       .map(file => file.slice(0, -5)) // Remove .json extension
       .sort();
     
@@ -96,7 +96,7 @@ async function getTasksSummary(): Promise<Response> {
     const files = await readdir(resultsDir);
     const manifestPath = join(resultsDir, 'manifest.json');
     const manifest = fs.existsSync(manifestPath) ? JSON.parse(await readFile(manifestPath, 'utf8')) : null;
-    const taskFiles: string[] = manifest ? manifest.tasks.map((task: Task) => `${task.id}.json`) : files.filter(file => file.endsWith(".json") && !file.endsWith(".eval.json") && !file.endsWith('.status.json') && file !== 'manifest.json' && file !== 'summary.json');
+    const taskFiles: string[] = manifest ? manifest.tasks.map((task: Task) => `${task.id}.json`) : files.filter(isTaskResultFile);
     
     const categorizedTasks: Record<string, Array<{
       id: string;

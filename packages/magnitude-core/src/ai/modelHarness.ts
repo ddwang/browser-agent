@@ -2,7 +2,6 @@ import { convertToBamlClientOptions } from "./util";
 // Import ModularMemoryContext instead of old MemoryContext
 import { b, AgentContext } from "@/ai/baml_client"; 
 import { Image as BamlImage, Collector, ClientRegistry, BamlValidationError, type FunctionLog } from "@boundaryml/baml";
-import { Action, ActionIntent, Intent } from "@/actions/types";
 import { TestStepDefinition } from "@/types";
 import { BamlAsyncClient } from "./baml_client/async_client";
 import logger from "@/logger";
@@ -314,11 +313,7 @@ export class ModelHarness {
             { tb, collector, clientRegistry }
         ));
 
-        if (schema instanceof z.ZodObject) {
-            return schema.parse(resp);
-        } else {
-            return schema.parse(resp.data);
-        }
+        return schema.parse(schema instanceof z.ZodObject ? resp : resp.data);
     }
     // ^ extract could prob be a subset of query w trimmed mem
 
@@ -343,11 +338,7 @@ export class ModelHarness {
             { tb, collector, clientRegistry }
         ));
         
-        if (schema instanceof z.ZodObject) {
-            return schema.parse(resp);
-        } else {
-            return schema.parse(resp.data);
-        }
+        return schema.parse(schema instanceof z.ZodObject ? resp : resp.data);
     }
 
     // async classifyCheckFailure(screenshot: Image, check: string, existingRecipe: Action[], tabState: TabState): Promise<BugDetectedFailure | MisalignmentFailure> {

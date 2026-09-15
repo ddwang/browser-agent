@@ -64,6 +64,22 @@ try {
         console.log('PASS: model image media type matches the emitted bytes after conversion');
     }
     {
+        const screenshot = new Image(sharp({ create: { width: 2, height: 3, channels: 3, background: '#123456' } }).png());
+        for (const { schema, data, expected } of [
+            { schema: z.string(), data: 'observed', expected: 'observed' },
+            { schema: z.array(z.number()), data: [1, 2], expected: [1, 2] },
+            { schema: z.string().transform(value => `${value}!`), data: 'observed', expected: 'observed!' },
+            { schema: z.object({ answer: z.boolean() }).transform(value => value.answer), data: { answer: true }, expected: true },
+        ]) {
+            const reply = { text: JSON.stringify({ data }) };
+            const { harness, usage } = await fixture([reply, reply]);
+            assert.deepEqual(await harness.query(context, 'Read the value.', schema), expected);
+            assert.deepEqual(await harness.extract('Read the value.', schema, screenshot, '<p>Fixture</p>'), expected);
+            assert.equal(usage.length, 2);
+        }
+        console.log('PASS: query and extraction unwrap primitive, array and transformed schemas exactly once');
+    }
+    {
         const { act, usage } = await fixture([{ text: valid }]);
         assert.deepEqual(await act(), plan);
         assert.equal(requests.length, 1);

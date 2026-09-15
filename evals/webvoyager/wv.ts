@@ -239,7 +239,8 @@ program.command('run [input]')
             if (JSON.stringify(previous.actor) !== JSON.stringify(actor) || JSON.stringify(previous.judge) !== JSON.stringify(judge) || previous.workers !== manifest.workers || previous.timeoutMs !== manifest.timeoutMs || previous.judgeTimeoutMs !== manifest.judgeTimeoutMs || previous.sourceHash !== manifest.sourceHash || JSON.stringify(previous.limits ?? DEFAULT_LIMITS) !== JSON.stringify(manifest.limits)) {
                 throw new Error('Run configuration differs from its manifest. Use a new --run-dir.');
             }
-            if (tasks.some(task => !previous.tasks.some(saved => JSON.stringify(saved) === JSON.stringify(task)))) throw new Error('Tasks differ from the saved run. Use a new --run-dir.');
+            const savedTasks = new Set(previous.tasks.map(task => JSON.stringify(task)));
+            if (tasks.some(task => !savedTasks.has(JSON.stringify(task)))) throw new Error('Tasks differ from the saved run. Use a new --run-dir.');
             manifest = previous;
         }
         const records = loadRecords(runDir, manifest);

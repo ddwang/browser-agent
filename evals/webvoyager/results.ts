@@ -3,6 +3,11 @@ import type { SerializedAgentMemory } from '../../packages/magnitude-core/src/me
 import { renameSync, writeFileSync } from 'node:fs';
 import type { BrowserBlock, HttpDiagnostic } from '../../packages/magnitude-core/src/web/recovery';
 
+export function isTaskResultFile(file: string): boolean {
+    return file.endsWith('.json') && !file.endsWith('.eval.json') && !file.endsWith('.status.json')
+        && file !== 'manifest.json' && file !== 'summary.json';
+}
+
 // Readers can inspect a run while a worker saves a large screenshot history.
 export function writeJson(filename: string, data: unknown) {
     const temporary = `${filename}.tmp-${process.pid}`;

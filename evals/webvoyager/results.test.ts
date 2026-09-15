@@ -1,11 +1,19 @@
 import { describe, expect, test } from 'bun:test';
-import { addUsage, emptyUsage, outcome, summarize, type Evaluation, type TaskRecord, type TaskResult } from './results';
+import { addUsage, emptyUsage, isTaskResultFile, outcome, summarize, type Evaluation, type TaskRecord, type TaskResult } from './results';
 
 const task = { id: 'test--0', web_name: 'test', ques: 'Read the page', web: 'https://example.com' };
 const run = (overrides: Partial<TaskResult> = {}): TaskResult => ({
     ...emptyUsage(), status: 'completed', time: 1000, actionCount: 2, memory: null, ...overrides,
 });
 const evaluation = (result: Evaluation['result']): Evaluation => ({ result, time: 500, usage: emptyUsage() });
+
+test('result-file filtering excludes sidecars while preserving legacy filenames', () => {
+    expect([
+        'Example--0.json', 'Example--0.eval.json', 'Example--0.status.json',
+        'manifest.json', 'summary.json', 'Example--0.json.tmp-123',
+        'legacy.json', '.json', 'Example--0.JSON', 'readme.txt',
+    ].filter(isTaskResultFile)).toEqual(['Example--0.json', 'legacy.json', '.json']);
+});
 
 describe('evaluation metrics', () => {
     test('tracks output cost separately and preserves cached token counts', () => {
