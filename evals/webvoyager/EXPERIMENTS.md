@@ -304,3 +304,15 @@ builds passed. Three new unit checks reproduced old-history false positives befo
 the fix. The expanded browser suite exceeded its previous 90-second wrapper limit;
 only that offline timeout was extended to 180 seconds (the passing suite took
 96.7 seconds). Live task deadlines and recovery/action budgets are unchanged.
+
+Frozen candidate `14b82ef` completed all four local attempts: 3 passed, one had a
+runner-finalization error, and none produced a recovery warning or stop. Every
+required page was visited, and the six-entry correction group completed its
+changed-source check. The 22-record case retained all records but propagated three
+label errors and one code error into its answer. It remains an unjudged runner
+error, not a rescued pass. Two duplicate adds were safely rejected; both explicit
+corrections succeeded. Total estimated cost was $0.40952. See the
+[complete productive-return report](reports/2026-09-15-productive-return-recovery.md).
+No runtime changes, selective reruns, rejudgments, website benchmark, or consumed
+holdout runs followed. Investigate finalization reliability independently before
+another benchmark; transcription remains a separate limitation.
