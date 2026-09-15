@@ -218,3 +218,13 @@ workflow families (for example, nested catalogs with cross-page dependencies) fo
 a later frozen evaluation; do not call random values in a known template a fresh
 held-out test. Do not reuse the consumed website holdout or selectively rerun the
 website benchmark to select favorable outcomes.
+
+The frozen candidate `f65ab2f` completed all four local attempts: 3 passed and the
+28-record collection blocked. Exact source-linked capture before departure reached
+27/28 in the long task, but same-key replacements removed entries 1–12; one later
+code was also miscopied. All 55 note writes succeeded. The correction workflow
+passed, while the short control added two note actions. Total estimated cost was
+$0.18607. Required review improves capture discipline in these attempts but does
+not solve durable retention or transcription. See the [complete report and next
+experiment](reports/2026-09-15-required-memory-review.md). No runtime tuning,
+selective retries, rejudgments, or website/holdout reruns followed these outcomes.
