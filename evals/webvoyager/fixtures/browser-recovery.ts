@@ -9,7 +9,7 @@ import { createAction } from '../../../packages/magnitude-core/src/actions';
 // Real browser interactions against loopback fixtures; no websites or model calls.
 let browser: Browser;
 const cases: { name: string; check: () => Promise<void> }[] = [];
-function test(name: string, check: () => Promise<void>, _timeout?: number) { cases.push({ name, check }); }
+function test(name: string, check: () => Promise<void>) { cases.push({ name, check }); }
 let cooldownRequests = 0;
 const root = `/${crypto.randomUUID()}`;
 const corridor = `/${crypto.randomUUID()}`;
@@ -84,7 +84,7 @@ test('cooldown exposes its deadline and a successful retry clears the site barri
         assert.equal(connector.network.at(-1)?.status, 200);
         assert.equal(connector.recovery.waitUntil, undefined);
     } finally { await connector.onStop(); }
-}, 15_000);
+});
 
 test('Escape dismisses a native dialog through the exposed agent action', async () => {
     const { connector, agent, page } = await fixture('/dialog');
@@ -122,7 +122,7 @@ test('repeated unsuccessful clicks warn before the real agent stops', async () =
         assert.ok((await agent.memory.toJSON()).notes?.length, 'notes remain available during a browser no-progress stop');
         await assert.rejects(agent.exec({ variant: 'mouse:click', x: 70, y: 85 }, agent.memory), BrowserBlockedError);
     } finally { await connector.onStop(); }
-}, 20_000);
+});
 
 test('productive record visits can reuse a directory and a shared return corridor', async () => {
     const { connector, agent, page } = await fixture(root);

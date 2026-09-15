@@ -115,13 +115,13 @@ export class AgentMemory {
     public async simpleRender(): Promise<(BamlImage | string)[]> {
         // Render with no filtering, no masking, no cache control
         //let messages: MultiMediaMessage[] = [];
-        let content: (BamlImage | string)[] = [];
+        const content: (BamlImage | string)[] = [];
         for (const [index, observation] of this.observations.entries()) {
             const message = await observation.render({
                 prefix: this.observationPrefix(observation, index),
             });
             // ignore message stuff, just push content
-            content = [...content, ...message.content];
+            for (const part of message.content) content.push(part);
         }
         const notes = this.notebook.render();
         if (notes) content.push(notes);
