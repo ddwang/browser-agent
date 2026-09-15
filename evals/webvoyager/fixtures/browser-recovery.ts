@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chromium, type Browser } from 'patchright';
+import { chromium, type Browser, type Page } from 'patchright';
 import { Agent } from '../../../packages/magnitude-core/src/agent';
 import { BrowserConnector } from '../../../packages/magnitude-core/src/connectors/browserConnector';
 import { BrowserBlockedError } from '../../../packages/magnitude-core/src/web/recovery';
@@ -11,8 +11,22 @@ let browser: Browser;
 const cases: { name: string; check: () => Promise<void> }[] = [];
 function test(name: string, check: () => Promise<void>, _timeout?: number) { cases.push({ name, check }); }
 let cooldownRequests = 0;
+const root = `/${crypto.randomUUID()}`;
+const corridor = `/${crypto.randomUUID()}`;
+const exit = `/${crypto.randomUUID()}`;
+const leaves = Array.from({ length: 9 }, () => `/${crypto.randomUUID()}`);
+const cycle = Array.from({ length: 2 }, () => `/${crypto.randomUUID()}`);
+const link = (path: string, label: string) => `<a style="display:block;font:20px sans-serif;margin:8px" href="${path}">${label}</a>`;
+const graph = new Map([
+    [root, `<h1>Directory</h1>${leaves.map((path, i) => link(path, `Entry ${i}`)).join('')}${link(exit, 'Finish')}`],
+    [corridor, `<h1>Return route</h1>${link(root, 'Directory')}`],
+    [exit, '<h1>Finished</h1>'],
+    ...leaves.map((path, i): [string, string] => [path, `<h1>Record ${i}</h1>${link(corridor, 'Return')}`]),
+    ...cycle.map((path, i): [string, string] => [path, `<h1>Cycle ${i}</h1>${link(cycle[1 - i], 'Continue')}`]),
+]);
 const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch(request) {
     const path = new URL(request.url).pathname;
+    if (graph.has(path)) return new Response(graph.get(path), { headers: { 'content-type': 'text/html' } });
     if (path.startsWith('/scroll') || path === '/controls') {
         const horizontal = path === '/scroll-horizontal';
         const rows = Array.from({ length: 80 }, () => `<span style="display:${horizontal ? 'inline-block' : 'block'};width:180px;height:100px">${crypto.randomUUID()}</span>`).join('');
@@ -40,6 +54,13 @@ async function fixture(path: string, maxRateLimitWaitMs = 120_000) {
     const agent = new Agent({ connectors: [connector], telemetry: false, llm: { provider: 'anthropic', options: { model: 'fixture', apiKey: 'unused-no-model-calls' } } });
     await connector.collectObservations();
     return { connector, agent, page: connector.getHarness().page };
+}
+
+async function followLink(agent: Agent, page: Page, path: string) {
+    const box = await page.locator(`a[href="${path}"]`).boundingBox();
+    assert.ok(box, 'the next link must be visible');
+    await agent.exec({ variant: 'mouse:click', x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) }, agent.memory);
+    assert.equal(new URL(page.url()).pathname, path);
 }
 
 test('actual 429 headers produce a redacted diagnostic and an explicit blocked outcome', async () => {
@@ -102,6 +123,30 @@ test('repeated unsuccessful clicks warn before the real agent stops', async () =
         await assert.rejects(agent.exec({ variant: 'mouse:click', x: 70, y: 85 }, agent.memory), BrowserBlockedError);
     } finally { await connector.onStop(); }
 }, 20_000);
+
+test('productive record visits can reuse a directory and a shared return corridor', async () => {
+    const { connector, agent, page } = await fixture(root);
+    try {
+        for (const leaf of leaves) for (const path of [leaf, corridor, root]) {
+            await followLink(agent, page, path);
+            assert.equal(connector.recovery.warning, undefined);
+        }
+        await followLink(agent, page, exit);
+        assert.equal(connector.recovery.block, undefined);
+    } finally { await connector.onStop(); }
+});
+
+test('real navigation cycles still warn and stop with a no-progress outcome', async () => {
+    const { connector, agent, page } = await fixture(cycle[0]);
+    try {
+        await assert.rejects(async () => {
+            for (let step = 1; step <= cycle.length * connector.recovery.repeatedActionLimit + 1; step++) {
+                await followLink(agent, page, cycle[step % cycle.length]);
+            }
+        }, (error: unknown) => error instanceof BrowserBlockedError && error.block.reason === 'no_progress');
+        assert.ok(connector.recovery.warning);
+    } finally { await connector.onStop(); }
+});
 
 for (const horizontal of [false, true]) test(`nested ${horizontal ? 'horizontal' : 'vertical'} scroll progress is not a stall, but its endpoint is`, async () => {
     const { connector, agent, page } = await fixture(horizontal ? '/scroll-horizontal' : '/scroll-vertical');

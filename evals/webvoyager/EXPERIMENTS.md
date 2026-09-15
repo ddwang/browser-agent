@@ -270,3 +270,37 @@ See the [full guarded-update report](reports/2026-09-15-guarded-note-updates.md)
 No runtime tuning, selective retries, rejudgments, website benchmark, or consumed
 holdout runs followed these results. The next proposed change is a general fix for
 productive-return false positives, not a task-specific recovery threshold.
+
+### Productive-return recovery experiment
+
+The user approved fixing the general recovery false positive. Count repeated
+source/action/destination transitions, not destination/action occurrences alone.
+Clear repetition history when a page state outside the bounded recent-state cache
+appears, including after a deliberate wait. This lets productive exploration reuse
+shared navigation paths while still detecting unchanged actions and cycles through
+known states. Keep the existing warning/stop thresholds, bounded history, rate-limit
+handling, access barriers, and hard action budget. Fingerprints remain heuristic:
+novel states do not prove useful progress, and unrepresented visual changes can
+still look unchanged. The hard action budget remains the backstop.
+
+Before model calls, reproduce the bug with independent synthetic graph walks:
+multiple hubs, shared return paths, varied fan-out, no-op actions, multi-page cycles,
+passive observations, and task resets. Exercise productive returns and real cycles
+through the actual browser connector on loopback pages. Do not add site names,
+catalog-specific paths, record counts, task hints, or threshold exceptions to runtime.
+
+Freeze and commit the candidate after offline verification, then run the unchanged
+complete four-case `notebook-live.ts --live --catalog` workflow once with fresh
+random data. Keep Luna medium, Sonnet 5, prompts, criteria, generator distributions,
+100 actions, 24 MiB preflight, and deadlines unchanged. Preserve all four outcomes;
+report exact answers, note quality, visits, actions, calls, cost, and any remaining
+false stops. Do not tune or retry after results, rerun the website benchmark, or
+reuse the consumed holdout. This known workflow is development data, not a fresh
+holdout or a paired comparison using identical random inputs.
+
+Offline verification passed 321 tests with 4,403 assertions across 31 files,
+including all 16 real-browser fixture cases. Both type checks and all five package
+builds passed. Three new unit checks reproduced old-history false positives before
+the fix. The expanded browser suite exceeded its previous 90-second wrapper limit;
+only that offline timeout was extended to 180 seconds (the passing suite took
+96.7 seconds). Live task deadlines and recovery/action budgets are unchanged.

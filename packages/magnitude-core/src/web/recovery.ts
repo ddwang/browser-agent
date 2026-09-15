@@ -61,6 +61,7 @@ export class BrowserRecovery {
     private rateWaitMs = 0;
     private blockedActions = 0;
     private recent: string[] = [];
+    private recentStates = new Set<string>();
     private repetitions = 0;
     private lastFingerprint?: string;
     readonly maxRateLimitWaitMs: number;
@@ -81,17 +82,25 @@ export class BrowserRecovery {
         this.rateWaitMs = 0;
         this.blockedActions = 0;
         this.recent = [];
+        this.recentStates.clear();
         this.repetitions = 0;
         this.lastFingerprint = undefined;
     }
 
     observe(fingerprint: string, action: Action | undefined, block: BrowserBlock | undefined, now = Date.now()) {
+        const previousFingerprint = this.lastFingerprint ?? fingerprint;
         if (block?.reason !== this.block?.reason || fingerprint !== this.lastFingerprint) this.blockedActions = 0;
         if (fingerprint !== this.lastFingerprint || block) {
             this.warning = undefined;
             this.repetitions = 0;
         }
         this.lastFingerprint = fingerprint;
+        // New evidence breaks a loop, even when reaching it requires familiar paths.
+        // Keep a bounded LRU of states separate from the repetition history.
+        if (!this.recentStates.has(fingerprint) || block) this.recent = [];
+        this.recentStates.delete(fingerprint);
+        this.recentStates.add(fingerprint);
+        if (this.recentStates.size > 30) this.recentStates.delete(this.recentStates.values().next().value!);
         if (block?.reason === 'rate_limit') {
             block.retryAt ??= this.block?.reason === 'rate_limit' ? this.block.retryAt : now + 60_000;
         }
@@ -99,7 +108,9 @@ export class BrowserRecovery {
         // Waiting is deliberate inactivity, not evidence of a navigation loop.
         if (!action || action.variant === 'wait' || action.variant === 'mouse:hover') return;
         if (block) { this.blockedActions++; return; }
-        const key = `${fingerprint}:${action.variant}`;
+        // Returning from different pages is not repeating the same transition.
+        // Ignore coordinates so jitter cannot disguise genuinely unchanged clicks.
+        const key = JSON.stringify([previousFingerprint, action.variant, fingerprint]);
         this.recent.push(key);
         if (this.recent.length > 30) this.recent.shift();
         this.repetitions = this.recent.filter(value => value === key).length;

@@ -257,11 +257,16 @@ keyboard keys or bypass access controls.
 - A subscription/sign-in barrier allows up to three attempted recovery actions
   before stopping if its page state remains unchanged. An explicit blocked action
   can stop sooner.
-- Three occurrences of the same action kind producing the same page fingerprint
-  in the last 30 non-wait actions trigger a recovery instruction. Six stop the task
-  as `blocked/no_progress`. Waits and hovers do not count. Fingerprints include the
-  URL, page-text hash, scroll position, and focused input value; this detects repeated
-  states, not semantic proof that a task is making progress. New tasks reset counters.
+- Three occurrences of the same source-page/action-kind/destination-page transition
+  in the last 30 counted actions trigger a recovery instruction. Six stop the task
+  as `blocked/no_progress`. A state outside the 30 most recently seen distinct states
+  clears transition history, so productive visits can reuse shared return paths.
+  Waits, hovers, and passive observations do not add failures; new content observed
+  during them still clears old history. Fingerprints include the URL, page-text hash,
+  visible scroll offsets, and focused input value. This is a bounded heuristic, not
+  proof of useful progress: novel noise and long cycles can escape detection, while
+  unrepresented visual changes can look unchanged. The hard action budget remains
+  the backstop. New tasks reset both histories and counters.
 
 Configure core browser options with `recovery: { maxRateLimitWaitMs,
 repeatedActionLimit }`, or use `recovery: false` to disable automatic guards.
