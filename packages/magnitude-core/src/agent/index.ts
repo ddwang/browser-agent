@@ -13,7 +13,7 @@ import { AgentMemory, AgentMemoryOptions } from "@/memory";
 import { ActionDefinition } from "@/actions";
 import { taskActions } from "@/actions/taskActions";
 import { memoryActions } from '@/actions/memoryActions';
-import { NOTEBOOK_INSTRUCTIONS, type NoteInput } from '@/memory/notebook';
+import { NOTEBOOK_INSTRUCTIONS, type NoteUpdate } from '@/memory/notebook';
 import { ConnectorInstructions, AgentContext, traceAsync, MultiMediaContentPart } from "@/ai/baml_client";
 import { telemetrifyAgent } from '@/telemetry/events';
 import { isClaude } from '@/ai/util';
@@ -362,7 +362,7 @@ export class Agent {
 
             let reasoning: string = "";
             let actions: Action[] = [];
-            let memoryUpdates: NoteInput[] = [];
+            let memoryUpdates: NoteUpdate[] = [];
 
             try {
                 this.events.emit('planningStarted');

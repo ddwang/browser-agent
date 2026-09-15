@@ -8,7 +8,7 @@ import { BrowserRecovery } from '../../../packages/magnitude-core/src/web/recove
 import { taskActions } from '../../../packages/magnitude-core/src/actions/taskActions';
 
 const llm = { provider: 'anthropic' as const, options: { model: 'fixture', apiKey: 'unused-no-model-calls' } };
-const note = { variant: 'memory:note', key: 'record', text: 'Observed value: 437.', sources: [0] };
+const note = { variant: 'memory:note', key: 'record', text: 'Observed value: 437.', sources: [0], operation: 'add' as const, expected_text: null };
 const { variant, ...update } = note;
 let observations = 0;
 let hooks = 0;
@@ -35,7 +35,17 @@ const connector = {
     assert.equal(checkpoints, 1);
     assert.throws(() => recovery.check({ variant: 'mouse:click' }), /no_progress|repeated|previously/);
     assert.equal((await agent.memory.toJSON()).notes?.[0].text, note.text);
-    await agent.exec({ ...note, sources: [900] }, agent.memory);
+    for (const invalid of [
+        { ...note, text: 'A different record' },
+        { ...note, expected_text: note.text },
+        { ...note, operation: 'correct', expected_text: null },
+        { ...note, operation: 'correct', expected_text: 'Stale text' },
+        { ...note, operation: 'correct', expected_text: note.text, sources: [900] },
+    ]) {
+        const result = await agent.exec(invalid, agent.memory) as { saved: unknown };
+        assert.equal(result.saved, false);
+        assert.equal((await agent.memory.toJSON()).notes?.[0].text, note.text);
+    }
     const saved = await agent.memory.toJSON();
     assert.equal(saved.notes?.[0].text, note.text);
     assert.match(JSON.stringify(saved.observations.at(-1)), /No notes changed/);
@@ -151,4 +161,60 @@ const connector = {
     await agent.act('Finish immediately');
     assert.equal((await agent.memory.toJSON()).notes, undefined);
     console.log('PASS: empty reviews require no fake notes or additional actions');
+}
+
+{
+    let plans = 0;
+    let leaves = 0;
+    const other = { ...update, key: 'independent-record', text: 'Another observed fact.' };
+    const agent = new Agent({ llm, telemetry: false, maxActions: 6,
+        connectors: [{ id: 'fixture', collectObservations: connector.collectObservations }],
+        actions: [...taskActions, createAction({ name: 'leave', resolver: async ({ memory }) => {
+            leaves++;
+            const notes = (await memory!.toJSON()).notes!;
+            assert.equal(notes[0].text, 'Corrected observed value: 731.');
+            assert.equal(notes[1].text, other.text);
+        } })],
+    });
+    agent.models.partialAct = async context => {
+        plans++;
+        if (plans === 1) return { reasoning: 'Attempt a new record under an existing key.',
+            memory_updates: [update, { ...other, key: update.key }], actions: [{ variant: 'leave' }] };
+        assert.equal(leaves, 0);
+        assert.match(JSON.stringify(context.observationContent), /already exists/);
+        assert.equal((await agent.memory.toJSON()).notes?.[0].text, update.text);
+        return { reasoning: 'Use a separate key and explicitly correct the original record.',
+            memory_updates: [other, { ...update, operation: 'correct', expected_text: update.text, text: 'Corrected observed value: 731.' }],
+            actions: [{ variant: 'leave' }, { variant: 'task:done', evidence: 'Complete' }] };
+    };
+    await agent.act('Preserve unrelated records');
+    assert.equal(plans, 2);
+    assert.equal(leaves, 1);
+    console.log('PASS: key collisions block navigation; new keys and targeted corrections recover within the action budget');
+}
+
+{
+    let plans = 0;
+    let leaves = 0;
+    const agent = new Agent({ llm, telemetry: false, maxActions: 5,
+        connectors: [{ id: 'fixture', collectObservations: connector.collectObservations }],
+        actions: [...taskActions, createAction({ name: 'leave', resolver: async () => { leaves++; } })],
+    });
+    agent.models.partialAct = async context => {
+        plans++;
+        if (plans === 1) return { reasoning: 'One correction followed by a stale correction.', memory_updates: [
+            update, { ...update, key: 'unrelated' },
+            { ...update, operation: 'correct', expected_text: update.text, text: 'Latest fact' },
+            { ...update, operation: 'correct', expected_text: update.text, text: 'Stale replacement' },
+        ], actions: [{ variant: 'leave' }] };
+        assert.match(JSON.stringify(context.observationContent), /exactly match/);
+        const notes = (await agent.memory.toJSON()).notes!;
+        assert.equal(notes[0].text, 'Latest fact');
+        assert.equal(notes[1].text, update.text);
+        return { reasoning: 'No new facts.', memory_updates: [], actions: [{ variant: 'task:done', evidence: 'Complete' }] };
+    };
+    await agent.act('Reject stale corrections');
+    assert.equal(plans, 2);
+    assert.equal(leaves, 0);
+    console.log('PASS: stale corrections preserve the latest state and unrelated records before replanning');
 }

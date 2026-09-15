@@ -26,7 +26,9 @@ test('wire schema uses existing action definitions, including primitive and nest
     expect(schema.additionalProperties).toBe(false);
     expect(schema.required).toEqual(['reasoning', 'memory_updates', 'actions']);
     expect(schema.properties.memory_updates.type).toBe('array');
-    expect(schema.properties.memory_updates.items.required).toEqual(['key', 'text', 'sources']);
+    expect(schema.properties.memory_updates.items.required).toEqual(['key', 'text', 'sources', 'operation', 'expected_text']);
+    expect(schema.properties.memory_updates.items.properties.operation.enum).toEqual(['add', 'correct']);
+    expect(schema.properties.memory_updates.items.properties.expected_text.anyOf.map((option: any) => option.type)).toEqual(['string', 'null']);
     expect(schema.properties.memory_updates.items.properties.sources.items.type).toBe('integer');
     expect(schema.properties.actions.minItems).toBe(1);
     expect(schema.properties.actions.items.anyOf.map((item: any) => item.properties.variant.const)).toEqual(['move', 'report']);

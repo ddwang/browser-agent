@@ -228,3 +228,34 @@ $0.18607. Required review improves capture discipline in these attempts but does
 not solve durable retention or transcription. See the [complete report and next
 experiment](reports/2026-09-15-required-memory-review.md). No runtime tuning,
 selective retries, rejudgments, or website/holdout reruns followed these outcomes.
+
+### Guarded note updates experiment
+
+The user approved a non-destructive update experiment. Keep the existing stored
+key/text/sources format and bounds. Require `operation` and `expected_text` on
+planner note updates: `add` rejects an existing key, while `correct` requires an
+existing key and an exact current-text match. Change only the targeted key and
+leave all omitted keys unchanged. Guide the actor to use separate records rather
+than a growing collection summary. Retain explicit forget, audited action costs,
+source validation, and stop-before-navigation on rejection. The guard cannot
+prove that a correction is true or preserve omitted facts within the corrected
+record; no semantic judge, extra model call, or automatic history retrieval is added.
+
+Before live calls, predeclare one full four-case local run with `--catalog`: the
+unchanged one-record serial control, randomized 6–10 and 22–28-record nested
+catalogs, and a 6–10-record catalog with a changed source. Catalog tasks start
+with an overview qualification rule, traverse group directories and return links,
+and require per-record rule application plus both total and qualifying totals.
+Draw all lengths, rules, values, groups, paths, and the correction target before
+model calls. Offline checks cover new/duplicate keys, stale/targeted corrections,
+source and capacity failures, checkpoint restoration, both provider transports,
+action accounting, directory coverage, and unchanged unrelated records.
+
+Freeze the candidate before this run. Keep Luna medium, Sonnet 5, retention windows,
+100 actions, 24 MiB preflight, and existing deadlines. Measure every outcome,
+exact answers, capture and final-note coverage, rejected writes, corrections,
+revisits, actions, calls, and cost. Preserve all attempts; do not adjust the
+candidate or retry selected cases in response. This workflow is new to the live
+checks, but developer-authored and inspectable, not a blinded holdout. Do not
+rerun the website development suite or consumed holdout. Reserve further unseen
+workflow families for a separately approved frozen evaluation.

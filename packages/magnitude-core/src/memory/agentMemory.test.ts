@@ -98,10 +98,29 @@ for (const promptCaching of [false, true]) test(`completed checks outlive the de
     memory.recordObservation(Observation.fromConnector('fixture', { url, value: 'complete' }, { type: 'state', limit: 1 }));
     const latestId = (await memory.toJSON()).observations.length - 1;
     await memory.render();
-    memory.remember({ key: 'inspection', text: 'Rechecked record; now complete. No follow-up remains.', sources: [latestId] });
+    memory.remember({ key: 'inspection', text: 'Rechecked record; now complete. No follow-up remains.', sources: [latestId] },
+        'Checked record; observed status pending. Follow-up unresolved.');
     const corrected = await text(memory);
     expect(corrected).toContain('now complete');
     expect(corrected).not.toContain('status pending');
     expect((await memory.toJSON()).notes?.[0].sources).toEqual([latestId]);
     expect((await memory.toJSON()).observations[0].data).toHaveProperty('value');
+    const saved = await memory.toJSON();
+    const restored = new AgentMemory({ promptCaching });
+    await restored.loadJSON(saved);
+    await restored.render();
+    expect(() => restored.remember({ key: 'inspection', text: 'A different record', sources: [latestId] })).toThrow('already exists');
+    expect(() => restored.remember({ key: 'inspection', text: 'Stale correction', sources: [latestId] },
+        'Checked record; observed status pending. Follow-up unresolved.')).toThrow('exactly match');
+    expect(await restored.toJSON()).toEqual(saved);
+});
+
+test('duplicate keys in a checkpoint fail without replacing existing memory', async () => {
+    const memory = new AgentMemory();
+    memory.recordObservation(screen(0));
+    await memory.render();
+    memory.remember({ key: 'unique', text: 'Keep this fact', sources: [0] });
+    const saved = await memory.toJSON();
+    await expect(memory.loadJSON({ ...saved, notes: [...saved.notes!, { ...saved.notes![0], text: 'Discarded duplicate' }] })).rejects.toThrow('already exists');
+    expect(await memory.toJSON()).toEqual(saved);
 });

@@ -10,7 +10,7 @@ import { webActions } from '../../../packages/magnitude-core/src/actions/webActi
 import { taskActions } from '../../../packages/magnitude-core/src/actions/taskActions';
 
 const note = { key: 'fixture-record', text: 'Observed total: 437.', sources: [0] };
-const plan = { reasoning: 'Keep the observed value before moving on.', memory_updates: [note], actions: [{ variant: 'wait', seconds: 1 }] };
+let plan = { reasoning: 'Keep the observed value before moving on.', memory_updates: [{ ...note, operation: 'add', expected_text: null as string | null }], actions: [{ variant: 'wait', seconds: 1 }] };
 let requests: any[] = [];
 const server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request) {
     const body = await request.json();
@@ -29,6 +29,7 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request) 
 try {
     for (const provider of ['anthropic', 'openai'] as const) {
         requests = [];
+        plan.memory_updates = [{ ...note, operation: 'add', expected_text: null }];
         class FixtureHarness extends ModelHarness {
             protected createClientRegistry(options: Record<string, any>) {
                 const registry = new ClientRegistry();
@@ -69,6 +70,9 @@ try {
         assert.match(request, /Observed total: 437/);
         assert.match(request, /filter=unique/);
         assert.ok(!request.includes('[Observation 0]'), 'the original screenshot has left the model context');
+        plan.memory_updates = [{ ...note, operation: 'correct', expected_text: note.text, text: 'Corrected total: 731.' }];
+        assert.deepEqual(await act(), plan);
+        assert.match(JSON.stringify(requests[2]), /expected_text/);
         console.log(`PASS: ${provider} transports source-linked notes after image eviction with the complete action vocabulary`);
     }
 } finally { server.stop(true); }

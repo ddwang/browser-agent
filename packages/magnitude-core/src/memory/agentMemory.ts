@@ -142,11 +142,11 @@ export class AgentMemory {
         return { observation: id, capturedAt: observation.timestamp, ...(url !== undefined ? { url } : {}) };
     }
 
-    public remember(note: NoteInput): void {
+    public remember(note: NoteInput, expectedText?: string): void {
         this.notebook.put(note, id => {
             if (!this.visibleSourceIds.has(id)) throw new Error(`Observation ${id} is not shown in the current context or notebook.`);
             return this.resolveNoteSource(this.observations, id);
-        });
+        }, expectedText);
     }
 
     public forget(key: string): void {

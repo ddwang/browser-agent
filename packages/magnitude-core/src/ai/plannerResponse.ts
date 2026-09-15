@@ -1,16 +1,16 @@
 import { z } from 'zod';
 import type { ActionDefinition } from '@/actions';
 import type { Action } from '@/actions/types';
-import { noteSchema, NOTEBOOK_LIMITS, type NoteInput } from '@/memory/notebook';
+import { noteUpdateSchema, NOTEBOOK_LIMITS, type NoteUpdate } from '@/memory/notebook';
 
 export interface PlannerResponse {
     reasoning: string;
-    memory_updates: NoteInput[];
+    memory_updates: NoteUpdate[];
     actions: Action[];
 }
 
-export const memoryUpdatesSchema = z.array(noteSchema).max(NOTEBOOK_LIMITS.entries)
-    .describe('Review the current observations before acting. Save exact facts, completed checks and unresolved uncertainty needed later. Reuse keys for corrections. Return [] when nothing new needs retaining. Never record imagined action results. Each update costs one action.');
+export const memoryUpdatesSchema = z.array(noteUpdateSchema).max(NOTEBOOK_LIMITS.entries)
+    .describe('Review the current observations before acting. Add exact facts and completed checks as separate records; correct only the targeted existing record with an exact current-text match. Omitted records stay unchanged. Return [] when nothing new needs retaining. Never record imagined action results. Each update costs one action.');
 
 export class PlannerResponseError extends Error {
     constructor(message = 'Expected one complete JSON plan with reasoning, memory_updates and actions') {

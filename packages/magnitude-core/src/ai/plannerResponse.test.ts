@@ -33,14 +33,18 @@ test('validates primitive action inputs without transforming them twice', () => 
 });
 
 test('requires a bounded memory review and validates every update before accepting actions', () => {
-    const note = { key: 'record', text: 'Observed value: 731.', sources: [0] };
+    const note = { key: 'record', text: 'Observed value: 731.', sources: [0], operation: 'add' as const, expected_text: null };
     const valid = { ...plan, memory_updates: [note] };
     expect(parsePlannerResponse(JSON.stringify(valid), vocabulary)).toEqual(valid);
+    const correction = { ...valid, memory_updates: [{ ...note, operation: 'correct' as const, expected_text: note.text, text: 'Corrected value: 914.' }] };
+    expect(parsePlannerResponse(JSON.stringify(correction), vocabulary)).toEqual(correction);
     const { memory_updates, ...missing } = valid;
     for (const invalid of [missing, ...[null, {}, [null], [{ ...note, sources: [] }],
         [{ ...note, sources: [-1] }], [{ ...note, sources: ['0'] }], [{ ...note, sources: [0.5] }],
         [{ ...note, text: '' }], [{ ...note, text: 'a'.repeat(2001) }], [{ ...note, key: 'a'.repeat(81) }],
-        [{ ...note, fabricated: true }], Array(33).fill(note), [note, { ...note, sources: [] }],
+        [{ ...note, fabricated: true }], [{ ...note, operation: 'replace' }], [{ ...note, operation: undefined }],
+        [{ ...note, expected_text: undefined }], [{ ...note, expected_text: '' }], [{ ...note, expected_text: 'a'.repeat(2001) }],
+        Array(33).fill(note), [note, { ...note, sources: [] }],
     ].map(memory_updates => ({ ...plan, memory_updates }))]) {
         expect(() => parsePlannerResponse(JSON.stringify(invalid), vocabulary)).toThrow(PlannerResponseError);
     }

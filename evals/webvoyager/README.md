@@ -188,7 +188,7 @@ See [memory behavior and limits](../../docs/advanced/memory.mdx).
 Run the offline memory, lifecycle, and provider checks:
 
 ```sh
-bun test packages/magnitude-core/src/memory evals/webvoyager/notebook.test.ts evals/webvoyager/notebook-metrics.test.ts
+bun test packages/magnitude-core/src/memory evals/webvoyager/notebook.test.ts evals/webvoyager/notebook-metrics.test.ts evals/webvoyager/notebook-catalog.test.ts
 ```
 
 To make paid Luna actor and Sonnet judge calls against fresh random local pages:
@@ -206,6 +206,18 @@ note coverage before first departure and final-note coverage. These diagnostics
 do not prove semantic correctness; final answers are checked separately. These
 are synthetic mechanism checks, not additional benchmark passes or a fresh holdout.
 No public websites are contacted by the browser tasks.
+
+Add `--catalog` for a one-record serial control plus three nested-catalog checks.
+Catalogs use overview rules, group directories, and return links instead of a
+forward-only chain. Answers must also classify each record using the overview
+rule and sum qualifying units. The correction case changes a randomly chosen
+record. These are development mechanism checks, not a held-out benchmark.
+
+Planner updates distinguish `add` from `correct`: adds cannot overwrite keys,
+and corrections must match the target's exact current text. Omitted keys stay
+unchanged. The guard does not prove factual accuracy or preserve omitted details
+inside a corrected record. Stored note/checkpoint shapes and all bounds remain
+unchanged; attempted writes, including rejected ones, still consume actions.
 
 ### Action and payload budgets
 

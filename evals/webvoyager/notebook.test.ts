@@ -9,7 +9,7 @@ test('real agent notebook lifecycle and action accounting without model calls', 
     try {
         const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
         expect({ code, stderr }).toEqual({ code: 0, stderr: '' });
-        expect(stdout.match(/^PASS:/gm)).toHaveLength(9);
+        expect(stdout.match(/^PASS:/gm)).toHaveLength(11);
     } finally { clearTimeout(deadline); }
 }, 20_000);
 
