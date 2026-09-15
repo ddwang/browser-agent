@@ -99,3 +99,10 @@ Its media test also reproduced a format-label mismatch for converted images. Sav
 images and model payloads now use the format of the emitted bytes, verified with
 PNG/JPEG requests through the real model client to a loopback provider. This adds no
 browser-task instructions and does not explain the separate runner-status error.
+
+The CLI now blocks reserved sites from direct/development selection and prevents
+resuming, replacing, or rejudging a saved holdout run. A 21 MiB synthetic history
+with 96 actions and delayed checkpoints finalized correctly; it did **not**
+reproduce the development runner error. Exit-zero-without-a-result remains an
+error, with additional exit/signal/saved-status diagnostics for future failures.
+Do not describe the unexplained development error as fixed or rescore it.

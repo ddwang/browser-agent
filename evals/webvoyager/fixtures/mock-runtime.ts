@@ -13,7 +13,11 @@ class FakeAgent {
     events = new EventEmitter();
     observations: any[] = [];
     memory = {
-        toJSON: async () => ({ observations: [...this.observations] }),
+        toJSON: async () => {
+            const observations = [...this.observations];
+            if (process.env.EVAL_TEST_FAILURE === 'long-history') await Bun.sleep(2);
+            return { observations };
+        },
         loadJSON: async (memory: { observations: any[] }) => {
             if (memory.observations.some(observation => observation.options?.limit !== undefined)) {
                 throw new Error('Judge inherited actor retention limits');
@@ -29,9 +33,20 @@ class FakeAgent {
         this.events.emit('planningStarted');
         if (process.env.EVAL_TEST_FAILURE === 'timeout') return new Promise<void>(() => {});
         if (process.env.EVAL_TEST_FAILURE === 'crash') throw new Error('Synthetic browser crash');
+        if (process.env.EVAL_TEST_FAILURE === 'unfinished') process.exit(0);
         if (process.env.EVAL_TEST_FAILURE === 'blocked') throw new BrowserBlockedError({ reason: 'rate_limit', evidence: 'HTTP 429 fixture' });
         if (process.env.EVAL_TEST_FAILURE === 'action-limit') throw new ActionLimitError(100);
         this.observations.push({ source: 'connector:web', data: 'Earlier evidence', options: { type: 'screenshot', limit: 3, dedupe: true } });
+        if (process.env.EVAL_TEST_FAILURE === 'long-history') {
+            this.observations.push({ source: 'connector:web', data: { type: 'primitive', content: 'x'.repeat(21 * 1024 * 1024) } });
+            for (let i = 0; i < 95; i++) {
+                this.events.emit('actionStarted', { variant: 'fixture:tick' });
+                this.events.emit('actionDone');
+                this.observations.push({ source: 'action:taken:fixture:tick', data: `Synthetic step ${i}` });
+                this.events.emit('observationsRecorded');
+                await Bun.sleep(1);
+            }
+        }
         if (process.env.EVAL_TEST_FAILURE === 'payload-limit') {
             this.observations.push({ source: 'connector:web', role: 'user', timestamp: 0, data: { type: 'primitive', content: 'x'.repeat(2 * 1024 * 1024) } });
         }

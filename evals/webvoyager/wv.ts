@@ -84,23 +84,32 @@ function temperature(value: string) {
     return number;
 }
 
-async function selectTasks(input: string | undefined, suite?: string): Promise<Task[]> {
+async function selectTasks(input: string | undefined, suite?: string, holdout = false): Promise<Task[]> {
     const allTasks: Task[] = readFileSync(dataPath, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    const reservedSites = new Set(suiteTasks(readJson(join(import.meta.dir, 'holdout.json')), allTasks).map(task => task.web_name));
+    const checkReservation = (tasks: Task[]) => {
+        if (!holdout && tasks.some(task => reservedSites.has(task.web_name))) {
+            throw new Error('Holdout sites are reserved. Use the complete holdout suite with --allow-holdout after freezing the candidate.');
+        }
+        return tasks;
+    };
     if (suite) {
         const selected = suiteTasks(readJson<unknown>(resolve(suite)), allTasks);
         const matching = input ? selected.filter(task => task.id === input || task.web_name === input) : selected;
         if (!matching.length) throw new Error(`Unknown task or category in suite: ${input}`);
-        return matching;
+        return checkReservation(matching);
     }
     if (input?.includes('--')) {
         const task = allTasks.find(task => task.id === input);
         if (!task) throw new Error(`Unknown task: ${input}`);
-        return [task];
+        return checkReservation([task]);
     }
-    const candidates = input ? allTasks.filter(task => task.web_name === input) : allTasks;
+    if (input && reservedSites.has(input)) checkReservation(allTasks.filter(task => task.web_name === input));
+    const candidates = (input ? allTasks.filter(task => task.web_name === input) : allTasks)
+        .filter(task => !reservedSites.has(task.web_name));
     if (!candidates.length) throw new Error(`Unknown category: ${input}`);
     const selected = await prompts.multiselect({
-        message: input ? `Select ${input} tasks` : 'Select tasks (or pass --suite baseline.json)',
+        message: input ? `Select ${input} tasks` : 'Select development tasks (reserved holdout sites excluded; or pass --suite baseline.json)',
         options: candidates.map(task => ({ value: task.id, label: `${task.id}: ${task.ques}` })),
         required: true,
     });
@@ -109,7 +118,7 @@ async function selectTasks(input: string | undefined, suite?: string): Promise<T
 }
 
 async function runWorker(script: string, runDir: string, taskId: string, timeoutMs: number) {
-    return new Promise<{ error?: string; timedOut: boolean }>((resolveWorker) => {
+    return new Promise<{ error?: string; timedOut: boolean; exitCode: number | null; signal: string | null }>((resolveWorker) => {
         const child = spawn(process.execPath, [join(import.meta.dir, script), runDir, taskId], { stdio: 'inherit', env: process.env });
         let killed = false;
         let processError: string | undefined;
@@ -118,9 +127,9 @@ async function runWorker(script: string, runDir: string, taskId: string, timeout
             child.kill('SIGKILL');
         }, timeoutMs);
         child.once('error', error => { processError = error.message; });
-        child.once('close', code => {
+        child.once('close', (code, signal) => {
             clearTimeout(timer);
-            resolveWorker({ timedOut: killed, error: killed ? 'Worker exceeded process deadline' : processError ?? (code === 0 ? undefined : `Worker exited with code ${code}`) });
+            resolveWorker({ timedOut: killed, exitCode: code, signal, error: killed ? 'Worker exceeded process deadline' : processError ?? (code === 0 ? undefined : `Worker exited with code ${code}${signal ? ` (${signal})` : ''}`) });
         });
     });
 }
@@ -138,6 +147,7 @@ async function runTask(task: Task, runDir: string, manifest: RunManifest) {
             timedOut: worker.timedOut,
             time: Date.now() - started,
             error: worker.error ?? 'Worker exited without a final result',
+            worker: { exitCode: worker.exitCode, signal: worker.signal, savedStatus: previous.status },
         } satisfies TaskResult);
     }
 }
@@ -185,7 +195,7 @@ program.command('run [input]')
             if (input || options.failed || options.failedOnly || options.replace) throw new Error('Holdout runs require the complete suite without selective reruns.');
             if (!options.eval && !options.dryRun) throw new Error('Holdout runs require --eval.');
         }
-        const tasks = await selectTasks(input, options.suite);
+        const tasks = await selectTasks(input, options.suite, !!holdout);
         if (!tasks.length) return;
         const runDir = resolve(options.runDir ?? join(import.meta.dir, 'results', new Date().toISOString().replaceAll(':', '-')));
         const manifestPath = join(runDir, 'manifest.json');
@@ -207,6 +217,7 @@ program.command('run [input]')
         }
         if ((options.failed || options.failedOnly || options.replace) && !options.runDir) throw new Error('Resume/replace flags require --run-dir. Omit them for a fresh first-attempt baseline.');
         const previous = readOptional<RunManifest>(manifestPath);
+        if (previous?.partition === 'holdout') throw new Error('Holdout runs are immutable. Do not resume or replace their attempts.');
         if (holdout && (manifest.dirty || previous)) throw new Error('Holdout runs require a clean committed candidate and a fresh run directory.');
         if (previous) {
             if (JSON.stringify(previous.actor) !== JSON.stringify(actor) || JSON.stringify(previous.judge) !== JSON.stringify(judge) || previous.workers !== manifest.workers || previous.timeoutMs !== manifest.timeoutMs || previous.judgeTimeoutMs !== manifest.judgeTimeoutMs || previous.sourceHash !== manifest.sourceHash || JSON.stringify(previous.limits ?? DEFAULT_LIMITS) !== JSON.stringify(manifest.limits)) {
@@ -246,6 +257,7 @@ program.command('eval [input]')
     .action(async (input, options) => {
         const runDir = resolve(options.runDir);
         const manifest = readJson<RunManifest>(join(runDir, 'manifest.json'));
+        if (manifest.partition === 'holdout') throw new Error('Holdout evaluations are immutable. Score only during the original complete run --eval.');
         const records = loadRecords(runDir, manifest).filter(record =>
             (!input || record.task.id === input || record.task.web_name === input)
             && record.run?.status === 'completed'

@@ -78,6 +78,7 @@ export interface TaskResult extends ReturnType<typeof emptyUsage> {
     progress?: TaskProgress;
     block?: BrowserBlock;
     budget?: BudgetFailure;
+    worker?: { exitCode: number | null; signal: string | null; savedStatus: TaskResult['status'] };
 }
 
 export interface TaskProgress {

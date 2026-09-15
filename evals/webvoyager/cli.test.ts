@@ -68,6 +68,44 @@ test('a suite can be narrowed to one custom task or one site', async () => {
     expect((await cli(['run', 'BBC News--5', '--suite', join(import.meta.dir, 'baseline.json'), '--dry-run'])).code).toBe(1);
 });
 
+test('direct selections and unmarked suites cannot expose reserved holdout sites', async () => {
+    for (const input of ['Amazon--35', 'Amazon--0', 'Amazon', 'ESPN', 'Google Map']) {
+        const result = await cli(['run', input, '--allow-holdout', '--dry-run']);
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain('Holdout sites are reserved');
+        expect(result.stdout).toBe('');
+    }
+    const suite = join(directory, 'unmarked-holdout.json');
+    writeJson(suite, { tasks: [{ id: 'Synthetic--0', web_name: 'Amazon', web: 'https://example.com', ques: 'Synthetic reservation fixture.' }] });
+    const result = await cli(['run', '--suite', suite, '--dry-run']);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('Holdout sites are reserved');
+    expect(result.stdout).toBe('');
+});
+
+test('saved holdout attempts and judgments cannot be replaced or rejudged', async () => {
+    // A synthetic marked manifest tests the guard without running real holdout tasks.
+    const runDir = join(directory, 'immutable-holdout');
+    expect((await cli(['run', 'Allrecipes--0', '--run-dir', runDir, '--eval'])).code).toBe(0);
+    const path = join(runDir, 'manifest.json');
+    writeJson(path, { ...JSON.parse(readFileSync(path, 'utf8')), partition: 'holdout' });
+    const resultPath = join(runDir, 'Allrecipes--0.json');
+    const evalPath = join(runDir, 'Allrecipes--0.eval.json');
+    const before = [readFileSync(resultPath, 'utf8'), readFileSync(evalPath, 'utf8')];
+    for (const args of [
+        ['run', 'Allrecipes--0', '--replace'], ['run', 'Allrecipes--0', '--failed'],
+        ['eval'], ['eval', 'Allrecipes--0', '--replace'],
+    ]) {
+        const result = await cli([...args, '--run-dir', runDir]);
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain('immutable');
+        expect([readFileSync(resultPath, 'utf8'), readFileSync(evalPath, 'utf8')]).toEqual(before);
+    }
+    const stats = await cli(['stats', '--run-dir', runDir]);
+    expect(stats.code).toBe(0);
+    expect(JSON.parse(stats.stdout).partition).toBe('holdout');
+});
+
 test('custom criteria reach actor and judge, and capability metrics retain all tasks', async () => {
     const runDir = join(directory, 'criteria');
     const result = await cli(['run', 'ArXiv Hard--0', '--suite', join(import.meta.dir, 'baseline.json'), '--run-dir', runDir, '--eval'], 'criteria');
@@ -171,4 +209,26 @@ test('oversized histories fail without calling the judge', async () => {
 test('invalid workers and unknown task IDs fail before creating output', async () => {
     expect((await cli(['run', 'Allrecipes--0', '--workers', '0', '--dry-run'])).code).toBe(1);
     expect((await cli(['run', 'Unknown--0', '--dry-run'])).code).toBe(1);
+});
+
+test('a large history with delayed overlapping checkpoints saves its final status and answer', async () => {
+    const runDir = join(directory, 'long-history');
+    const result = await cli(['run', 'Allrecipes--0', '--run-dir', runDir, '--eval'], 'long-history');
+    expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: '' });
+    const task = JSON.parse(readFileSync(join(runDir, 'Allrecipes--0.json'), 'utf8'));
+    expect(task.status).toBe('completed');
+    expect(task.progress.phase).toBe('finished');
+    expect(task.actionCount).toBe(96);
+    expect(task.memory.observations.at(-1).source).toBe('action:taken:answer');
+    expect(JSON.parse(readFileSync(join(runDir, 'Allrecipes--0.eval.json'), 'utf8')).result).toBe('SUCCESS');
+}, 30_000);
+
+test('exit zero without a final saved result is still an error with worker diagnostics', async () => {
+    const runDir = join(directory, 'unfinished-worker');
+    expect((await cli(['run', 'Allrecipes--0', '--run-dir', runDir, '--eval'], 'unfinished')).code).toBe(1);
+    const task = JSON.parse(readFileSync(join(runDir, 'Allrecipes--0.json'), 'utf8'));
+    expect(task.status).toBe('error');
+    expect(task.error).toContain('without a final result');
+    expect(task.worker).toEqual({ exitCode: 0, signal: null, savedStatus: 'running' });
+    expect(JSON.parse(readFileSync(join(runDir, 'summary.json'), 'utf8')).counts.error).toBe(1);
 });
