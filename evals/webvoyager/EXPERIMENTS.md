@@ -316,3 +316,33 @@ corrections succeeded. Total estimated cost was $0.40952. See the
 No runtime changes, selective reruns, rejudgments, website benchmark, or consumed
 holdout runs followed. Investigate finalization reliability independently before
 another benchmark; transcription remains a separate limitation.
+
+### Full Luna and Haiku comparison
+
+The user explicitly requested complete development runs with Luna/Sonnet and
+Haiku/Sonnet. Run the unchanged 12-task `baseline.json` once per actor, Luna first,
+then Haiku, on the same frozen candidate. The previously observed finalization
+error remains unfixed; preserve any recurrence in the denominator. This request
+authorizes evaluation, not runtime tuning between runs.
+
+Use OpenAI `gpt-5.6-luna` with medium reasoning and Anthropic
+`claude-haiku-4-5-20251001` with temperature 0.2. Both use Anthropic
+`claude-sonnet-5` at temperature 1, judge version 2, one worker, 100 actions,
+24 MiB preflight, 1,200/300-second deadlines, and unchanged prompts, criteria,
+memory bounds, retention windows, and recovery settings. Provider transports and
+actor sampling settings differ by design; compare the configured agents, not an
+isolated model-only effect.
+
+Commit this protocol before model calls. Use fresh run directories, verify matching
+source hashes and task definitions, and make no code/configuration changes between
+the runs. Review every Luna outcome before starting Haiku without acting on the
+findings. Preserve all 24 attempts, including access blocks, runner errors, budget
+failures, and judge errors. Existing within-attempt format retries remain counted;
+do not selectively rerun tasks or replace judgments.
+
+Report per-task outcomes, aggregate success, actions, calls, latency, actor/judge
+costs, note errors, network evidence, and judging limitations. Inspect failures
+and a sample of successes. Keep the website runs separate from local fixture
+scores. The repeated development suite is not a holdout; sequential runs can also
+differ because of time-dependent site state or shared-IP rate limits. Do not use
+the consumed holdout or claim held-out generalization.
