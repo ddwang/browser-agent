@@ -409,3 +409,13 @@ Haiku development run at `5987bb1` (6/12). Preserve errors in the denominator.
 Check source/configuration consistency and replay notebooks before reporting.
 This is one repeated development run, not a controlled causal estimate or held-out
 evidence. Better diagnostics may expose causes without improving the score.
+
+Frozen revision `e3df27b` completed all 12 attempts: 8 passes, two content failures,
+one 100-action failure, and one Sonnet output-token-limit judge error. Both live
+format repairs identified more than eight note sources and succeeded on the next
+attempt. No terminal planner error recurred. The two newly passing tasks used no
+format retry, so the 6/12 to 8/12 score change cannot be attributed to diagnostics.
+All notebooks replayed exactly; the source hash and configuration checks passed.
+The run used 544 actions, 260 actor calls, and an estimated $3.21765 in 43.3 minutes.
+See the [full Haiku rerun report](reports/2026-09-15-haiku-planner-diagnostics.md).
+No selective retries, replacement judgments, runtime changes, or holdout runs followed.

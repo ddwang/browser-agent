@@ -1,0 +1,933 @@
+{
+  "date": "2026-09-15",
+  "partition": "development",
+  "suite": "evals/webvoyager/baseline.json",
+  "protocol": {
+    "partition": "development",
+    "createdAt": "2026-09-15T21:27:28.262Z",
+    "revision": "e3df27bf9e4366b5eb8e006aae46c41a824887f1",
+    "dirty": false,
+    "sourceHash": "d9b3e8d69ce74b9c2a78f8561f8fe8f114898b64184110317b711e866d2c0fa4",
+    "judgeVersion": 2,
+    "workers": 1,
+    "actor": {
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5-20251001",
+      "temperature": 0.2
+    },
+    "judge": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-5",
+      "temperature": 1
+    },
+    "timeoutMs": 1200000,
+    "judgeTimeoutMs": 300000,
+    "limits": {
+      "maxActions": 100,
+      "maxJudgeBytes": 25165824
+    },
+    "sourceHashVerifiedBeforeReport": true,
+    "identicalTasksAndSettingsToPrevious": true,
+    "selectiveRetries": 0,
+    "rejudgments": 0,
+    "holdoutUsed": false
+  },
+  "previous": {
+    "report": "2026-09-15-luna-haiku-comparison.json",
+    "revision": "5987bb17ccdd0e3fd3a85b0428b26fe38f2e5dc4",
+    "runDir": "evals/webvoyager/results/2026-09-15T20-06-01.373Z-haiku",
+    "createdAt": "2026-09-15T20:06:01.483Z",
+    "actor": {
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5-20251001",
+      "temperature": 0.2
+    },
+    "processExitCode": 1,
+    "summary": {
+      "selected": 12,
+      "attempted": 12,
+      "counts": {
+        "success": 6,
+        "failure": 4,
+        "timeout": 0,
+        "error": 2,
+        "blocked": 0,
+        "running": 0,
+        "interrupted": 0,
+        "judge_error": 0,
+        "unscored": 0,
+        "pending": 0
+      },
+      "successRate": 0.5,
+      "medianTimeMs": 167615,
+      "p95TimeMs": 490663,
+      "averageActions": 34.5,
+      "inputTokens": 188785,
+      "outputTokens": 103096,
+      "cachedInputTokens": 2493479,
+      "estimatedActorCost": 1.6492973499999999,
+      "estimatedJudgeCost": 1.013971,
+      "actions": 414,
+      "actorCalls": 217,
+      "judgeCalls": 10,
+      "cost": 2.66326835,
+      "actorTimeMs": 2427832,
+      "judgeTimeMs": 205123,
+      "wallTimeMs": 2645449.4814453125,
+      "plans": 213,
+      "noteCounts": {
+        "adds": 80,
+        "corrections": 97,
+        "sameTextCorrections": 33,
+        "identicalCorrections": 21,
+        "rejected": 18,
+        "forgets": 0
+      },
+      "retainedNotes": 80,
+      "recoveryObservations": 1,
+      "maxMemoryBytes": 10900213
+    }
+  },
+  "current": {
+    "runDir": "evals/webvoyager/results/2026-09-15T21-27-28.226Z-haiku",
+    "processExitCode": 1,
+    "summary": {
+      "selected": 12,
+      "attempted": 12,
+      "counts": {
+        "success": 8,
+        "failure": 3,
+        "timeout": 0,
+        "error": 0,
+        "blocked": 0,
+        "running": 0,
+        "interrupted": 0,
+        "judge_error": 1,
+        "unscored": 0,
+        "pending": 0
+      },
+      "successRate": 0.6666666666666666,
+      "medianTimeMs": 167402,
+      "p95TimeMs": 379093,
+      "averageActions": 45.333333333333336,
+      "inputTokens": 273616,
+      "outputTokens": 115516,
+      "cachedInputTokens": 3016304,
+      "estimatedActorCost": 1.9952163500000002,
+      "estimatedJudgeCost": 1.2224294999999998
+    },
+    "totals": {
+      "actions": 544,
+      "actorCalls": 260,
+      "judgeCalls": 12,
+      "cost": 3.2176458500000003,
+      "actorTimeMs": 2317566,
+      "judgeTimeMs": 269834,
+      "wallTimeMs": 2597548.8334960938
+    },
+    "acceptedPlans": 258,
+    "noteCounts": {
+      "adds": 103,
+      "corrections": 112,
+      "sameTextCorrections": 23,
+      "identicalCorrections": 14,
+      "rejected": 26,
+      "forgets": 0
+    },
+    "plannerRepairs": [
+      {
+        "taskId": "Huggingface Hard--0",
+        "attempt": 1,
+        "diagnostic": "$.memory_updates[0].sources: too_big (maximum 8, inclusive)",
+        "nextAttemptAccepted": true
+      },
+      {
+        "taskId": "GitHub Hard--1",
+        "attempt": 1,
+        "diagnostic": "$.memory_updates[0].sources: too_big (maximum 8, inclusive)",
+        "nextAttemptAccepted": true
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "ArXiv Hard--0",
+      "previous": {
+        "id": "ArXiv Hard--0",
+        "outcome": "success",
+        "status": "completed",
+        "actions": 24,
+        "actorCalls": 7,
+        "plans": 7,
+        "noteActions": 10,
+        "noteErrors": 0
+      },
+      "current": {
+        "id": "ArXiv Hard--0",
+        "site": "ArXiv",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 46,
+        "actorCalls": 17,
+        "plans": 17,
+        "noteActions": 23,
+        "forgetActions": 0,
+        "retainedNotes": 12,
+        "noteErrors": 0,
+        "judgeCalls": 1,
+        "actorTimeMs": 202965,
+        "judgeTimeMs": 21098,
+        "actorCost": 0.14378500000000002,
+        "judgeCost": 0.11637100000000002,
+        "memoryBytes": 5988062,
+        "http429": 0,
+        "reasoning": "The agent correctly configured the arXiv advanced search: selected 'Abstract' as the search field (obs 14-23), entered 'graph neural networks' unquoted, set Date range from 2024-01-01 to 2024-01-03 (obs 44-50), verified 'Submission date (most recent)' was selected (obs 30, 53), left all archive checkboxes unchecked (all archives, per arXiv's default 'no boxes checked = all archives' semantics) and 'Include cross-listed papers' selected (obs 53). The resulting search URL (obs 59, 118) explicitly encodes field=abstract, date_range 2024-01-01 to 2024-01-03, date_type=submitted_date, include_cross_list=True, and classification-physics_archives=all, satisfying acceptance criterion 1.\n\nThe search returned 'Showing 1-5 of 5 results' (obs 59-60, 118-119). The agent enumerated all five results with arXiv IDs and author counts, visible directly in screenshots (obs 59-60, 69-70, 79-80, 122-123, 128-129): 2401.01384 (2 authors), 2401.00755 (7 authors), 2312.09086 (3 authors), 2310.19274 (5 authors), 2304.14274 (9 authors). This satisfies criterion 2, including correctly excluding the 5-author paper since the threshold is 'more than five'.\n\nFor the two qualifying papers, the agent visited the abstract page for 2401.00755 (obs 104, 109-113) confirming title, URL, and full 7-author list matching the search-result listing. For 2304.14274, the agent used the author list directly visible on the search results page (title, authors fully displayed in obs 79-80, 122-123) and provided the standard arXiv abstract URL derived from the ID; the click on the title did not appear to open a new tab (tab list in obs 129 still shows only Advanced Search), but the author list and title were already fully visible and verified from the search results screenshots, and the URL follows the standard, verifiable arXiv abs pattern. This satisfies criterion 3.\n\nThe final answer correctly states 2 qualifying papers with matching author lists, arXiv URLs, and titles, and correctly enumerates all 5 results with author counts and explains why paper 4 was excluded (exactly 5, not more than 5). All acceptance criteria appear to be met with supporting screenshot evidence.",
+        "noteAudit": {
+          "id": "ArXiv Hard--0",
+          "counts": {
+            "adds": 12,
+            "corrections": 11,
+            "sameTextCorrections": 2,
+            "identicalCorrections": 2,
+            "rejected": 0,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [],
+          "network": {
+            "200": 4
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Pass retained. Judge reviewed the search parameters and all five result author counts; final source URL for the second qualifying paper was constructed from its visible arXiv ID, not a confirmed opened abstract page."
+    },
+    {
+      "id": "ArXiv Hard--1",
+      "previous": {
+        "id": "ArXiv Hard--1",
+        "outcome": "success",
+        "status": "completed",
+        "actions": 37,
+        "actorCalls": 15,
+        "plans": 15,
+        "noteActions": 16,
+        "noteErrors": 2
+      },
+      "current": {
+        "id": "ArXiv Hard--1",
+        "site": "ArXiv",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 46,
+        "actorCalls": 19,
+        "plans": 19,
+        "noteActions": 22,
+        "forgetActions": 0,
+        "retainedNotes": 6,
+        "noteErrors": 1,
+        "judgeCalls": 1,
+        "actorTimeMs": 214262,
+        "judgeTimeMs": 19918,
+        "actorCost": 0.1719264,
+        "judgeCost": 0.1231595,
+        "memoryBytes": 5783383,
+        "http429": 0,
+        "reasoning": "The agent performed a Title search on arXiv Advanced Search with query 'graph neural networks' (unquoted), date range 2024-01-01 to 2024-01-03, Submission date (most recent), all archives, and cross-lists included, verified via the resulting URL (field=title, date-date_type=submitted_date, classification-physics_archives=all, classification-include_cross_list=include). It then used 'Refine query', changed only the field dropdown to 'Abstract' (confirmed via screenshot showing dropdown selection and the resulting search URL differing only in field=abstract), keeping all other parameters identical. Both searches returned 5 results each; the agent captured every arXiv ID from both result pages via scrolling screenshots (Title: 2401.01384, 2401.01232, 2401.00755, 2310.19274, 2304.14274; Abstract: 2401.01384, 2401.00755, 2312.09086, 2310.19274, 2304.14274). The final answer correctly computes the intersection (4 papers), Title-only (2401.01232), and Abstract-only (2312.09086), matching the screenshot evidence. Source URLs for both searches are provided, and source URLs (https://arxiv.org/abs/...) are given for the two papers that appear in only one set. No API use, code execution, or access barriers were reported; all evidence is from browser screenshots and the search-result URLs. All four acceptance criteria are satisfied with supporting observational evidence.",
+        "noteAudit": {
+          "id": "ArXiv Hard--1",
+          "counts": {
+            "adds": 6,
+            "corrections": 15,
+            "sameTextCorrections": 5,
+            "identicalCorrections": 3,
+            "rejected": 1,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [
+            {
+              "index": 99,
+              "error": "Error: Note key \"title_search_results_url\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            }
+          ],
+          "network": {
+            "200": 4
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Pass retained. Judge verified fixed search parameters, complete Title/Abstract sets, intersection and differences."
+    },
+    {
+      "id": "ArXiv Hard--2",
+      "previous": {
+        "id": "ArXiv Hard--2",
+        "outcome": "failure",
+        "status": "completed",
+        "actions": 39,
+        "actorCalls": 21,
+        "plans": 20,
+        "noteActions": 16,
+        "noteErrors": 5
+      },
+      "current": {
+        "id": "ArXiv Hard--2",
+        "site": "ArXiv",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 54,
+        "actorCalls": 30,
+        "plans": 30,
+        "noteActions": 17,
+        "forgetActions": 0,
+        "retainedNotes": 6,
+        "noteErrors": 6,
+        "judgeCalls": 1,
+        "actorTimeMs": 253550,
+        "judgeTimeMs": 22891,
+        "actorCost": 0.21914925000000005,
+        "judgeCost": 0.161717,
+        "memoryBytes": 12299357,
+        "http429": 0,
+        "reasoning": "The agent navigated to and opened the actual arXiv abstract pages for all three papers (1706.03762, 1810.04805, 2005.11401), as confirmed by observations 67-73, 141-148, and 162-176. For each paper it correctly extracted: exact title, arXiv ID/URL, complete author list (8 for Attention, 4 for BERT, 12 for RAG) with correct first/last authors, primary subject category (cs.CL for all three, matching breadcrumb and Subjects line), v1 submission date (12 Jun 2017, 11 Oct 2018, 22 May 2020 respectively), and the full submission history to determine the highest version before 2024-01-01 (v7/2 Aug 2023 for Attention, v2/24 May 2019 for BERT, v4/12 Apr 2021 for RAG — all versions in each case predate 2024, consistent with the recorded submission histories). The final answer table is ordered oldest-first by original submission date (2017 → 2018 → 2020) and correctly identifies RAG as having the most authors (12). Source URLs are cited. No API/code execution or account changes were used, and no access barrier was encountered that required reporting. Cross-checking the final answer against the screenshots (observations 67, 73, 141, 147, 162, 175) confirms the reported author counts, dates, and subject categories are accurate and were pulled directly from the arXiv abstract pages rather than fabricated. All acceptance criteria appear satisfied.",
+        "noteAudit": {
+          "id": "ArXiv Hard--2",
+          "counts": {
+            "adds": 6,
+            "corrections": 5,
+            "sameTextCorrections": 0,
+            "identicalCorrections": 0,
+            "rejected": 6,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [
+            {
+              "index": 22,
+              "error": "Error: Observation 1 is not shown in the current context or notebook."
+            },
+            {
+              "index": 76,
+              "error": "Error: Note key \"paper1_attention_is_all_you_need\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            },
+            {
+              "index": 79,
+              "error": "Error: Note key \"paper1_attention_is_all_you_need\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            },
+            {
+              "index": 107,
+              "error": "Error: Note key \"paper1_attention_is_all_you_need\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            },
+            {
+              "index": 156,
+              "error": "Error: Note key \"paper1_attention_is_all_you_need\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            },
+            {
+              "index": 171,
+              "error": "Error: Note key \"paper1_attention_is_all_you_need\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            }
+          ],
+          "network": {
+            "200": 10,
+            "301": 2,
+            "308": 2
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Changed from content failure to pass without any format retry. Screenshot 73 shows Attention v7 dated 2 Aug 2023; final answer now uses that version rather than the previous run's v6."
+    },
+    {
+      "id": "ArXiv Hard--3",
+      "previous": {
+        "id": "ArXiv Hard--3",
+        "outcome": "success",
+        "status": "completed",
+        "actions": 28,
+        "actorCalls": 15,
+        "plans": 15,
+        "noteActions": 14,
+        "noteErrors": 2
+      },
+      "current": {
+        "id": "ArXiv Hard--3",
+        "site": "ArXiv",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 30,
+        "actorCalls": 15,
+        "plans": 15,
+        "noteActions": 10,
+        "forgetActions": 0,
+        "retainedNotes": 5,
+        "noteErrors": 1,
+        "judgeCalls": 1,
+        "actorTimeMs": 98714,
+        "judgeTimeMs": 11908,
+        "actorCost": 0.1028955,
+        "judgeCost": 0.08774950000000002,
+        "memoryBytes": 6822012,
+        "http429": 0,
+        "reasoning": "The agent located both papers' arXiv abstract pages (1706.03762 and 2005.11401) and captured screenshots of their full 'Submission history' sections. For 'Attention Is All You Need', screenshots (Obs 45, 51, 63) show all seven versions with exact UTC timestamps (v1 12 Jun 2017 through v7 2 Aug 2023), matching the final answer exactly. For the RAG paper, the screenshot (Obs 95) shows all four versions (v1 22 May 2020 through v4 12 Apr 2021) with UTC timestamps matching the final answer. The agent correctly computed total versions (7 and 4), total revisions excluding v1 (6 and 3), and the years of revision (2017/2023 for Attention; 2020/2021 for RAG), correctly identifying 'Attention Is All You Need' as having more revisions. Both abstract-page URLs were included and referenced as evidence. No account changes, API use, or barrier circumvention occurred; the agent navigated only public arXiv pages. All acceptance criteria were satisfied with verifiable screenshot evidence.",
+        "noteAudit": {
+          "id": "ArXiv Hard--3",
+          "counts": {
+            "adds": 5,
+            "corrections": 4,
+            "sameTextCorrections": 1,
+            "identicalCorrections": 1,
+            "rejected": 1,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [
+            {
+              "index": 37,
+              "error": "Error: Note key \"paper1_search_found\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            }
+          ],
+          "network": {
+            "200": 8,
+            "301": 2,
+            "308": 1
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Pass retained. Judge verified complete histories and revision totals for both papers."
+    },
+    {
+      "id": "Huggingface Hard--0",
+      "previous": {
+        "id": "Huggingface Hard--0",
+        "outcome": "failure",
+        "status": "completed",
+        "actions": 29,
+        "actorCalls": 17,
+        "plans": 17,
+        "noteActions": 14,
+        "noteErrors": 2
+      },
+      "current": {
+        "id": "Huggingface Hard--0",
+        "site": "Huggingface",
+        "outcome": "failure",
+        "status": "completed",
+        "result": "NOT SUCCESS",
+        "actions": 40,
+        "actorCalls": 21,
+        "plans": 20,
+        "noteActions": 18,
+        "forgetActions": 0,
+        "retainedNotes": 4,
+        "noteErrors": 0,
+        "judgeCalls": 1,
+        "actorTimeMs": 180104,
+        "judgeTimeMs": 36511,
+        "actorCost": 0.1440587,
+        "judgeCost": 0.1191345,
+        "memoryBytes": 6640933,
+        "http429": 0,
+        "reasoning": "The agent visited all three Hugging Face model cards and correctly recorded license (apache-2.0, apache-2.0, mit) and embedding dimension (384, 768, 384) for each model, matching what is shown in the screenshots (Obs 20, 87, 99). It also checked tokenizer_config.json for each model and found 'model_max_length': 512 in all three (Obs 80, 92, 104), and built a comparison table with URLs, correctly excluding all-mpnet-base-v2 for its 768-dim embedding.\n\nHowever, the task explicitly warns (acceptance criterion 2) not to confuse 'transformer position capacity' (i.e., the underlying BERT/MPNet tokenizer's model_max_length, which reflects position-embedding capacity) with the 'documented default sentence-encoder input limit' actually used by the sentence-transformers library. For sentence-transformers models such as all-MiniLM-L6-v2, the actual documented default truncation length used by the library (visible in the model's sentence_bert_config.json and in the 'Full Model Architecture' section of the model card, e.g. Transformer({'max_seq_length': 256, ...})) is 256 word pieces, not 512. The agent never opened sentence_bert_config.json nor scrolled to the 'Full Model Architecture' section of the all-MiniLM-L6-v2 card; it only inspected tokenizer_config.json (a proxy for BERT's position capacity, not the sentence-encoder's documented default truncation). This is exactly the confusion the task instructs the agent to avoid, and it materially affects the final qualifying-set determination: if the documented default max length for all-MiniLM-L6-v2 is actually 256, it should have been excluded from the qualifying set, but the agent's final answer includes it as qualifying based on the 512 tokenizer value.\n\nBecause the final answer's classification of all-MiniLM-L6-v2 rests on evidence (tokenizer_config.json model_max_length) that the task explicitly says should not be conflated with the documented sentence-encoder input limit, and the agent did not check the source (sentence_bert_config.json / full architecture description) that would give the correct, library-documented default truncation length, the comparison table and the final qualifying set are not reliably verified and likely materially incorrect. This violates acceptance criteria 1–3, even though the E5 prefixes (criterion 4) were correctly identified.",
+        "noteAudit": {
+          "id": "Huggingface Hard--0",
+          "counts": {
+            "adds": 4,
+            "corrections": 14,
+            "sameTextCorrections": 3,
+            "identicalCorrections": 1,
+            "rejected": 0,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [],
+          "network": {
+            "200": 11,
+            "404": 8
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Content failure retained. Final answer explicitly substitutes tokenizer_config.json model_max_length for the required sentence-encoder limit. One source-count format repair succeeded but did not correct that evidence-selection error."
+    },
+    {
+      "id": "Huggingface Hard--1",
+      "previous": {
+        "id": "Huggingface Hard--1",
+        "outcome": "failure",
+        "status": "completed",
+        "actions": 58,
+        "actorCalls": 35,
+        "plans": 35,
+        "noteActions": 25,
+        "noteErrors": 2
+      },
+      "current": {
+        "id": "Huggingface Hard--1",
+        "site": "Huggingface",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 72,
+        "actorCalls": 40,
+        "plans": 40,
+        "noteActions": 39,
+        "forgetActions": 0,
+        "retainedNotes": 23,
+        "noteErrors": 7,
+        "judgeCalls": 1,
+        "actorTimeMs": 325765,
+        "judgeTimeMs": 10225,
+        "actorCost": 0.3422239,
+        "judgeCost": 0.146353,
+        "memoryBytes": 9835708,
+        "http429": 0,
+        "reasoning": "The agent visited both model cards (all-MiniLM-L6-v2 and all-mpnet-base-v2) and both config files (sentence_bert_config.json and 1_Pooling/config.json) for each repository, providing all six required source URLs. Screenshots confirm the actual content viewed: model card truncation statements (256 word pieces for MiniLM, 384 for mpnet), sentence_bert_config.json max_seq_length values (256 and 384 respectively) matching the model cards, and 1_Pooling/config.json contents showing word_embedding_dimension (384 for MiniLM, 768 for mpnet) and all four pooling_mode_* booleans, with pooling_mode_mean_tokens true and others false in both cases. The final answer correctly reports these values grouped by repository, states agreement between model card and config for both models, lists all pooling booleans, identifies mean_tokens as the enabled pooling mode, and keeps dimension (384/768) separate from max sequence length (256/384). No code execution or weight downloads occurred; all data came from the browser file viewer. This satisfies all acceptance criteria.",
+        "noteAudit": {
+          "id": "Huggingface Hard--1",
+          "counts": {
+            "adds": 23,
+            "corrections": 9,
+            "sameTextCorrections": 3,
+            "identicalCorrections": 0,
+            "rejected": 7,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [
+            {
+              "index": 29,
+              "error": "Error: Note key \"task_overview\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            },
+            {
+              "index": 32,
+              "error": "Error: Note key \"minilm_model_card_url\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            },
+            {
+              "index": 45,
+              "error": "Error: Note key \"minilm_model_card_url\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            },
+            {
+              "index": 88,
+              "error": "Error: Note key \"minilm_1pooling_config\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            },
+            {
+              "index": 121,
+              "error": "Error: Note key \"minilm_model_card_truncation\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            },
+            {
+              "index": 136,
+              "error": "Error: Correction rejected: the key must exist and expected_text must exactly match its current text. Review the current notebook before retrying."
+            },
+            {
+              "index": 159,
+              "error": "Error: Note key \"minilm_audit_complete\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            }
+          ],
+          "network": {
+            "200": 14,
+            "404": 14
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Changed from content failure to pass without any format retry. Screenshots 142 and 203 confirm the requested sentence_bert_config.json files were opened and show max_seq_length 256 and 384; the previous run substituted different files."
+    },
+    {
+      "id": "Huggingface Hard--2",
+      "previous": {
+        "id": "Huggingface Hard--2",
+        "outcome": "failure",
+        "status": "completed",
+        "actions": 13,
+        "actorCalls": 7,
+        "plans": 7,
+        "noteActions": 7,
+        "noteErrors": 1
+      },
+      "current": {
+        "id": "Huggingface Hard--2",
+        "site": "Huggingface",
+        "outcome": "failure",
+        "status": "completed",
+        "result": "NOT SUCCESS",
+        "actions": 23,
+        "actorCalls": 13,
+        "plans": 13,
+        "noteActions": 13,
+        "forgetActions": 0,
+        "retainedNotes": 6,
+        "noteErrors": 3,
+        "judgeCalls": 1,
+        "actorTimeMs": 123469,
+        "judgeTimeMs": 20288,
+        "actorCost": 0.08862305000000002,
+        "judgeCost": 0.06245300000000001,
+        "memoryBytes": 2833366,
+        "http429": 0,
+        "reasoning": "The agent did demonstrate the required train→validation→train navigation with visible active split URLs (Observation 0/10 train, 18/26 validation, 64/69 train) and correctly identified column names (idx, sentence, label) and the label-to-sentiment mapping (0=negative, 1=positive) for idx0/idx1 in both splits, matching what was shown on screen. It also finished with the train split selected and provided split-specific URLs.\n\nHowever, the task explicitly required exact (non‑rounded) row counts for the train and validation splits, e.g. not values like 67.3k. The only value the agent ever saw for the train split was the rounded '67.3k rows' shown in the dropdown (Observation 10, 59). The agent then fabricated an 'exact' figure of 67,300 by naively expanding '67.3k' without consulting the dataset card, parquet metadata, or any other source that would give the true exact count (the actual SST-2 train count is 67,349, not 67,300). The dataset card's 'Number of rows: 70,042' field (Observation 0) is the total across all splits, not the train count, and the agent did not investigate this discrepancy or seek a genuine exact figure. This directly violates acceptance criterion 2, which requires exact counts rather than approximations dressed up as exact.\n\nBecause a required, verifiable acceptance criterion (exact row counts) was not actually satisfied — the agent presented a rounded, unverified guess as fact — the overall task cannot be considered fully successful despite correctly completing the split navigation and other elements.",
+        "noteAudit": {
+          "id": "Huggingface Hard--2",
+          "counts": {
+            "adds": 6,
+            "corrections": 4,
+            "sameTextCorrections": 2,
+            "identicalCorrections": 1,
+            "rejected": 3,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [
+            {
+              "index": 29,
+              "error": "Error: Note key \"train_split_initial\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            },
+            {
+              "index": 42,
+              "error": "Error: Note key \"train_split_initial\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            },
+            {
+              "index": 55,
+              "error": "Error: Note key \"train_split_initial\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            }
+          ],
+          "network": {
+            "200": 3,
+            "302": 4,
+            "404": 3
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Content failure retained. Screenshot 10 shows only 67.3k for train; the answer explicitly expands that to 67,300 under Exact Row Counts. This alone establishes unmet exact-verification criteria, without independently accepting the judge's external exact count."
+    },
+    {
+      "id": "Huggingface Hard--3",
+      "previous": {
+        "id": "Huggingface Hard--3",
+        "outcome": "success",
+        "status": "completed",
+        "actions": 30,
+        "actorCalls": 17,
+        "plans": 16,
+        "noteActions": 15,
+        "noteErrors": 1
+      },
+      "current": {
+        "id": "Huggingface Hard--3",
+        "site": "Huggingface",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 28,
+        "actorCalls": 14,
+        "plans": 14,
+        "noteActions": 15,
+        "forgetActions": 0,
+        "retainedNotes": 3,
+        "noteErrors": 1,
+        "judgeCalls": 1,
+        "actorTimeMs": 119207,
+        "judgeTimeMs": 29685,
+        "actorCost": 0.09412065,
+        "judgeCost": 0.08492000000000001,
+        "memoryBytes": 3933317,
+        "http429": 0,
+        "reasoning": "The agent used the Hugging Face dataset viewer for stanfordnlp/sst2 (train split) exclusively via browser interactions (scrolling and clicking 'Next'), never via API. Screenshots (obs 61, 66/67) show rows 90-99 with idx 95-99 values matching what the agent reported (95 positive 'funny yet', 96 negative 'overbearing...', 97 positive 'robert duvall', 98 positive 'rich and sudden wisdom', 99 positive 'acted and directed...'). After scrolling to the end of the embedded preview and clicking Next, the agent moved to the Data Studio viewer at URL .../viewer/default/train?p=1 (obs 78/79), which shows rows 100-108, confirming idx 100 positive 'in memory', 101 positive 'respectable new one', 102 negative 'yet this grating showcase', 103 positive 'hate to tear your eyes...', 104 negative 'addition to sporting one of the worst titles...'. These values match the agent's final answer exactly. The train split remains selected throughout (Split (3) train · 67.3k rows visible in every screenshot). The final answer lists exactly ten unique rows sorted by idx (95-104) with idx, numeric label, and sentiment name, computes positive=7 and negative=3 summing to 10 (verified correct against the label values shown), and includes two viewer source URLs corresponding to the pages/row ranges used (the dataset card page for rows 95-99 and the Data Studio p=1 URL for rows 100-104). No API calls, downloads, or account changes were used, and no barrier was encountered. All acceptance criteria appear satisfied and are corroborated by visual evidence.",
+        "noteAudit": {
+          "id": "Huggingface Hard--3",
+          "counts": {
+            "adds": 3,
+            "corrections": 11,
+            "sameTextCorrections": 0,
+            "identicalCorrections": 0,
+            "rejected": 1,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [
+            {
+              "index": 17,
+              "error": "Error: Note key \"task_objective\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            }
+          ],
+          "network": {
+            "200": 2,
+            "404": 2
+          },
+          "recoveryObservations": 1
+        }
+      },
+      "review": "Pass retained. Judge verified ten distinct rows across pages. Recovery warning at observation 25 did not stop the task."
+    },
+    {
+      "id": "GitHub Hard--0",
+      "previous": {
+        "id": "GitHub Hard--0",
+        "outcome": "success",
+        "status": "completed",
+        "actions": 29,
+        "actorCalls": 15,
+        "plans": 15,
+        "noteActions": 14,
+        "noteErrors": 0
+      },
+      "current": {
+        "id": "GitHub Hard--0",
+        "site": "GitHub",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 34,
+        "actorCalls": 20,
+        "plans": 20,
+        "noteActions": 16,
+        "forgetActions": 0,
+        "retainedNotes": 3,
+        "noteErrors": 3,
+        "judgeCalls": 1,
+        "actorTimeMs": 134490,
+        "judgeTimeMs": 13591,
+        "actorCost": 0.12481560000000003,
+        "judgeCost": 0.08217500000000001,
+        "memoryBytes": 4953792,
+        "http429": 0,
+        "reasoning": "The agent navigated to the Flask 3.1.0 release notes (https://github.com/pallets/flask/releases#release-3.1.0) and correctly identified the two configuration keys: SESSION_COOKIE_PARTITIONED (referenced by #5472) and SECRET_KEY_FALLBACKS (referenced by #5621). For each, it opened the linked item and verified whether it was an issue or PR: #5472 was confirmed as a CLOSED issue titled 'Add support for partitioned session cookies', and the issue timeline showed it was 'closed as completed in #5499' — the agent then opened PR #5499 and confirmed it was MERGED, titled 'add SESSION_COOKIE_PARTITIONED config'. Similarly, #5621 was confirmed as a CLOSED issue titled 'Rotating secret keys', linked to PR #5632, which was opened and confirmed MERGED, titled 'enable secret key rotation', with the PR body explicitly stating 'closes #5621'. The agent did not merely assume the release-note-linked number was the PR; it verified issue vs PR status and the implementation relationship via timeline/PR text in both cases (screenshots at observations 57, 76-83, 88-89 for feature 1; 94-95, 100-107 for feature 2). The final answer includes the release URL, both config keys, issue/PR numbers, titles, URLs, states (closed/merged), and the verified relationships, keeping the two features distinct. No actions modified any GitHub content (no posts/reactions), consistent with the constraint. All acceptance criteria appear satisfied and supported by the observed screenshots.",
+        "noteAudit": {
+          "id": "GitHub Hard--0",
+          "counts": {
+            "adds": 3,
+            "corrections": 10,
+            "sameTextCorrections": 0,
+            "identicalCorrections": 0,
+            "rejected": 3,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [
+            {
+              "index": 41,
+              "error": "Error: Correction rejected: the key must exist and expected_text must exactly match its current text. Review the current notebook before retrying."
+            },
+            {
+              "index": 44,
+              "error": "Error: Note key \"feature_1_partitioned_cookie\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            },
+            {
+              "index": 60,
+              "error": "Error: Note key \"feature_1_partitioned_cookie\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            }
+          ],
+          "network": {
+            "200": 6,
+            "301": 1,
+            "302": 2,
+            "401": 5,
+            "404": 5
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Pass retained. Judge verified linked issue-to-implementation-PR relationships and merged status for both features."
+    },
+    {
+      "id": "GitHub Hard--1",
+      "previous": {
+        "id": "GitHub Hard--1",
+        "outcome": "success",
+        "status": "completed",
+        "actions": 84,
+        "actorCalls": 46,
+        "plans": 46,
+        "noteActions": 40,
+        "noteErrors": 3
+      },
+      "current": {
+        "id": "GitHub Hard--1",
+        "site": "GitHub",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 40,
+        "actorCalls": 22,
+        "plans": 21,
+        "noteActions": 19,
+        "forgetActions": 0,
+        "retainedNotes": 10,
+        "noteErrors": 0,
+        "judgeCalls": 1,
+        "actorTimeMs": 167402,
+        "judgeTimeMs": 15740,
+        "actorCost": 0.1425776,
+        "judgeCost": 0.0939485,
+        "memoryBytes": 5713631,
+        "http429": 0,
+        "reasoning": "The agent navigated to https://github.com/psf/requests/releases, scrolled through the full release list, and captured both v2.32.2 (May 21, 2024) and v2.32.3 (May 29, 2024) release note sections with their URLs (anchor links to the specific release entries on the releases list page). For v2.32.2, the agent correctly extracted from the screenshot (Obs 96) that the private method _get_connection was renamed, the new public API is get_connection_with_tls_context, and the older public method get_connection is separately deprecated, with migration tracked in PR #6710. For v2.32.3, the agent correctly enumerated two distinct bug fixes: custom SSLContext support in HTTPAdapter subclasses (PR #6716) and the missing ssl module issue (PR #6724), keeping them separate as required. The agent then opened all three PRs (#6710, #6716, #6724) and screenshots (Obs 104, 110, 122) clearly show green 'Merged' badges for each, satisfying the requirement to verify actual merged state rather than inferring from closed status. PR titles were accurately captured: 'Move _get_connection to get_connection_with_tls_context' (#6710), 'Allow for overriding of specific pool key params' (#6716, description confirms SSLContext fix), and 'Don't create default SSLContext if ssl module isn't present' (#6724). The final answer accurately reflects all gathered evidence, correctly separates the two v2.32.3 bug fixes, and provides PR numbers/URLs/titles/merged states for all three PRs. No barriers were encountered and no fabricated data is present—the answer is fully supported by the screenshots.",
+        "noteAudit": {
+          "id": "GitHub Hard--1",
+          "counts": {
+            "adds": 10,
+            "corrections": 9,
+            "sameTextCorrections": 2,
+            "identicalCorrections": 1,
+            "rejected": 0,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [],
+          "network": {
+            "200": 5,
+            "401": 5
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Pass retained. One source-count format repair succeeded. Judge verified both release sections and three merged PRs; actions fell from 84 to 40."
+    },
+    {
+      "id": "GitHub Hard--2",
+      "previous": {
+        "id": "GitHub Hard--2",
+        "outcome": "error",
+        "status": "error",
+        "actions": 40,
+        "actorCalls": 19,
+        "plans": 17,
+        "noteActions": 23,
+        "noteErrors": 0
+      },
+      "current": {
+        "id": "GitHub Hard--2",
+        "site": "GitHub",
+        "outcome": "failure",
+        "status": "failed",
+        "actions": 100,
+        "actorCalls": 33,
+        "plans": 33,
+        "noteActions": 33,
+        "forgetActions": 0,
+        "retainedNotes": 17,
+        "noteErrors": 3,
+        "judgeCalls": 0,
+        "actorTimeMs": 379093,
+        "judgeTimeMs": 0,
+        "actorCost": 0.31883105000000006,
+        "judgeCost": 0,
+        "memoryBytes": 18282208,
+        "error": "Task did not finish within 100 actions",
+        "budget": {
+          "kind": "actions",
+          "actual": 100,
+          "limit": 100
+        },
+        "http429": 0,
+        "noteAudit": {
+          "id": "GitHub Hard--2",
+          "counts": {
+            "adds": 17,
+            "corrections": 13,
+            "sameTextCorrections": 5,
+            "identicalCorrections": 5,
+            "rejected": 3,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [
+            {
+              "index": 81,
+              "error": "Error: Note key \"milestone_3_1_0_confirmed\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            },
+            {
+              "index": 105,
+              "error": "Error: Note key \"pr_5633_status\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            },
+            {
+              "index": 112,
+              "error": "Error: Note key \"closed_items_complete_list\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+            }
+          ],
+          "network": {
+            "200": 20,
+            "401": 20
+          },
+          "recoveryObservations": 1
+        }
+      },
+      "review": "Previous planner error became a 100-action budget failure, not a pass. All 33 plans were valid. Final notes still list 17 unchecked items after six verified PRs. Late batches repeat scroll/click/wait/navigation and unchanged progress notes; recovery warning at observation 302 did not prevent budget exhaustion. Screenshot 300 still shows the milestone list."
+    },
+    {
+      "id": "GitHub Hard--3",
+      "previous": {
+        "id": "GitHub Hard--3",
+        "outcome": "error",
+        "status": "error",
+        "actions": 3,
+        "actorCalls": 3,
+        "plans": 3,
+        "noteActions": 1,
+        "noteErrors": 0
+      },
+      "current": {
+        "id": "GitHub Hard--3",
+        "site": "GitHub",
+        "outcome": "judge_error",
+        "status": "completed",
+        "actions": 31,
+        "actorCalls": 16,
+        "plans": 16,
+        "noteActions": 16,
+        "forgetActions": 0,
+        "retainedNotes": 8,
+        "noteErrors": 1,
+        "judgeCalls": 2,
+        "actorTimeMs": 118545,
+        "judgeTimeMs": 67979,
+        "actorCost": 0.10220965,
+        "judgeCost": 0.1444485,
+        "memoryBytes": 3067269,
+        "error": "Model response exceeded its output-token limit",
+        "http429": 0,
+        "noteAudit": {
+          "id": "GitHub Hard--3",
+          "counts": {
+            "adds": 8,
+            "corrections": 7,
+            "sameTextCorrections": 0,
+            "identicalCorrections": 0,
+            "rejected": 1,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [
+            {
+              "index": 45,
+              "error": "Error: Correction rejected: the key must exist and expected_text must exactly match its current text. Review the current notebook before retrying."
+            }
+          ],
+          "network": {
+            "200": 5,
+            "302": 2,
+            "401": 3
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Previous browser closure did not recur: Haiku returned an answer after 31 actions. Sonnet evaluation ended with output-token-limit error, with two counted calls and 7,573 total output tokens. No verdict, replacement judgment, or inferred pass. Saved data does not expose the earlier judge call's response or stop reason."
+    }
+  ],
+  "reviewScope": "Reviewed all outcomes and judge rationales, failed-task final answers and action histories, repair logs, and notebook replay; visually inspected screenshots for the metadata improvement, both correct configuration filenames, rounded row count, and final milestone state. No replacement judgments.",
+  "limitations": [
+    "Small, repeatedly inspected development suite; no fresh holdout or randomized control.",
+    "Only planner rejection diagnostics and bounded repair feedback changed at runtime; tasks, budgets, and judge stayed unchanged.",
+    "The two new passes occurred without format retries; do not attribute the score increase to repair feedback.",
+    "Judge error remains in the 12-task denominator; its underlying earlier call details were not retained.",
+    "Cost uses recorded usage and configured rates, not billing reconciliation.",
+    "No recorded HTTP 429, but saved browser diagnostics cannot rule out every unsurfaced provider or site issue.",
+    "Raw rejected actor responses are intentionally absent; their safe schema diagnostics identify two oversized sources arrays."
+  ]
+}
