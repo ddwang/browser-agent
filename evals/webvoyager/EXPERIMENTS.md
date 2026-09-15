@@ -437,3 +437,14 @@ with the previous Luna development run at `5987bb1` (10/12), and summarize the
 latest Haiku run (8/12) separately. Check identical Luna configurations and task
 definitions and unchanged source through execution. These repeated development
 runs are not held-out evidence or a controlled estimate of the diagnostics' effect.
+
+Frozen revision `8237245` completed all 12 actor attempts: 11 passes and one
+milestone judge error after Sonnet reached 4,096 output tokens. Four invalid
+note-update plans recovered on their next bounded attempt across two GitHub tasks.
+The previously unsuccessful author audit and exact-count task passed without
+format retries, so the score increase does not establish a diagnostic effect.
+All notebooks replayed exactly; the source hash and configuration checks passed.
+The run used 288 actions, 160 actor calls, and an estimated $1.04905 in 21.0 minutes.
+See the [full Luna rerun report](reports/2026-09-15-luna-planner-diagnostics.md).
+The judge error stays in the denominator. No selective retries, replacement
+judgments, runtime changes, or holdout runs followed.

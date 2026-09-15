@@ -1,0 +1,965 @@
+{
+  "date": "2026-09-15",
+  "partition": "development",
+  "suite": "evals/webvoyager/baseline.json",
+  "protocol": {
+    "partition": "development",
+    "createdAt": "2026-09-15T22:19:59.374Z",
+    "revision": "8237245b1ff02e7c14eb7282c5b031ed7cc4ba70",
+    "dirty": false,
+    "sourceHash": "8c0d43960c11542c4b4bd4162d426d3dfd55bc786084862a9f669208f530a92f",
+    "judgeVersion": 2,
+    "workers": 1,
+    "actor": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna",
+      "reasoningEffort": "medium"
+    },
+    "judge": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-5",
+      "temperature": 1
+    },
+    "timeoutMs": 1200000,
+    "judgeTimeoutMs": 300000,
+    "limits": {
+      "maxActions": 100,
+      "maxJudgeBytes": 25165824
+    },
+    "sourceHashVerifiedBeforeReport": true,
+    "identicalTasksAndSettingsToPreviousLuna": true,
+    "runtimeUnchangedFromLatestHaiku": true,
+    "selectiveRetries": 0,
+    "rejudgments": 0,
+    "holdoutUsed": false
+  },
+  "previousLuna": {
+    "report": "2026-09-15-luna-haiku-comparison.json",
+    "revision": "5987bb17ccdd0e3fd3a85b0428b26fe38f2e5dc4",
+    "runDir": "evals/webvoyager/results/2026-09-15T19-33-25.619Z-luna",
+    "createdAt": "2026-09-15T19:33:25.696Z",
+    "actor": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna",
+      "reasoningEffort": "medium"
+    },
+    "processExitCode": 1,
+    "summary": {
+      "selected": 12,
+      "attempted": 12,
+      "counts": {
+        "success": 10,
+        "failure": 1,
+        "timeout": 0,
+        "error": 1,
+        "blocked": 0,
+        "running": 0,
+        "interrupted": 0,
+        "judge_error": 0,
+        "unscored": 0,
+        "pending": 0
+      },
+      "successRate": 0.8333333333333334,
+      "medianTimeMs": 64212,
+      "p95TimeMs": 447989,
+      "averageActions": 28,
+      "inputTokens": 1193981,
+      "outputTokens": 79774,
+      "cachedInputTokens": 245760,
+      "estimatedActorCost": 0.3394402,
+      "estimatedJudgeCost": 0.8665320000000003,
+      "actions": 336,
+      "actorCalls": 207,
+      "judgeCalls": 11,
+      "cost": 1.2059722000000004,
+      "actorTimeMs": 1528549,
+      "judgeTimeMs": 150405,
+      "wallTimeMs": 1690462.1784667969,
+      "plans": 205,
+      "noteCounts": {
+        "adds": 122,
+        "corrections": 2,
+        "sameTextCorrections": 0,
+        "identicalCorrections": 0,
+        "rejected": 3,
+        "forgets": 0
+      },
+      "retainedNotes": 122,
+      "recoveryObservations": 0,
+      "maxMemoryBytes": 15880673
+    }
+  },
+  "latestHaiku": {
+    "report": "2026-09-15-haiku-planner-diagnostics.json",
+    "revision": "e3df27bf9e4366b5eb8e006aae46c41a824887f1",
+    "runDir": "evals/webvoyager/results/2026-09-15T21-27-28.226Z-haiku",
+    "processExitCode": 1,
+    "summary": {
+      "selected": 12,
+      "attempted": 12,
+      "counts": {
+        "success": 8,
+        "failure": 3,
+        "timeout": 0,
+        "error": 0,
+        "blocked": 0,
+        "running": 0,
+        "interrupted": 0,
+        "judge_error": 1,
+        "unscored": 0,
+        "pending": 0
+      },
+      "successRate": 0.6666666666666666,
+      "medianTimeMs": 167402,
+      "p95TimeMs": 379093,
+      "averageActions": 45.333333333333336,
+      "inputTokens": 273616,
+      "outputTokens": 115516,
+      "cachedInputTokens": 3016304,
+      "estimatedActorCost": 1.9952163500000002,
+      "estimatedJudgeCost": 1.2224294999999998
+    },
+    "totals": {
+      "actions": 544,
+      "actorCalls": 260,
+      "judgeCalls": 12,
+      "cost": 3.2176458500000003,
+      "actorTimeMs": 2317566,
+      "judgeTimeMs": 269834,
+      "wallTimeMs": 2597548.8334960938
+    },
+    "acceptedPlans": 258,
+    "noteCounts": {
+      "adds": 103,
+      "corrections": 112,
+      "sameTextCorrections": 23,
+      "identicalCorrections": 14,
+      "rejected": 26,
+      "forgets": 0
+    },
+    "plannerRepairs": [
+      {
+        "taskId": "Huggingface Hard--0",
+        "attempt": 1,
+        "diagnostic": "$.memory_updates[0].sources: too_big (maximum 8, inclusive)",
+        "nextAttemptAccepted": true
+      },
+      {
+        "taskId": "GitHub Hard--1",
+        "attempt": 1,
+        "diagnostic": "$.memory_updates[0].sources: too_big (maximum 8, inclusive)",
+        "nextAttemptAccepted": true
+      }
+    ]
+  },
+  "current": {
+    "runDir": "evals/webvoyager/results/2026-09-15T22-19-59.338Z-luna",
+    "processExitCode": 1,
+    "summary": {
+      "selected": 12,
+      "attempted": 12,
+      "counts": {
+        "success": 11,
+        "failure": 0,
+        "timeout": 0,
+        "error": 0,
+        "blocked": 0,
+        "running": 0,
+        "interrupted": 0,
+        "judge_error": 1,
+        "unscored": 0,
+        "pending": 0
+      },
+      "successRate": 0.9166666666666666,
+      "medianTimeMs": 74958,
+      "p95TimeMs": 195130,
+      "averageActions": 24,
+      "inputTokens": 782818,
+      "outputTokens": 66419,
+      "cachedInputTokens": 211200,
+      "estimatedActorCost": 0.24049040000000005,
+      "estimatedJudgeCost": 0.8085635000000001
+    },
+    "totals": {
+      "actions": 288,
+      "actorCalls": 160,
+      "judgeCalls": 12,
+      "cost": 1.0490539,
+      "actorTimeMs": 1089084,
+      "judgeTimeMs": 161693,
+      "wallTimeMs": 1261782.8530273438
+    },
+    "acceptedPlans": 156,
+    "noteCounts": {
+      "adds": 118,
+      "corrections": 4,
+      "sameTextCorrections": 0,
+      "identicalCorrections": 0,
+      "rejected": 1,
+      "forgets": 0
+    },
+    "plannerRepairs": [
+      {
+        "taskId": "GitHub Hard--0",
+        "attempt": 1,
+        "diagnostic": "$.memory_updates[0].operation: invalid_type; $.memory_updates[0].expected_text: invalid_type (expected string); $.memory_updates[1].operation: invalid_type; additional issues omitted",
+        "nextAttemptAccepted": true
+      },
+      {
+        "taskId": "GitHub Hard--0",
+        "attempt": 1,
+        "diagnostic": "$.memory_updates[0].operation: invalid_type; $.memory_updates[0].expected_text: invalid_type (expected string)",
+        "nextAttemptAccepted": true
+      },
+      {
+        "taskId": "GitHub Hard--1",
+        "attempt": 1,
+        "diagnostic": "$.memory_updates[0].operation: invalid_type; $.memory_updates[0].expected_text: invalid_type (expected string)",
+        "nextAttemptAccepted": true
+      },
+      {
+        "taskId": "GitHub Hard--1",
+        "attempt": 1,
+        "diagnostic": "$.memory_updates[0].operation: invalid_type; $.memory_updates[0].expected_text: invalid_type (expected string)",
+        "nextAttemptAccepted": true
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "ArXiv Hard--0",
+      "previousLuna": {
+        "id": "ArXiv Hard--0",
+        "outcome": "error",
+        "status": "error",
+        "actions": 27,
+        "actorCalls": 15,
+        "plans": 13,
+        "noteActions": 12,
+        "noteErrors": 0
+      },
+      "latestHaiku": {
+        "id": "ArXiv Hard--0",
+        "outcome": "success",
+        "actions": 46,
+        "actorCalls": 17
+      },
+      "current": {
+        "id": "ArXiv Hard--0",
+        "site": "ArXiv",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 31,
+        "actorCalls": 14,
+        "plans": 14,
+        "noteActions": 14,
+        "forgetActions": 0,
+        "retainedNotes": 12,
+        "noteErrors": 1,
+        "judgeCalls": 1,
+        "actorTimeMs": 119396,
+        "judgeTimeMs": 19441,
+        "actorCost": 0.02247548,
+        "judgeCost": 0.0868865,
+        "memoryBytes": 4012455,
+        "http429": 0,
+        "reasoning": "The agent correctly configured the arXiv Advanced Search form and demonstrated it via screenshots: the search-term field was set to the unquoted words 'graph neural networks' with the field selector changed to Abstract (Obs 29), cross-listed papers were included (visible throughout, e.g., Obs 41/56), the date section was set to Date Range with From=2024-01-01 and to=2024-01-03 (Obs 50-56), and Submission date (most recent) was selected (Obs 41/56). No subject checkboxes were selected, confirming an all-archives scope, and this was also encoded in the final search URL (classification-physics_archives=all, terms-0-field=abstract, date-date_type=submitted_date, date-from_date=2024-01-01, date-to_date=2024-01-03, classification-include_cross_list=include) shown in Observation 62. The result page explicitly states 'Showing 1–5 of 5 results,' giving the total count. The agent enumerated all 5 results with arXiv IDs and author counts: 2401.01384 (2 authors), 2401.00755 (7 authors), 2312.09086 (3 authors), 2310.19274 (5 authors), and 2304.14274 (9 authors), matching the screenshots in Observations 63 and 70. It correctly identified the two qualifying papers (more than five authors: 7 and 9 authors respectively) and verified their canonical abstract pages, complete author lists, and URLs via direct navigation (Observations 76-77 for 2401.00755, and 82-83/93-94 for 2304.14274). The final answer accurately reflects all this evidence, states the total count (5), enumerates every result with author counts, and lists the two qualifying papers with full details and a final count of 2. All acceptance criteria are satisfied with strong, consistent visual evidence.",
+        "noteAudit": {
+          "id": "ArXiv Hard--0",
+          "counts": {
+            "adds": 12,
+            "corrections": 1,
+            "sameTextCorrections": 0,
+            "identicalCorrections": 0,
+            "rejected": 1,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [
+            {
+              "index": 85,
+              "error": "Error: Correction rejected: the key must exist and expected_text must exactly match its current text. Review the current notebook before retrying."
+            }
+          ],
+          "network": {
+            "200": 4
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Previous planner error became a pass without a format retry. Screenshots 62 and 70 show all five results with author counts 2/7/3/5/9; judge also verified both qualifying abstract pages. One mismatched notebook correction was rejected."
+    },
+    {
+      "id": "ArXiv Hard--1",
+      "previousLuna": {
+        "id": "ArXiv Hard--1",
+        "outcome": "success",
+        "status": "completed",
+        "actions": 35,
+        "actorCalls": 18,
+        "plans": 18,
+        "noteActions": 15,
+        "noteErrors": 0
+      },
+      "latestHaiku": {
+        "id": "ArXiv Hard--1",
+        "outcome": "success",
+        "actions": 46,
+        "actorCalls": 19
+      },
+      "current": {
+        "id": "ArXiv Hard--1",
+        "site": "ArXiv",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 33,
+        "actorCalls": 14,
+        "plans": 14,
+        "noteActions": 15,
+        "forgetActions": 0,
+        "retainedNotes": 15,
+        "noteErrors": 0,
+        "judgeCalls": 1,
+        "actorTimeMs": 93237,
+        "judgeTimeMs": 11605,
+        "actorCost": 0.021382480000000002,
+        "judgeCost": 0.0888955,
+        "memoryBytes": 4488237,
+        "http429": 0,
+        "reasoning": "The browser evidence shows the agent correctly configured the arXiv Advanced Search with the unquoted query 'graph neural networks', all archives, cross-listed papers included, and Submission date (most recent) range 2024-01-01 to 2024-01-03. It ran the Title search first (Obs 44-59, URL with terms-0-field=title), confirming 5 results and capturing all five IDs (2401.01384, 2401.01232, 2401.00755, 2310.19274, 2304.14274). It then used 'Refine query' to change only the field to Abstract while preserving the query text, date range, date mode, and archive scope (Obs 68-81, URL with terms-0-field=abstract), confirming 5 results and capturing all five IDs (2401.01384, 2401.00755, 2312.09086, 2310.19274, 2304.14274). The final answer correctly computes the intersection (4 IDs: 2401.01384, 2401.00755, 2310.19274, 2304.14274), Title-only (2401.01232), and Abstract-only (2312.09086), matching the observed ID lists exactly. Source URLs are provided for both searches and for the two papers appearing in only one set (via arxiv.org/abs links). The task explicitly warns that equal counts (5 vs 5) must not be treated as proof of identical sets, and the agent correctly demonstrates the sets differ despite equal size. No API, code execution, or account changes were used—only the standard advanced search UI. All acceptance criteria are satisfied with matching browser evidence.",
+        "noteAudit": {
+          "id": "ArXiv Hard--1",
+          "counts": {
+            "adds": 15,
+            "corrections": 0,
+            "sameTextCorrections": 0,
+            "identicalCorrections": 0,
+            "rejected": 0,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [],
+          "network": {
+            "200": 4
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Pass retained. Judge verified identical search parameters except Title versus Abstract, complete result sets, and correct intersection/differences."
+    },
+    {
+      "id": "ArXiv Hard--2",
+      "previousLuna": {
+        "id": "ArXiv Hard--2",
+        "outcome": "success",
+        "status": "completed",
+        "actions": 9,
+        "actorCalls": 5,
+        "plans": 5,
+        "noteActions": 4,
+        "noteErrors": 0
+      },
+      "latestHaiku": {
+        "id": "ArXiv Hard--2",
+        "outcome": "success",
+        "actions": 54,
+        "actorCalls": 30
+      },
+      "current": {
+        "id": "ArXiv Hard--2",
+        "site": "ArXiv",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 19,
+        "actorCalls": 11,
+        "plans": 11,
+        "noteActions": 8,
+        "forgetActions": 0,
+        "retainedNotes": 8,
+        "noteErrors": 0,
+        "judgeCalls": 1,
+        "actorTimeMs": 74958,
+        "judgeTimeMs": 6936,
+        "actorCost": 0.0151792,
+        "judgeCost": 0.0538435,
+        "memoryBytes": 3659475,
+        "http429": 0,
+        "reasoning": "The agent used arXiv's title search interface for all three papers, sorted oldest-first, identified the correct matching original records, and opened each abstract page to verify metadata. Screenshots confirm: (1) Attention Is All You Need arXiv:1706.03762, 8 authors (Vaswani...Polosukhin), cs.CL primary, v1 12 Jun 2017, v7 2 Aug 2023 (last version before 2024); (2) BERT arXiv:1810.04805, 4 authors (Devlin...Toutanova), cs.CL, v1 11 Oct 2018, v2 24 May 2019; (3) RAG arXiv:2005.11401, 12 authors (Lewis...Kiela), cs.CL, v1 22 May 2020, full submission history shows v4 12 Apr 2021 confirmed as highest version pre-2024. The final answer table is ordered oldest-first correctly (2017, 2018, 2020) and correctly identifies RAG as having the most authors (12). All acceptance criteria appear satisfied: titles/IDs/URLs given, author counts/first/last authors/subject/v1 dates given, highest pre-2024 version and date given with distinction from v1, table ordered correctly, most-authors paper identified. No barriers were encountered; all pages were accessible. The evidence in screenshots directly supports the claims in the final answer.",
+        "noteAudit": {
+          "id": "ArXiv Hard--2",
+          "counts": {
+            "adds": 8,
+            "corrections": 0,
+            "sameTextCorrections": 0,
+            "identicalCorrections": 0,
+            "rejected": 0,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [],
+          "network": {
+            "200": 8
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Pass retained. Judge verified all three abstract records, author counts, primary categories, dates, and highest pre-2024 versions."
+    },
+    {
+      "id": "ArXiv Hard--3",
+      "previousLuna": {
+        "id": "ArXiv Hard--3",
+        "outcome": "success",
+        "status": "completed",
+        "actions": 7,
+        "actorCalls": 4,
+        "plans": 4,
+        "noteActions": 3,
+        "noteErrors": 0
+      },
+      "latestHaiku": {
+        "id": "ArXiv Hard--3",
+        "outcome": "success",
+        "actions": 30,
+        "actorCalls": 15
+      },
+      "current": {
+        "id": "ArXiv Hard--3",
+        "site": "ArXiv",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 9,
+        "actorCalls": 5,
+        "plans": 5,
+        "noteActions": 4,
+        "forgetActions": 0,
+        "retainedNotes": 4,
+        "noteErrors": 0,
+        "judgeCalls": 1,
+        "actorTimeMs": 33201,
+        "judgeTimeMs": 5581,
+        "actorCost": 0.00611796,
+        "judgeCost": 0.0281175,
+        "memoryBytes": 1902072,
+        "http429": 0,
+        "reasoning": "The agent navigated to both arXiv abstract pages and captured full submission history sections via screenshots (Observation 10 for Attention Is All You Need showing v1-v7, and Observation 28 for RAG showing v1-v4). All version numbers and UTC dates match between the screenshots and the final answer. Both papers' histories were fully visible (no truncation), covering all versions through 2023-12-31 (Attention paper's latest v7 is Aug 2023, RAG's latest v4 is Apr 2021, both before the cutoff). The answer correctly computed total versions (7 and 4), revisions (6 and 3, excluding v1), revision years (2017/2023 for Attention, 2020/2021 for RAG), and correctly identified Attention Is All You Need as having more revisions. Both abstract-page URLs were included. The answer's date formatting (e.g., '2017-06-12') matches the screenshot data. No omissions, duplications, or fabricated data were found. The agent did not use an API or bypass barriers, and no barrier was encountered. All acceptance criteria appear satisfied with proper evidence.",
+        "noteAudit": {
+          "id": "ArXiv Hard--3",
+          "counts": {
+            "adds": 4,
+            "corrections": 0,
+            "sameTextCorrections": 0,
+            "identicalCorrections": 0,
+            "rejected": 0,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [],
+          "network": {
+            "200": 3
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Pass retained. Judge verified both complete version histories and revision totals."
+    },
+    {
+      "id": "Huggingface Hard--0",
+      "previousLuna": {
+        "id": "Huggingface Hard--0",
+        "outcome": "success",
+        "status": "completed",
+        "actions": 47,
+        "actorCalls": 33,
+        "plans": 33,
+        "noteActions": 14,
+        "noteErrors": 0
+      },
+      "latestHaiku": {
+        "id": "Huggingface Hard--0",
+        "outcome": "failure",
+        "actions": 40,
+        "actorCalls": 21
+      },
+      "current": {
+        "id": "Huggingface Hard--0",
+        "site": "Huggingface",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 21,
+        "actorCalls": 14,
+        "plans": 14,
+        "noteActions": 7,
+        "forgetActions": 0,
+        "retainedNotes": 7,
+        "noteErrors": 0,
+        "judgeCalls": 1,
+        "actorTimeMs": 76925,
+        "judgeTimeMs": 18889,
+        "actorCost": 0.018651,
+        "judgeCost": 0.0679685,
+        "memoryBytes": 3519562,
+        "http429": 0,
+        "reasoning": "The agent systematically visited each of the three Hugging Face model cards (all-MiniLM-L6-v2, all-mpnet-base-v2, e5-small-v2), captured license badges (apache-2.0, apache-2.0, mit respectively), embedding dimensions stated in the model card text (384, 768, 384), and specifically consulted each model's sentence_bert_config.json to obtain the documented sentence-encoder max_seq_length (256, 384, 512) — correctly distinguishing this from transformer position capacity or parameter count, as required by the task. It then produced a table with full model IDs, license IDs, embedding dimensions, truncation lengths, and model-card URLs, followed by per-model constraint explanations (MiniLM fails length constraint; MPNet fails both dimension and length constraints; E5 satisfies all three), and correctly identified the qualifying set as {intfloat/e5-small-v2}. For the qualifying E5 model, it documented the required 'query: ' and 'passage: ' prefixes based on observed usage example in the model card (Observation 70 shows this text visibly: '# Each input text should start with ",
+        "noteAudit": {
+          "id": "Huggingface Hard--0",
+          "counts": {
+            "adds": 7,
+            "corrections": 0,
+            "sameTextCorrections": 0,
+            "identicalCorrections": 0,
+            "rejected": 0,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [],
+          "network": {
+            "200": 10,
+            "404": 5
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Pass retained. Sentence-encoder configuration files were used instead of tokenizer limits. Saved judge rationale ends mid-quotation; cause unknown without raw judge response. Screenshots 54 and 70 show E5 max_seq_length 512 and query/passage prefixes. Original SUCCESS verdict is preserved, not replaced."
+    },
+    {
+      "id": "Huggingface Hard--1",
+      "previousLuna": {
+        "id": "Huggingface Hard--1",
+        "outcome": "success",
+        "status": "completed",
+        "actions": 66,
+        "actorCalls": 52,
+        "plans": 52,
+        "noteActions": 13,
+        "noteErrors": 2
+      },
+      "latestHaiku": {
+        "id": "Huggingface Hard--1",
+        "outcome": "success",
+        "actions": 72,
+        "actorCalls": 40
+      },
+      "current": {
+        "id": "Huggingface Hard--1",
+        "site": "Huggingface",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 35,
+        "actorCalls": 26,
+        "plans": 26,
+        "noteActions": 7,
+        "forgetActions": 0,
+        "retainedNotes": 7,
+        "noteErrors": 0,
+        "judgeCalls": 1,
+        "actorTimeMs": 168385,
+        "judgeTimeMs": 10002,
+        "actorCost": 0.041499680000000004,
+        "judgeCost": 0.10599950000000002,
+        "memoryBytes": 8741675,
+        "http429": 0,
+        "reasoning": "The agent navigated to and captured screenshots of all six required sources: both model cards (via rendered page and raw README) and both sentence_bert_config.json and 1_Pooling/config.json files for both repositories, using the browser file viewer/raw view without executing code or downloading weights. The extracted values match the screenshots exactly: MiniLM sentence_bert_config.json max_seq_length=256, card truncation 256 word pieces (agree); MPNet sentence_bert_config.json max_seq_length=384, card truncation 384 word pieces (agree). Pooling configs correctly reported: MiniLM word_embedding_dimension 384, MPNet 768, both with pooling_mode_mean_tokens true and other pooling booleans false, matching screenshots. The final answer explicitly separates embedding dimension from max input length and explains the enabled pooling mode (mean pooling) for each repo. All six source URLs are included. No barriers were encountered requiring reporting, and no fabricated data is evident—each claim traces to a specific observed screenshot.",
+        "noteAudit": {
+          "id": "Huggingface Hard--1",
+          "counts": {
+            "adds": 7,
+            "corrections": 0,
+            "sameTextCorrections": 0,
+            "identicalCorrections": 0,
+            "rejected": 0,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [],
+          "network": {
+            "200": 10,
+            "404": 7
+          },
+          "recoveryObservations": 1
+        }
+      },
+      "review": "Pass retained. Judge verified all six requested sources and matching sequence limits/pooling flags. One recovery warning at observation 90 did not stop the task."
+    },
+    {
+      "id": "Huggingface Hard--2",
+      "previousLuna": {
+        "id": "Huggingface Hard--2",
+        "outcome": "failure",
+        "status": "completed",
+        "actions": 22,
+        "actorCalls": 13,
+        "plans": 13,
+        "noteActions": 9,
+        "noteErrors": 0
+      },
+      "latestHaiku": {
+        "id": "Huggingface Hard--2",
+        "outcome": "failure",
+        "actions": 23,
+        "actorCalls": 13
+      },
+      "current": {
+        "id": "Huggingface Hard--2",
+        "site": "Huggingface",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 16,
+        "actorCalls": 9,
+        "plans": 9,
+        "noteActions": 7,
+        "forgetActions": 0,
+        "retainedNotes": 7,
+        "noteErrors": 0,
+        "judgeCalls": 1,
+        "actorTimeMs": 63369,
+        "judgeTimeMs": 9435,
+        "actorCost": 0.011339120000000001,
+        "judgeCost": 0.043399,
+        "memoryBytes": 2642858,
+        "http429": 0,
+        "reasoning": "The agent's browser trail shows the required sequence: train view (Obs 0), split menu opened (Obs 8), validation selected (Obs 14, URL .../viewer/default/validation, 872 rows), then navigation back to train (Obs 20) and finally explicit navigation to https://.../viewer/default/train (Obs 44/45), satisfying criterion 1. The dataset card (Obs 38) explicitly shows exact split counts: train 67349, validation 872, matching the final answer and satisfying criterion 2. Screenshots for train (Obs 0) show idx 0 and 1 both with label 0/negative, and validation (Obs 14) shows idx 0 label 1/positive and idx 1 label 0/negative, matching the schema's 0=negative/1=positive mapping shown in the Data Fields section (Obs 34), satisfying criterion 3. The viewer columns idx, sentence, label are visible in all relevant screenshots, and split-specific URLs (train and validation) are cited in the final answer; the last screenshot (Obs 50) confirms the train split is active at the end, satisfying criterion 4. No API use, code execution, or account changes are evident; all data came from direct browser viewing of the stanfordnlp/sst2 page. The final answer's claims are consistent with the screenshots and notes, with no contradictions found.",
+        "noteAudit": {
+          "id": "Huggingface Hard--2",
+          "counts": {
+            "adds": 7,
+            "corrections": 0,
+            "sameTextCorrections": 0,
+            "identicalCorrections": 0,
+            "rejected": 0,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [],
+          "network": {
+            "200": 4,
+            "302": 2,
+            "404": 4
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Previous content failure became a pass without a format retry. Screenshot 38 visibly shows the dataset card's exact Data Splits table: 67349 train, 872 validation, 1821 test. Final answer cites that source instead of rounded labels or an unverified table endpoint."
+    },
+    {
+      "id": "Huggingface Hard--3",
+      "previousLuna": {
+        "id": "Huggingface Hard--3",
+        "outcome": "success",
+        "status": "completed",
+        "actions": 16,
+        "actorCalls": 9,
+        "plans": 9,
+        "noteActions": 7,
+        "noteErrors": 0
+      },
+      "latestHaiku": {
+        "id": "Huggingface Hard--3",
+        "outcome": "success",
+        "actions": 28,
+        "actorCalls": 14
+      },
+      "current": {
+        "id": "Huggingface Hard--3",
+        "site": "Huggingface",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 19,
+        "actorCalls": 10,
+        "plans": 10,
+        "noteActions": 9,
+        "forgetActions": 0,
+        "retainedNotes": 9,
+        "noteErrors": 0,
+        "judgeCalls": 1,
+        "actorTimeMs": 58849,
+        "judgeTimeMs": 10251,
+        "actorCost": 0.014095800000000002,
+        "judgeCost": 0.0525115,
+        "memoryBytes": 3131681,
+        "http429": 0,
+        "reasoning": "The agent used only the browser-based Hugging Face dataset viewer for stanfordnlp/sst2, kept the train split selected throughout (confirmed by 'train · 67.3k rows' label visible in screenshots), and progressively scrolled through the table capturing evidence for idx ranges 0-5, 14-20, 29-34, 44-49, 60-65, 75-80, 90-95, and finally 95-99 at the end of the default preview (Observation 42/48, showing 'End of preview' notice). It then clicked the viewer's Next control to reach page 2 (URL .../viewer/default/train?p=1), capturing rows 100-104 (Observation 52). The final answer lists all ten rows (idx 95-104) sorted by idx with numeric label and sentiment name, matching the visible screenshot data exactly (95:1/positive, 96:0/negative, 97:1/positive, 98:1/positive, 99:1/positive, 100:1/positive, 101:1/positive, 102:0/negative, 103:1/positive, 104:0/negative). Positive count = 7, negative count = 3, sum = 10, correctly verified. Two source URLs are provided, one for each side of the boundary. No API or downloaded dataset was used; only web browser interactions with scroll and click on the Next button. All acceptance criteria appear satisfied with matching visual evidence.",
+        "noteAudit": {
+          "id": "Huggingface Hard--3",
+          "counts": {
+            "adds": 9,
+            "corrections": 0,
+            "sameTextCorrections": 0,
+            "identicalCorrections": 0,
+            "rejected": 0,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [],
+          "network": {
+            "200": 2,
+            "404": 2
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Pass retained. Judge verified ten rows across the preview boundary and 7/3 label totals."
+    },
+    {
+      "id": "GitHub Hard--0",
+      "previousLuna": {
+        "id": "GitHub Hard--0",
+        "outcome": "success",
+        "status": "completed",
+        "actions": 14,
+        "actorCalls": 7,
+        "plans": 7,
+        "noteActions": 7,
+        "noteErrors": 0
+      },
+      "latestHaiku": {
+        "id": "GitHub Hard--0",
+        "outcome": "success",
+        "actions": 34,
+        "actorCalls": 20
+      },
+      "current": {
+        "id": "GitHub Hard--0",
+        "site": "GitHub",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 19,
+        "actorCalls": 12,
+        "plans": 10,
+        "noteActions": 9,
+        "forgetActions": 0,
+        "retainedNotes": 7,
+        "noteErrors": 0,
+        "judgeCalls": 1,
+        "actorTimeMs": 88824,
+        "judgeTimeMs": 5369,
+        "actorCost": 0.0156138,
+        "judgeCost": 0.04382350000000001,
+        "memoryBytes": 3065733,
+        "http429": 0,
+        "reasoning": "The agent navigated to the Flask 3.1.0 release page and correctly identified the two configuration keys (SESSION_COOKIE_PARTITIONED and SECRET_KEY_FALLBACKS). It then traced each release-note link to its issue, and verified via PR discussion text (not just assumed release-note numbering) that #5499 'fixes #5472' and #5632 'closes #5621', correctly identifying issue vs PR distinctions (closed issue #5472 vs merged PR #5499; closed issue #5621 vs merged PR #5632). Screenshots confirm titles, states (Closed/Merged), and numbers matching the final answer. The release URL was included, and both mappings are distinct with URLs. No prohibited actions (posting, API use) were taken. All acceptance criteria appear satisfied with supporting screenshot evidence.",
+        "noteAudit": {
+          "id": "GitHub Hard--0",
+          "counts": {
+            "adds": 7,
+            "corrections": 2,
+            "sameTextCorrections": 0,
+            "identicalCorrections": 0,
+            "rejected": 0,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [],
+          "network": {
+            "200": 6,
+            "401": 6,
+            "404": 5
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Pass retained after two separate bounded format repairs for invalid note-update operation/expected_text fields. Judge verified both issue-to-implementation-PR mappings."
+    },
+    {
+      "id": "GitHub Hard--1",
+      "previousLuna": {
+        "id": "GitHub Hard--1",
+        "outcome": "success",
+        "status": "completed",
+        "actions": 12,
+        "actorCalls": 7,
+        "plans": 7,
+        "noteActions": 5,
+        "noteErrors": 0
+      },
+      "latestHaiku": {
+        "id": "GitHub Hard--1",
+        "outcome": "success",
+        "actions": 40,
+        "actorCalls": 22
+      },
+      "current": {
+        "id": "GitHub Hard--1",
+        "site": "GitHub",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 12,
+        "actorCalls": 9,
+        "plans": 7,
+        "noteActions": 5,
+        "forgetActions": 0,
+        "retainedNotes": 5,
+        "noteErrors": 0,
+        "judgeCalls": 1,
+        "actorTimeMs": 52930,
+        "judgeTimeMs": 5053,
+        "actorCost": 0.010416080000000001,
+        "judgeCost": 0.036477499999999996,
+        "memoryBytes": 2247724,
+        "http429": 0,
+        "reasoning": "The agent visited both release pages (v2.32.2 and v2.32.3) and captured their release dates (May 21, 2024 and May 29, 2024) and source URLs. For v2.32.2, it correctly distinguished the renamed private method (_get_connection), the new public replacement (get_connection_with_tls_context), and the separately deprecated older public method (get_connection), and cited migration PR #6710 with its URL. For v2.32.3, it enumerated both bug fixes (custom SSLContext issue -> PR #6716, missing ssl module issue -> PR #6724), keeping them distinct. All three PRs (#6710, #6716, #6724) were opened and their titles and merged status were explicitly verified via screenshots showing the purple 'Merged' badge, not just closed state. The final answer accurately reflects all this evidence, matching the screenshots and notes. No barriers were encountered, and all acceptance criteria appear satisfied with matching evidence.",
+        "noteAudit": {
+          "id": "GitHub Hard--1",
+          "counts": {
+            "adds": 5,
+            "corrections": 0,
+            "sameTextCorrections": 0,
+            "identicalCorrections": 0,
+            "rejected": 0,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [],
+          "network": {
+            "200": 6,
+            "401": 6
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Pass retained after two separate bounded format repairs for invalid note-update operation/expected_text fields. Judge verified both release sections and all three merged PRs."
+    },
+    {
+      "id": "GitHub Hard--2",
+      "previousLuna": {
+        "id": "GitHub Hard--2",
+        "outcome": "success",
+        "status": "completed",
+        "actions": 70,
+        "actorCalls": 38,
+        "plans": 38,
+        "noteActions": 33,
+        "noteErrors": 1
+      },
+      "latestHaiku": {
+        "id": "GitHub Hard--2",
+        "outcome": "failure",
+        "actions": 100,
+        "actorCalls": 33
+      },
+      "current": {
+        "id": "GitHub Hard--2",
+        "site": "GitHub",
+        "outcome": "judge_error",
+        "status": "completed",
+        "actions": 54,
+        "actorCalls": 27,
+        "plans": 27,
+        "noteActions": 27,
+        "forgetActions": 0,
+        "retainedNotes": 27,
+        "noteErrors": 0,
+        "judgeCalls": 1,
+        "actorTimeMs": 195130,
+        "judgeTimeMs": 45242,
+        "actorCost": 0.05064572,
+        "judgeCost": 0.1456045,
+        "memoryBytes": 7177922,
+        "error": "Model response exceeded its output-token limit",
+        "http429": 0,
+        "noteAudit": {
+          "id": "GitHub Hard--2",
+          "counts": {
+            "adds": 27,
+            "corrections": 0,
+            "sameTextCorrections": 0,
+            "identicalCorrections": 0,
+            "rejected": 0,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [],
+          "network": {
+            "200": 20,
+            "302": 2,
+            "401": 20,
+            "404": 5
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Actor completed after 54 actions and 27 valid plans, returning a 23-item inventory. Sonnet produced no verdict: one counted call hit its output-token limit with 4096 output tokens. No replacement judgment or manual pass was added."
+    },
+    {
+      "id": "GitHub Hard--3",
+      "previousLuna": {
+        "id": "GitHub Hard--3",
+        "outcome": "success",
+        "status": "completed",
+        "actions": 11,
+        "actorCalls": 6,
+        "plans": 6,
+        "noteActions": 5,
+        "noteErrors": 0
+      },
+      "latestHaiku": {
+        "id": "GitHub Hard--3",
+        "outcome": "judge_error",
+        "actions": 31,
+        "actorCalls": 16
+      },
+      "current": {
+        "id": "GitHub Hard--3",
+        "site": "GitHub",
+        "outcome": "success",
+        "status": "completed",
+        "result": "SUCCESS",
+        "actions": 20,
+        "actorCalls": 9,
+        "plans": 9,
+        "noteActions": 11,
+        "forgetActions": 0,
+        "retainedNotes": 10,
+        "noteErrors": 0,
+        "judgeCalls": 1,
+        "actorTimeMs": 63880,
+        "judgeTimeMs": 13889,
+        "actorCost": 0.01307408,
+        "judgeCost": 0.0550365,
+        "memoryBytes": 1969675,
+        "http429": 0,
+        "reasoning": "The agent navigated directly to https://github.com/pallets/flask/blob/2.3.3/pyproject.toml, inspected requires-python (>=3.8), the full project.dependencies list, optional-dependencies (async/dotenv), and build-system (flit_core<4) before using the in-file tag switcher to move to the same path at 3.1.0 (https://github.com/pallets/flask/blob/3.1.0/pyproject.toml), where it inspected requires-python (>=3.9), the full dependencies list, unchanged optional-dependencies, and unchanged build-system. Screenshots (Obs 10, 16, 26 for 2.3.3; Obs 36, 42, 58 for 3.1.0) directly show these values, matching the final report exactly (Werkzeug, itsdangerous, blinker, importlib-metadata version bumps; Jinja2/click unchanged; no additions/removals; extras and build-system unchanged; Python 3.8 permitted in 2.3.3 but not in 3.1.0). The browser finished on the 3.1.0 file (Obs 58/59), satisfying the 'finish on 3.1.0' requirement. Both tag-specific URLs are cited in the answer. No code execution, API use, or account changes occurred; navigation was purely via GitHub's UI (branch/tag selector). All acceptance criteria are met with verifiable screenshot evidence.",
+        "noteAudit": {
+          "id": "GitHub Hard--3",
+          "counts": {
+            "adds": 10,
+            "corrections": 1,
+            "sameTextCorrections": 0,
+            "identicalCorrections": 0,
+            "rejected": 0,
+            "forgets": 0
+          },
+          "reconciles": true,
+          "rejected": [],
+          "network": {
+            "200": 3,
+            "401": 3
+          },
+          "recoveryObservations": 0
+        }
+      },
+      "review": "Pass retained. Screenshot 42 confirms 3.1.0 requires-python >=3.9 and the direct dependency list, including Werkzeug>=3.1. The answer identifies importlib-metadata's 3.6.0-to-3.6 spelling change; the judge loosely labels it a version bump."
+    }
+  ],
+  "reviewScope": "Reviewed every outcome and original judge rationale, changed-outcome answers/notes, repair logs, network sidecars, and notebook replay. Visually inspected screenshots for author counts, exact split counts, E5 configuration/prefixes, and tagged dependencies. No replacement judgments.",
+  "limitations": [
+    "Small repeatedly inspected development suite, not held-out evidence or a randomized control.",
+    "Two newly passing tasks used no format retries; this score change does not establish a causal diagnostics improvement.",
+    "Milestone judge error remains in the denominator; actor completion and a saved answer do not establish a pass.",
+    "Model-selection judge rationale ends mid-quotation; raw judge output was not retained, so its cause is unknown. Original verdict is preserved with an evidence audit.",
+    "Latest Haiku and Luna runs share runtime/tasks/judge/budgets but differ in actor/provider/sampling and execution time; not an isolated model-only comparison.",
+    "Costs use reported usage and configured rates, not billing reconciliation.",
+    "No recorded HTTP 429; saved browser diagnostics cannot rule out every unsurfaced provider/site issue.",
+    "Safe diagnostics identify invalid note-update field types, not whether the rejected fields were missing or held wrong values; rejected raw responses are not retained."
+  ]
+}
