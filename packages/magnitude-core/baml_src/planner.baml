@@ -103,7 +103,8 @@ template_string TaskInstructions(task: string, taskData: MultiMediaContentPart[]
     Return exactly one complete JSON object matching the output schema, with "reasoning" and a non-empty "actions" array.
     Keep reasoning concise. Do not include prose outside the JSON, Markdown fences, XML, or simulated tool calls.
     The actions array is executed by the host after you respond. Do not pretend to execute actions or invent their results.
-    Use only the current observations to plan this batch, then stop and wait for new observations.
+    Base factual comparisons on observed evidence, including retained task notes from earlier observations. You do not need to reopen an unchanged source merely because its screenshot has left context.
+    Use the latest screenshot for coordinates and current UI state. Revisit sources when evidence is missing, conflicting, or may have changed. Do not assume future action results; stop and wait for new observations when needed.
 "#
 
 // TODO: connector system instructions

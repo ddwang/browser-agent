@@ -249,7 +249,7 @@ export class BrowserConnector implements AgentConnector {
         observations.push(
             Observation.fromConnector(
                 this.id,
-                await this.transformScreenshot(currentState.screenshot),
+                { url: currentTabs.tabs[currentTabs.activeTab]?.url, screenshot: await this.transformScreenshot(currentState.screenshot) },
                 { type: 'screenshot', limit: screenshotLimit, dedupe: true }
             )
         );

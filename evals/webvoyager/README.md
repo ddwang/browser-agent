@@ -177,6 +177,30 @@ live task-completion score. They test the browser implementation with scripted
 actions, not whether a model chooses the right recovery. A live `blocked` outcome
 still stays in the task-completion denominator; do not quietly drop blocked tasks.
 
+### Task notebook checks
+
+Actors can save bounded, source-linked notes across screenshot eviction. Notes are
+model-written summaries, not new evidence; the judge still receives the full audit.
+See [memory behavior and limits](../../docs/advanced/memory.mdx).
+
+Run the offline memory, lifecycle, and provider checks:
+
+```sh
+bun test packages/magnitude-core/src/memory evals/webvoyager/notebook.test.ts
+```
+
+To make paid Luna actor and Sonnet judge calls against fresh random local pages:
+
+```sh
+bun evals/webvoyager/fixtures/notebook-live.ts --live
+```
+
+This opt-in check requires both API keys and Chrome. It writes all attempts and
+exact-answer checks to `.context/notebook-live-*`. It includes a one-record control,
+a random 6–10-record collection, and a random 22–28-record collection that exceeds
+the default thought-retention window. These are synthetic mechanism checks, not additional benchmark passes or a fresh
+holdout. No public websites are contacted by the browser tasks.
+
 ### Action and payload budgets
 
 The eval allows **100 actions per task** by default. A task that still needs more

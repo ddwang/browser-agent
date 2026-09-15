@@ -145,3 +145,39 @@ Before starting another test, the user requested an all-runs review. See the
 No new model run or replacement judgment was started during that review. The
 unfinished source-linked notebook draft is preserved separately in `.context`
 and remains disconnected from production code.
+
+### Source-linked notebook candidate
+
+The user authorized a complete Luna development rerun with the new memory system
+after the all-runs review. The notebook now preserves bounded, model-written facts,
+completed checks, and uncertainty with host-validated observation references and
+captured URLs. Updates replace a key; forgetting is explicit; failures do not
+silently evict existing facts. Notes serialize with task memory and survive the
+screenshot and thought windows. Full note actions remain in the saved audit.
+
+Notebook actions consume the existing action budget but do not capture another
+browser image, run browser hooks, or clear recovery state. The planner now
+distinguishes retained factual evidence from current UI grounding. No task-specific
+URLs, item counts, answer hints, selectors, or filenames are added to the actor.
+
+Pre-run verification covers both provider transports, normal task lifecycle,
+checkpoint restoration, bounds, invalid source references, corrections after
+changed evidence, the default 20-thought window, and preserving a real browser
+no-progress stop across note actions. The opt-in live check draws random local
+records before making model calls: one short control, 6–10 records across the image
+window, and 22–28 records across the thought window. Preserve all attempts and
+check exact records, ordering, totals, visits, and note usage independently of
+Sonnet's verdict. These are mechanism checks, not benchmark passes.
+
+Freeze a clean candidate before the complete 12-task development run. Keep Luna's
+medium reasoning, Sonnet 5 judging, all task text/criteria, three screenshots,
+100 actions, 24 MiB judge preflight, deadlines, and one worker unchanged. Do not
+modify runtime code during the run or selectively replace failures. The consumed
+holdout remains untouched; this development comparison cannot establish held-out
+generalization.
+
+Offline verification of the notebook candidate: 309 tests passed, zero failed
+(1,979 assertions across 29 files). Core and evaluation type checks passed; all
+five packages built. The existing circular-dependency, external-type placement,
+and empty CLI/MCP chunk warnings remain. No live notebook outcome is implied by
+these checks.

@@ -92,6 +92,13 @@ test('repeated unsuccessful clicks warn before the real agent stops', async () =
             await agent.exec({ variant: 'mouse:click', x: 70 + i, y: 85 }, agent.memory);
             if (i === 2) assert.ok(connector.recovery.warning?.includes('different approach'));
         }
+        await agent.memory.render();
+        const beforeNotes = await agent.memory.toJSON();
+        const source = beforeNotes.observations.findLastIndex(observation => observation.options?.type === 'screenshot');
+        await agent.exec({ variant: 'memory:note', key: 'barrier', text: 'Repeated clicks did not change the page.', sources: [source] }, agent.memory);
+        assert.equal((await agent.memory.toJSON()).observations.filter(o => o.options?.type === 'screenshot').length,
+            beforeNotes.observations.filter(o => o.options?.type === 'screenshot').length);
+        assert.ok((await agent.memory.toJSON()).notes?.length, 'notes remain available during a browser no-progress stop');
         await assert.rejects(agent.exec({ variant: 'mouse:click', x: 70, y: 85 }, agent.memory), BrowserBlockedError);
     } finally { await connector.onStop(); }
 }, 20_000);

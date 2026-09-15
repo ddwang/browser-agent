@@ -31,7 +31,7 @@ Otherwise, prompt caching will be enabled by default with `anthropic` or `claude
 
 ## Configuring retained screenshots
 
-By default, Magnitude will retain 1 screenshot plus any screenshots that were included in a previous cache write.
+By default, Magnitude retains 2 screenshots plus any screenshots still included in a previous cache write. The browser evaluation runner uses 3.
 
 If your task requires complicated interactions and you want to ensure the agent retains more screenshots in working memory, you can increase the `minScreenshots` option:
 ```ts
@@ -52,4 +52,16 @@ const cachedAgent = await startBrowserAgent({
 
 Anthropic provides 4 cache control messages at a time. The Magnitude agent will use one cache control on the system prompt so that it is always cached, and then cycle the other 3 with prompt cache writes and reads to optimize on screenshot tokens during the task.
 
-In addition - Magnitude only keeps one screenshot unless already cached, plus the last 20 thoughts from the agent. This means that context length will grow roughly linearly with task complexity, and is extremely performant compared to other computer use agent implementations which do not implement sliding-window memory or prompt caching.
+Magnitude keeps the configured number of recent screenshots, any still-cached screenshots, and the last 20 thoughts in the actor's context. The full observation history remains available in saved memory; filtering does not delete it.
+
+## Durable task notes
+
+The agent can use `memory:note` to preserve exact observed facts before scrolling or navigating away. Each note has a stable key, text, and supporting observation numbers. Browser screenshots include the captured URL, which the host attaches to cited notes. These references link a model-written summary to its source; they do not prove that the summary is correct.
+
+Notes survive screenshot and thought eviction. Reusing a key replaces that note; `memory:forget` removes an obsolete note. The actor sees the latest notebook, while saved memory retains the complete note-action audit. Notes are labeled as model-written data, not independent evidence or instructions from a page.
+
+The notebook allows 32 entries, 2,000 characters per note, and 64 KiB of total UTF-8 serialized note data, including source metadata. An invalid reference or capacity overflow returns an explicit error and leaves existing notes unchanged. The agent must correct, consolidate, or forget notes before retrying; nothing is silently evicted.
+
+Notebook actions consume the normal action budget. They do not operate the browser, capture another screenshot, bypass a rate limit, or reset loop detection. They are available with custom action lists and all actor providers; `memory:note` and `memory:forget` are reserved action names.
+
+Each `act()` call starts a fresh notebook unless you explicitly supply an existing `AgentMemory`. Steps within one `act([...])` call share it. `toJSON()` saves notes, and `loadJSON()` restores their source links from saved observations. Legacy checkpoints without notes remain supported.

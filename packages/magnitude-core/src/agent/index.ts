@@ -12,6 +12,8 @@ import { ActionLimitError, AgentError } from "@/agent/errors";
 import { AgentMemory, AgentMemoryOptions } from "@/memory";
 import { ActionDefinition } from "@/actions";
 import { taskActions } from "@/actions/taskActions";
+import { memoryActions } from '@/actions/memoryActions';
+import { NOTEBOOK_INSTRUCTIONS } from '@/memory/notebook';
 import { ConnectorInstructions, AgentContext, traceAsync, MultiMediaContentPart } from "@/ai/baml_client";
 import { telemetrifyAgent } from '@/telemetry/events';
 import { isClaude } from '@/ai/util';
@@ -97,6 +99,10 @@ export class Agent {
         this.actions = [...this.options.actions];
         for (const connector of this.connectors) {
             this.actions.push(...(connector.getActionSpace ? connector.getActionSpace() : []));
+        }
+        for (const action of memoryActions) {
+            if (this.actions.some(existing => existing.name === action.name)) throw new Error(`Action name '${action.name}' is reserved for task memory.`);
+            this.actions.push(action);
         }
         // Deduplicate actions by name
         // TODO: maybe error instead, or automatically differentiate them?
@@ -205,26 +211,30 @@ export class Agent {
             throw new AgentError(`Generated action '${action.variant}' violates input schema: ${parsed.error.message}`, { adaptable: true });
         }
 
-        for (const connector of this.connectors) await connector.beforeAction?.(action);
+        const memoryOnly = memoryActions.includes(actionDefinition);
+        if (!memoryOnly) for (const connector of this.connectors) await connector.beforeAction?.(action);
         this.events.emit('actionStarted', action);
         
         const data = await actionDefinition.resolver(
-            { input: parsed.data, agent: this }
+            { input: parsed.data, agent: this, memory }
         );
 
         this.events.emit('actionDone', action);
 
         if (memory) {
             // Record action taken
-            memory.recordObservation(Observation.fromActionTaken(actionDefinition.name, JSON.stringify(action)));
+            memory.recordObservation(Observation.fromActionTaken(actionDefinition.name, JSON.stringify(action),
+                memoryOnly ? { type: 'notebook-write' } : undefined));
 
             // Record results of action
             if (data) {
-                memory.recordObservation(Observation.fromActionResult(actionDefinition.name, data));
+                memory.recordObservation(Observation.fromActionResult(actionDefinition.name, data,
+                    memoryOnly ? { type: 'notebook-result', limit: 1 } : undefined));
             }
 
             // Collect and record observations from connectors
-            await this._recordConnectorObservations(memory);
+            if (memoryOnly) this.events.emit('observationsRecorded'); // Checkpoint notes without another browser capture.
+            else await this._recordConnectorObservations(memory);
         }
     }
 
@@ -287,7 +297,7 @@ export class Agent {
     private async _buildContext(memory: AgentMemory): Promise<AgentContext> {
         const messages = await memory.render();
 
-        const connectorInstructions: ConnectorInstructions[] = [];
+        const connectorInstructions: ConnectorInstructions[] = [{ connectorId: 'task_memory', instructions: NOTEBOOK_INSTRUCTIONS }];
 
         for (const connector of this.connectors) {
             if (connector.getInstructions) {
