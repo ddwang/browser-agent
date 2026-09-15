@@ -91,13 +91,14 @@ function parseArguments(args: string[]): CLIOptions {
       case '--no-tables':
         options.noTables = true;
         break;
-      case '--min-text-length':
+      case '--min-text-length': {
         const minLength = parseInt(args[++i]);
         if (isNaN(minLength)) {
           throw new Error('--min-text-length must be a number');
         }
         options.minTextLength = minLength;
         break;
+      }
       case '--verbose':
       case '-v':
         options.verbose = true;

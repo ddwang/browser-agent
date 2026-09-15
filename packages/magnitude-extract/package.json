@@ -28,7 +28,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "bun test",
-    "lint": "bun run eslint src/**/*.ts",
+    "lint": "eslint \"src/**/*.ts\"",
     "prepublishOnly": "bun run build"
   },
   "keywords": [

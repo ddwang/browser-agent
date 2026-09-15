@@ -193,7 +193,7 @@ export class ContentHandlers {
       { language: 'cpp', patterns: [/\b(#include|using namespace|std::)\b/, /cout\s*<</, /\bint main\b/] },
       { language: 'csharp', patterns: [/\b(using|namespace|public class)\b/, /Console\.WriteLine/, /\bstring\[\]/] },
       { language: 'php', patterns: [/<\?php/, /\$\w+/, /echo\s+/] },
-      { language: 'ruby', patterns: [/\b(def|end|class|require)\b/, /puts\s+/, /\@\w+/] },
+      { language: 'ruby', patterns: [/\b(def|end|class|require)\b/, /puts\s+/, /@\w+/] },
       { language: 'go', patterns: [/\b(package|import|func|var)\b/, /fmt\.Print/, /\bgo\s+\w+/] },
       { language: 'rust', patterns: [/\b(fn|let|mut|use|struct)\b/, /println!/, /\bSome\(|\bNone\b/] },
       { language: 'html', patterns: [/<\/?[a-z][\s\S]*>/i, /<!DOCTYPE/, /&\w+;/] },
