@@ -419,3 +419,21 @@ All notebooks replayed exactly; the source hash and configuration checks passed.
 The run used 544 actions, 260 actor calls, and an estimated $3.21765 in 43.3 minutes.
 See the [full Haiku rerun report](reports/2026-09-15-haiku-planner-diagnostics.md).
 No selective retries, replacement judgments, runtime changes, or holdout runs followed.
+
+### Luna rerun after planner diagnostics
+
+The user requested another Luna run after the Haiku rerun. Run the complete,
+unchanged 12-task development suite once in a fresh directory, with OpenAI
+`gpt-5.6-luna` at medium reasoning and no explicit temperature. Keep Anthropic
+`claude-sonnet-5` at temperature 1 as judge, judge version 2, one worker,
+100 actions, 24 MiB judge preflight, and 1,200/300-second task/judge deadlines.
+Use the same runtime as the Haiku rerun; do not change the judge after its prior
+output-token-limit error. Commit this protocol before calls and freeze the worktree
+through completion. Preserve all errors, without selective retries, replacement
+judgments, or holdout reuse.
+
+Compare every outcome, usage, latency, planner diagnostic, and notebook replay
+with the previous Luna development run at `5987bb1` (10/12), and summarize the
+latest Haiku run (8/12) separately. Check identical Luna configurations and task
+definitions and unchanged source through execution. These repeated development
+runs are not held-out evidence or a controlled estimate of the diagnostics' effect.
