@@ -137,3 +137,11 @@ and truncation handling, bounded format retries, and cached-token cost accountin
 No live OpenAI API or website evaluation ran because `OPENAI_API_KEY` was absent.
 This establishes offline integration coverage, not a Luna performance score.
 The consumed holdout and its judgments were not rerun or changed.
+
+The API key was subsequently added. The first complete Luna hard-development run
+at `5d0f08f` scored 9/12, with two action-budget failures and one no-progress stop.
+Before starting another test, the user requested an all-runs review. See the
+[complete review and next-experiment requirements](reports/2026-09-15-all-runs-review.md).
+No new model run or replacement judgment was started during that review. The
+unfinished source-linked notebook draft is preserved separately in `.context`
+and remains disconnected from production code.
