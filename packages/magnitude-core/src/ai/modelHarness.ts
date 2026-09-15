@@ -256,21 +256,33 @@ export class ModelHarness {
         for (let attempt = 0; ; attempt++) {
             try {
                 return await this._withUsage(async collector => {
-                    await this.baml.CreatePartialRecipe(
-                        context, task, data,
-                        this.options.llm.provider === 'claude-code',
-                        { tb, collector, clientRegistry }
-                    );
-                    return parsePlannerResponse(collector.last?.rawLlmResponse ?? null, actionVocabulary);
+                    let bamlRejected = false;
+                    try {
+                        await this.baml.CreatePartialRecipe(
+                            context, task, data,
+                            this.options.llm.provider === 'claude-code',
+                            { tb, collector, clientRegistry }
+                        );
+                    } catch (error) {
+                        if (!(error instanceof BamlValidationError)) throw error;
+                        bamlRejected = true;
+                    }
+                    // BAML can fail first or coerce invalid fields. Diagnose its
+                    // raw response locally, but never bypass either validator.
+                    const plan = parsePlannerResponse(collector.last?.rawLlmResponse ?? null, actionVocabulary);
+                    if (bamlRejected) throw new PlannerResponseError('$: BAML parser rejected the response despite local validation; return a plan matching the supplied schema');
+                    return plan;
                 });
             } catch (error) {
-                if (!(error instanceof PlannerResponseError || error instanceof BamlValidationError)) throw error;
-                if (attempt === 1) throw new PlannerResponseError('Planner returned an invalid plan on both attempts');
-                this.logger.warn('Invalid planner response; retrying once with the same observations');
+                if (!(error instanceof PlannerResponseError)) throw error;
+                this.logger.warn({ attempt: attempt + 1, diagnostic: error.diagnostic }, attempt === 0
+                    ? 'Invalid planner response; retrying once with the same observations'
+                    : 'Invalid planner response; no format retries remain');
+                if (attempt === 1) throw new PlannerResponseError(error.diagnostic, 'Planner returned an invalid plan on both attempts');
                 // No invalid output is appended to memory or executed. Keep the
                 // correction short even when the rejected response is enormous.
                 context = { ...context, observationContent: [...context.observationContent, {
-                    role: 'user', cacheControl: false, content: ['Your previous response was rejected as an invalid plan. No actions were executed. Return only one complete JSON object with concise reasoning, a memory_updates array (empty when nothing new needs retaining), and a non-empty actions array matching the schema. No XML, prose, simulated tool calls, or imagined observations. Plan only the next batch from the observations above.'],
+                    role: 'user', cacheControl: false, content: [`Your previous response was rejected as an invalid plan. No actions were executed. Validation: ${error.diagnostic}. Correct the reported fields. Return only one complete JSON object with concise reasoning, a memory_updates array (empty when nothing new needs retaining), and a non-empty actions array matching the schema. No XML, prose, simulated tool calls, or imagined observations. Plan only the next batch from the observations above.`],
                 }] };
             }
         }

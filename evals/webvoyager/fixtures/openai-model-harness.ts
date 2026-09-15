@@ -9,6 +9,9 @@ import type { ModelUsage, OpenAIClient } from '../../../packages/magnitude-core/
 import { buildDefaultBrowserAgentOptions } from '../../../packages/magnitude-core/src/ai/util';
 import { PlannerResponseError } from '../../../packages/magnitude-core/src/ai/plannerResponse';
 import { ModelResponseError } from '../../../packages/magnitude-core/src/ai/modelResponseError';
+import { plannerRepairCases, rejectedValue } from './planner-repair-cases';
+import { Agent } from '../../../packages/magnitude-core/src/agent';
+import { Observation } from '../../../packages/magnitude-core/src/memory/observation';
 
 // Real BAML Chat Completions transport, parser and collector; no external API.
 const plan = { reasoning: 'Use the observed button.', memory_updates: [], actions: [{ variant: 'click', x: 12 }] };
@@ -115,11 +118,49 @@ try {
         console.log('PASS: OpenAI format retry is bounded and both completions are counted');
     }
     {
-        const { act, usage } = await fixture([{ text: 'invalid' }, { text: 'invalid' }]);
-        await assert.rejects(act(), PlannerResponseError);
+        const { act, usage } = await fixture([{ text: 'invalid' }, { text: JSON.stringify(plannerRepairCases[0].value) }]);
+        await assert.rejects(act(), error => error instanceof PlannerResponseError
+            && error.message.includes('invalid plan on both attempts') && error.diagnostic === plannerRepairCases[0].diagnostic);
         assert.equal(requests.length, 2);
         assert.equal(usage.length, 2);
         console.log('PASS: invalid OpenAI plans exhaust after two attempts');
+    }
+    for (const { value, diagnostic } of plannerRepairCases) {
+        const { act, usage } = await fixture([{ text: JSON.stringify(value) }, { text: valid }]);
+        assert.deepEqual(await act(), plan);
+        assert.equal(requests.length, 2);
+        assert.equal(usage.length, 2);
+        const content = requests[1].messages.at(-1).content;
+        const repair = typeof content === 'string' ? content : content.map((part: any) => part.text ?? '').join('');
+        assert.ok(repair.includes(diagnostic), repair);
+        assert.ok(!repair.includes(rejectedValue));
+        assert.ok(repair.length < 1600);
+        assert.equal(context.observationContent.length, 1);
+        console.log('PASS: OpenAI retry receives bounded field-level diagnostics without rejected values');
+    }
+    {
+        const note = { key: 'record', text: 'Visible fact.', sources: [0], operation: 'add', expected_text: null };
+        const repaired = { ...plan, actions: [{ variant: 'finish' }] };
+        const { harness, usage } = await fixture([
+            { text: JSON.stringify({ ...plan, memory_updates: [note], actions: [{ variant: 'finish' }, { variant: 'click', x: rejectedValue }] }) },
+            { text: JSON.stringify(repaired) },
+        ]);
+        let finishes = 0;
+        const agent = new Agent({ telemetry: false, maxActions: 1,
+            llm: { provider: 'openai', options: { model: 'fixture', apiKey: 'unused' } },
+            connectors: [{ id: 'fixture', collectObservations: async () => [Observation.fromConnector('fixture', 'Visible fact.')] }],
+            actions: [...vocabulary, createAction({ name: 'finish', resolver: async ({ agent }) => { finishes++; await agent.queueDone(); } })],
+        });
+        agent.models.partialAct = harness.partialAct.bind(harness);
+        await agent.act('Complete the observed task.');
+        const memory = await agent.memory.toJSON();
+        assert.equal(finishes, 1);
+        assert.equal(requests.length, 2);
+        assert.equal(usage.length, 2);
+        assert.equal(memory.notes, undefined);
+        assert.equal(memory.observations.filter(o => o.source.startsWith('action:taken:')).length, 1);
+        assert.ok(!JSON.stringify(memory).includes(rejectedValue));
+        console.log('PASS: invalid whole plans execute neither valid leading notes nor actions before repair');
     }
     for (const reply of [
         { text: valid, finishReason: 'length' }, { text: '{', finishReason: 'length' },

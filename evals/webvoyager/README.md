@@ -293,15 +293,30 @@ The runner rejects a changed model, timeout, or source hash in an existing run.
 
 ### Planner format recovery
 
-The planner must return one complete JSON object with `reasoning` and a non-empty
-`actions` array. A single JSON code fence is accepted for compatibility; surrounding
-prose, XML tool calls, incomplete JSON, unknown actions, and invalid action inputs
-are rejected before any action in the batch executes.
+The planner must return one complete JSON object with `reasoning`, `memory_updates`
+(possibly empty), and a non-empty `actions` array. A single JSON code fence is
+accepted for compatibility; surrounding prose, XML tool calls, incomplete JSON,
+unknown actions, and invalid action inputs are rejected before any action in the
+batch executes.
 
 An invalid plan gets one format-only retry using the same observations and a short
 correction. The rejected response is not executed or added to browser memory. A
 second invalid response fails the task. This is separate from provider transport
 retries and does not restart the browser task. Both attempts' reported usage counts.
+
+The correction and warning logs include bounded validation diagnostics: up to three
+issue paths/codes, expected types, and numeric bounds when available, capped at
+1,024 characters. For example, `$.memory_updates[0].sources: too_big (maximum 8,
+inclusive)` identifies the failed field without echoing note text. Unknown keys,
+dynamic record keys, received values, and custom refinement messages are omitted;
+unsupported or deeply nested paths are abbreviated. The final task error retains
+the second attempt's diagnostic. These diagnostics also apply when BAML rejects
+the response first; passing local validation never overrides a BAML rejection.
+
+No rejected raw response is added to memory, logs, or the repair prompt by this
+path. Provider/BAML logging configured separately may have its own output policy.
+Diagnostics do not change accepted schemas, retry counts, action limits, or usage
+accounting, and do not establish that a live model will repair a given failure.
 
 Known supporting direct Anthropic models also receive a provider-enforced JSON
 schema derived from the same action/query/extraction definitions. Original Zod

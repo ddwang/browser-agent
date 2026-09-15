@@ -363,3 +363,33 @@ rejections. Both failed exact dataset-count verification, and Haiku also showed
 unreconciled version facts, an unsupported final value, and filename substitution.
 See the [full paired report and evidence caveats](reports/2026-09-15-luna-haiku-comparison.md).
 No runtime tuning, selective retries, rejudgments, or holdout runs followed.
+
+### Bounded planner diagnostics
+
+After reviewing Luna's failure modes, the user approved starting with planner
+diagnostics and the existing bounded repair. Preserve local field-level validation
+issues instead of collapsing every rejection into a generic format error. Include
+up to three safe schema paths/codes, expected types, and numeric limits, capped at
+1,024 characters, in warning logs and the same one-retry correction. Retain the
+last diagnostic in the terminal task error. Do not echo rejected output values,
+unknown keys, dynamic record keys, or custom refinement messages. BAML parse errors
+also receive local diagnosis, without bypassing either validator.
+
+This change does not alter models, provider transport settings, accepted schemas,
+notebook semantics, action/payload budgets, or task/judge prompts. Refusal and token
+truncation remain terminal. No note or browser action from an invalid plan may
+execute, and both attempts' usage remains counted. Use site-independent parser
+tests and real BAML transport checks against loopback fake providers; do not rerun
+website tasks or the consumed holdout for this implementation step. The old Luna
+and Haiku rejected payloads were not retained, so their exact defects cannot be
+reconstructed or claimed fixed from this change.
+
+Offline verification passed 326 tests with 4,433 assertions across 31 files.
+The five new parser tests failed before implementation and passed afterward.
+Both real provider adapters passed all five shared repair cases; an agent-level
+check confirmed that an invalid trailing action prevents both a valid leading
+note and a valid leading action from executing. Terminal diagnostics, bounded
+retry counts, usage accounting, and omission of rejected values also passed.
+Core and evaluation type checks and all five package builds passed. No live model
+calls, website reruns, selective rejudgments, or holdout runs followed; live success
+rate improvement remains unmeasured.

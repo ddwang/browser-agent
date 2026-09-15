@@ -9,6 +9,7 @@ import type { ModelUsage } from '../../../packages/magnitude-core/src/ai/types';
 import { PlannerResponseError } from '../../../packages/magnitude-core/src/ai/plannerResponse';
 import { ModelResponseError } from '../../../packages/magnitude-core/src/ai/modelResponseError';
 import sharp from 'sharp';
+import { plannerRepairCases, rejectedValue } from './planner-repair-cases';
 
 // Exercise the actual BAML parser and collector without external model calls.
 const plan = { reasoning: 'Click the visible button.', memory_updates: [], actions: [{ variant: 'click', x: 12 }] };
@@ -88,10 +89,23 @@ try {
     }
     {
         const { act, usage } = await fixture([{ text: xml }, { text: xml }]);
-        await assert.rejects(act(), PlannerResponseError);
+        await assert.rejects(act(), error => error instanceof PlannerResponseError
+            && error.message.includes('invalid plan on both attempts') && error.diagnostic.includes('invalid_json'));
         assert.equal(requests.length, 2);
         assert.equal(usage.length, 2);
         console.log('PASS: invalid plans fail after two attempts');
+    }
+    for (const { value, diagnostic } of plannerRepairCases) {
+        const { act, usage } = await fixture([{ text: JSON.stringify(value) }, { text: valid }]);
+        assert.deepEqual(await act(), plan);
+        assert.equal(requests.length, 2);
+        assert.equal(usage.length, 2);
+        const repair = requests[1].messages.at(-1).content.map((part: any) => part.text ?? '').join('');
+        assert.ok(repair.includes(diagnostic), repair);
+        assert.ok(!repair.includes(rejectedValue));
+        assert.ok(repair.length < 1600);
+        assert.equal(context.observationContent.length, 1);
+        console.log('PASS: Anthropic retry receives bounded field-level diagnostics without rejected values');
     }
     {
         const { act, harness, usage } = await fixture([{ text: valid }, { status: 400 }, { text: '{"answer":true}' }]);
