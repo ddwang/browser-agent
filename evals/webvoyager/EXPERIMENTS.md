@@ -106,3 +106,11 @@ with 96 actions and delayed checkpoints finalized correctly; it did **not**
 reproduce the development runner error. Exit-zero-without-a-result remains an
 error, with additional exit/signal/saved-status diagnostics for future failures.
 Do not describe the unexplained development error as fixed or rescore it.
+
+The recovery repair reproduced a false warning on the old implementation, then
+passed all 14 real-browser loopback checks. It includes visible nested scroll
+offsets and focused input/textarea/select state in the diagnostic hash. Vertical
+and horizontal panel endpoints still trigger no-progress stops; hidden/offscreen
+scroll changes do not conceal unchanged clicks. Thresholds and browser-task
+instructions are unchanged. This is still a heuristic, not proof of a stall:
+canvas-only or cross-frame state changes are not fully represented.

@@ -261,24 +261,36 @@ export class BrowserConnector implements AgentConnector {
             )
         );
         const page = this.harness.page;
-        const state = await page.evaluate(() => ({
-            headings: [document.title, ...Array.from(document.querySelectorAll('h1, h2, [role="dialog"]'))
-                .filter(element => {
-                    const rect = element.getBoundingClientRect();
-                    return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight;
-                }).map(element => (element as HTMLElement).innerText.slice(0, 500))],
-            // Used only for a hash, not exposed as an additional source of answers.
-            text: document.body?.innerText.slice(0, 20_000) ?? '',
-            scroll: [scrollX, scrollY],
-            input: document.activeElement instanceof HTMLInputElement ? document.activeElement.value : '',
-        }));
+        const state = await page.evaluate(() => {
+            const visible = (element: Element) => {
+                const rect = element.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight
+                    && rect.right > 0 && rect.left < innerWidth && getComputedStyle(element).visibility === 'visible';
+            };
+            const elements = Array.from(document.querySelectorAll('*'));
+            // Check offsets first so layout/visibility work is limited to scrolled elements.
+            const scrollers = elements.flatMap((element, index) =>
+                (element.scrollLeft || element.scrollTop) && visible(element)
+                    ? [[index, element.scrollLeft, element.scrollTop]] : []);
+            const active = document.activeElement;
+            const input = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement
+                ? [elements.indexOf(active), active instanceof HTMLSelectElement ? Array.from(active.selectedOptions, option => option.value) : active.value,
+                    active instanceof HTMLInputElement ? active.checked : null] : [];
+            return {
+                headings: [document.title, ...Array.from(document.querySelectorAll('h1, h2, [role="dialog"]'))
+                    .filter(visible).map(element => (element as HTMLElement).innerText.slice(0, 500))],
+                // Used only for a hash, not exposed as an additional source of answers.
+                text: document.body?.innerText.slice(0, 20_000) ?? '',
+                scroll: [scrollX, scrollY], scrollers, input,
+            };
+        });
         const url = new URL(page.url());
         for (const key of [...url.searchParams.keys()]) {
             if (/auth|token|^utm_|fbclid/i.test(key)) url.searchParams.delete(key);
         }
         url.hash = '';
         url.searchParams.sort();
-        const fingerprint = createHash('sha256').update(JSON.stringify([url.href, state.text, state.scroll, state.input])).digest('hex');
+        const fingerprint = createHash('sha256').update(JSON.stringify([url.href, state.text, state.scroll, state.scrollers, state.input])).digest('hex');
         const responses = [...(this.responses.get(page)?.values() ?? [])];
         const response = responses.find(record => record.status === 429 && record.navigation)
             ?? responses.find(record => record.status === 429) ?? responses.at(-1);

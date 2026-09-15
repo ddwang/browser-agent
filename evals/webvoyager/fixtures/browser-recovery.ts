@@ -13,6 +13,16 @@ function test(name: string, check: () => Promise<void>, _timeout?: number) { cas
 let cooldownRequests = 0;
 const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch(request) {
     const path = new URL(request.url).pathname;
+    if (path.startsWith('/scroll') || path === '/controls') {
+        const horizontal = path === '/scroll-horizontal';
+        const rows = Array.from({ length: 80 }, () => `<span style="display:${horizontal ? 'inline-block' : 'block'};width:180px;height:100px">${crypto.randomUUID()}</span>`).join('');
+        const panel = `<div class="panel" style="width:400px;height:220px;overflow:auto;overscroll-behavior:contain;white-space:${horizontal ? 'nowrap' : 'normal'}">${rows}</div>`;
+        const panels = path === '/scroll-hidden'
+            ? `<div style="visibility:hidden">${panel}</div><div style="position:absolute;left:5000px;top:0">${panel}</div>` : panel;
+        return new Response(`<h1>Local progress fixture</h1>${path === '/controls'
+            ? `<textarea></textarea><select>${Array.from({ length: 12 }, (_, i) => `<option value="${i}">Choice ${i}</option>`).join('')}</select>${Array.from({ length: 8 }, () => '<input>').join('')}`
+            : panels}<button style="position:fixed;left:10px;top:650px">Unchanged button</button>`, { headers: { 'content-type': 'text/html' } });
+    }
     const limited = path === '/limited' || (path === '/cooldown' && cooldownRequests++ === 0);
     const html = limited ? '<h1>Too many requests</h1>'
         : path === '/subscription' ? '<h1>Subscribe to Example to continue</h1>'
@@ -85,6 +95,82 @@ test('repeated unsuccessful clicks warn before the real agent stops', async () =
         await assert.rejects(agent.exec({ variant: 'mouse:click', x: 70, y: 85 }, agent.memory), BrowserBlockedError);
     } finally { await connector.onStop(); }
 }, 20_000);
+
+for (const horizontal of [false, true]) test(`nested ${horizontal ? 'horizontal' : 'vertical'} scroll progress is not a stall, but its endpoint is`, async () => {
+    const { connector, agent, page } = await fixture(horizontal ? '/scroll-horizontal' : '/scroll-vertical');
+    const action = { variant: 'mouse:scroll', x: 100, y: 140, deltaX: horizontal ? 300 : 0, deltaY: horizontal ? 0 : 300 };
+    try {
+        const text = await page.locator('body').innerText();
+        let previous = 0;
+        for (let i = 0; i < 8; i++) {
+            await agent.exec(action, agent.memory);
+            const offset = await page.locator('.panel').evaluate((panel, horizontal) => horizontal ? panel.scrollLeft : panel.scrollTop, horizontal);
+            assert.ok(offset > previous, 'the panel must actually move');
+            previous = offset;
+            assert.equal(connector.recovery.warning, undefined, 'new panel content is progress');
+        }
+        assert.deepEqual(await page.evaluate(() => [scrollX, scrollY]), [0, 0]);
+        assert.equal(await page.locator('body').innerText(), text, 'DOM text is unchanged despite visible progress');
+        await page.locator('.panel').evaluate((panel, horizontal) => {
+            if (horizontal) panel.scrollLeft = panel.scrollWidth;
+            else panel.scrollTop = panel.scrollHeight;
+        }, horizontal);
+        await connector.collectObservations();
+        for (let i = 0; i < 6; i++) await agent.exec(action, agent.memory);
+        await assert.rejects(agent.exec(action, agent.memory), BrowserBlockedError);
+    } finally { await connector.onStop(); }
+});
+
+test('textarea edits count as progress without changes to body text', async () => {
+    const { connector, agent, page } = await fixture('/controls');
+    try {
+        await page.locator('textarea').focus();
+        const text = await page.locator('body').innerText();
+        for (let i = 0; i < 8; i++) {
+            await agent.exec({ variant: 'keyboard:type', content: `value-${i} ` }, agent.memory);
+            assert.equal(connector.recovery.warning, undefined);
+        }
+        assert.equal(await page.locator('body').innerText(), text);
+        assert.match(await page.locator('textarea').inputValue(), /value-7/);
+    } finally { await connector.onStop(); }
+});
+
+test('changing a select value counts as progress', async () => {
+    const { connector, page } = await fixture('/controls');
+    try {
+        await page.locator('select').focus();
+        for (let i = 0; i < 8; i++) {
+            await connector.beforeAction({ variant: 'fixture:select-option' });
+            await page.locator('select').selectOption(String(i + 1));
+            await connector.collectObservations();
+            assert.equal(await page.locator('select').inputValue(), String(i + 1));
+            assert.equal(connector.recovery.warning, undefined);
+        }
+    } finally { await connector.onStop(); }
+});
+
+test('entering equal values into different input controls counts as progress', async () => {
+    const { connector, agent, page } = await fixture('/controls');
+    try {
+        for (let i = 0; i < 8; i++) {
+            await page.locator('input').nth(i).focus();
+            await agent.exec({ variant: 'keyboard:type', content: 'same value' }, agent.memory);
+            assert.equal(connector.recovery.warning, undefined);
+        }
+    } finally { await connector.onStop(); }
+});
+
+test('hidden and offscreen scrolling does not hide genuinely unsuccessful clicks', async () => {
+    const { connector, agent, page } = await fixture('/scroll-hidden');
+    const action = { variant: 'mouse:click', x: 50, y: 660 };
+    try {
+        for (let i = 0; i < 6; i++) {
+            await page.locator('.panel').evaluateAll((panels, offset) => panels.forEach(panel => { panel.scrollTop = offset; }), (i + 1) * 200);
+            await agent.exec(action, agent.memory);
+        }
+        await assert.rejects(agent.exec(action, agent.memory), BrowserBlockedError);
+    } finally { await connector.onStop(); }
+});
 
 for (const oversizedBatch of [false, true]) test(`action cap prevents ${oversizedBatch ? 'an oversized batch' : 'an extra planning call'}`, async () => {
     let performed = 0;
