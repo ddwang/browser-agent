@@ -18,6 +18,8 @@ export * from "@/agent/errors";
 export * from "@/types";
 export * from "@/ai/types";
 export * from "@/web/types";
+export { BrowserBlockedError } from '@/web/recovery';
+export type { BrowserBlock, BlockReason, RecoveryOptions, HttpDiagnostic } from '@/web/recovery';
 export * from "@/actions/types";
 export * from '@/common';
 export * from "@/telemetry";

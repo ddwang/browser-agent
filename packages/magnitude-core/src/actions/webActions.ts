@@ -122,14 +122,24 @@ export const keyboardSelectAllAction = createAction({
     render: () => `⬚ select all`
 });
 
+export const keyboardEscapeAction = createAction({
+    name: 'keyboard:escape',
+    description: 'Press Escape to dismiss a dismissible dialog, menu, or focused interaction. This does not bypass a subscription or sign-in requirement.',
+    schema: z.object({}),
+    resolver: async ({ agent }) => {
+        await agent.require(BrowserConnector).getHarness().escape();
+    },
+    render: () => '⎋ press Escape'
+});
+
 export const scrollCoordAction = createAction({
     name: 'mouse:scroll',
-    description: "Hover mouse over target and scroll",
+    description: "Hover over the area to scroll. Distances are in pixels, not wheel ticks. To browse a full page, use about 500-600 pixels per scroll. Reserve small distances for fine adjustments or small scrollable areas.",
     schema: z.object({
         x: z.number().int(),
         y: z.number().int(),
-        deltaX: z.number().int().describe("Pixels to scroll horizontally"),
-        deltaY: z.number().int().describe("Pixels to scroll vertically"),
+        deltaX: z.number().int().describe("Horizontal distance in pixels: positive scrolls right, negative scrolls left. Use 0 for vertical-only scrolling."),
+        deltaY: z.number().int().describe("Vertical distance in pixels: 600 scrolls down, -600 scrolls up. Use about 500-600 to browse a full page; 5 moves only 5 pixels. Use smaller distances for fine adjustments and 0 for horizontal-only scrolling."),
     }),
     resolver: async ({ input: { x, y, deltaX, deltaY }, agent }) => {
         const webConnector = agent.require(BrowserConnector);
@@ -197,10 +207,10 @@ export const waitAction = createAction({
     name: 'wait',
     description: "Actions include smart waiting automatically - so only use this when a significant additional wait is clearly required.",
     schema: z.object({
-        seconds: z.number()
+        seconds: z.number().finite().nonnegative()
     }),
     resolver: async ({ input: { seconds }, agent }) => {
-        await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+        await agent.require(BrowserConnector).wait(seconds * 1000);
     },
     render: ({ seconds }) => `◴ wait for ${seconds}s`
 });
@@ -221,7 +231,7 @@ export const webActions = [
     keyboardEnterAction,
     keyboardTabAction,
     keyboardBackspaceAction,
+    keyboardEscapeAction,
     keyboardSelectAllAction,
     waitAction,
 ] as const;
-

@@ -8,7 +8,7 @@ import { AgentEvents } from "@/common/events";
 import { AgentConnector } from '@/connectors';
 import { Observation, RenderableContent } from '@/memory/observation';
 import { LLMClient } from "@/ai/types";
-import { AgentError } from "@/agent/errors";
+import { ActionLimitError, AgentError } from "@/agent/errors";
 import { AgentMemory, AgentMemoryOptions } from "@/memory";
 import { ActionDefinition } from "@/actions";
 import { taskActions } from "@/actions/taskActions";
@@ -26,6 +26,7 @@ export interface AgentOptions {
     actions?: ActionDefinition<any>[]; // any additional actions not provided by connectors
     prompt?: string | null; // additional agent-level system prompt instructions
     telemetry?: boolean;
+    maxActions?: number;
     //executor?: GroundingClient;
 }
 
@@ -50,6 +51,7 @@ const DEFAULT_CONFIG: Required<Omit<AgentOptions, 'actions'> & { actions: Action
     } as LLMClient,
     prompt: null,
     telemetry: true,
+    maxActions: Infinity,
 };
 
 export class Agent {
@@ -83,6 +85,10 @@ export class Agent {
             connectors: baseConfig.connectors ?? [],
             actions: [...(baseConfig.actions || DEFAULT_CONFIG.actions)], 
         } as Required<AgentOptions>;
+
+        if (baseConfig.maxActions !== undefined && (!Number.isSafeInteger(baseConfig.maxActions) || baseConfig.maxActions < 1)) {
+            throw new Error('maxActions must be a positive integer');
+        }
 
         this.connectors = this.options.connectors;
 
@@ -199,6 +205,7 @@ export class Agent {
             throw new AgentError(`Generated action '${action.variant}' violates input schema: ${parsed.error.message}`, { adaptable: true });
         }
 
+        for (const connector of this.connectors) await connector.beforeAction?.(action);
         this.events.emit('actionStarted', action);
         
         const data = await actionDefinition.resolver(
@@ -230,6 +237,7 @@ export class Agent {
                 memory.recordObservation(obs);
             }
         }
+        this.events.emit('observationsRecorded');
     }
 
     get memory(): AgentMemory {
@@ -304,6 +312,7 @@ export class Agent {
 
     async _act(description: string, memory: AgentMemory, options: ActOptions = {}): Promise<void> {
         this.doneActing = false;
+        for (const connector of this.connectors) connector.onTaskStart?.();
         logger.info(`Act: ${description}`);
 
         // for now simply add data to task
@@ -334,7 +343,9 @@ export class Agent {
         await this._recordConnectorObservations(memory);
         logger.info("Initial observations recorded");
 
+        let actionCount = 0;
         while (true) {
+            if (actionCount >= this.options.maxActions) throw new ActionLimitError(this.options.maxActions);
             // Removed direct screenshot/tabState access here; it's part of memoryContext via connectors
             logger.info(`Creating partial recipe`);
 
@@ -342,6 +353,7 @@ export class Agent {
             let actions: Action[] = [];
 
             try {
+                this.events.emit('planningStarted');
                 const memoryContext = await this._buildContext(memory);
                 await retryOnError(
                     async () => {
@@ -393,7 +405,9 @@ export class Agent {
             for (const action of actions) {
                 await this._waitIfPaused();
                 if (this.doneActing) break;
+                if (actionCount >= this.options.maxActions) throw new ActionLimitError(this.options.maxActions);
                 await this.exec(action, memory);
+                actionCount++;
 
                 // const postActionScreenshot = await this.screenshot();
                 // const actionDescriptor: ActionDescriptor = { ...action, screenshot: postActionScreenshot.image } as ActionDescriptor;

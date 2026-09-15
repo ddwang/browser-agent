@@ -1,221 +1,169 @@
 #!/usr/bin/env bun
-// Single task runner - run as a separate process
-import { startBrowserAgent } from "../../packages/magnitude-core/src/agent/browserAgent";
-import * as fs from "fs";
-import * as path from "path";
-import { createAction } from "../../packages/magnitude-core/src/actions";
-import z from "zod";
-import { chromium } from "patchright";
+import { startBrowserAgent, type BrowserAgent } from '../../packages/magnitude-core/src/agent/browserAgent';
+import { createAction } from '../../packages/magnitude-core/src/actions';
+import { chromium, type BrowserContext } from 'patchright';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import z from 'zod';
+import { addUsage, emptyUsage, writeJson, type RunManifest, type TaskResult, type TaskProgress } from './results';
+import { BrowserConnector } from '../../packages/magnitude-core/src/connectors/browserConnector';
+import { BrowserBlockedError, type BrowserBlock } from '../../packages/magnitude-core/src/web/recovery';
+import { ActionLimitError } from '../../packages/magnitude-core/src/agent/errors';
+import { DEFAULT_LIMITS } from './budget';
+import { taskPrompt } from './tasks';
 
-interface Task {
-    web_name: string;
-    id: string;
-    ques: string;
-    web: string;
-}
-
+// One process and one attempt per task. The parent enforces a final process deadline.
 async function main() {
-    const taskJson = process.argv[2];
-    const runEval = process.argv[3] === 'true';
-    
-    if (!taskJson) {
-        console.error("No task provided");
-        process.exit(1);
+    const [runDir, taskId] = process.argv.slice(2);
+    if (!runDir || !taskId) throw new Error('Run directory and task ID are required');
+    const manifest: RunManifest = JSON.parse(readFileSync(join(runDir, 'manifest.json'), 'utf8'));
+    const selectedTask = manifest.tasks.find(task => task.id === taskId);
+    if (!selectedTask) throw new Error(`Unknown task: ${taskId}`);
+    const task = selectedTask;
+
+    const started = Date.now();
+    const usage = emptyUsage();
+    let context: BrowserContext | undefined;
+    let agent: BrowserAgent | undefined;
+    let actionCount = 0;
+    let checkpoint = Promise.resolve();
+    let status: TaskResult['status'] = 'running';
+    let error: string | undefined;
+    let block: BrowserBlock | undefined;
+    let budget: TaskResult['budget'];
+    let progress: TaskProgress = { startedAt: started, updatedAt: started, phase: 'starting', phaseStartedAt: started, network: [] };
+    let lastLog = '';
+
+    function setPhase(phase: TaskProgress['phase'], action?: string) {
+        progress = { ...progress, phase, action, phaseStartedAt: Date.now(), waitUntil: undefined };
+        saveProgress();
     }
-    
-    const task: Task = JSON.parse(taskJson);
-    const MAX_CRASH_RETRIES = 3;
-    let crashAttempts = 0;
-    
-    // Remove old evaluation file if it exists
-    const evalPath = path.join("results", `${task.id}.eval.json`);
-    if (fs.existsSync(evalPath)) {
-        fs.unlinkSync(evalPath);
-        console.log(`[Runner] Removed old evaluation file: ${evalPath}`);
+
+    function saveProgress() {
+        const connector = agent?.getConnector(BrowserConnector);
+        const waitUntil = status === 'running' ? connector?.recovery.waitUntil : undefined;
+        const snapshot: TaskProgress = {
+            ...progress, updatedAt: Date.now(),
+            phase: waitUntil ? 'waiting' : progress.phase,
+            waitUntil,
+            block: block ?? connector?.recovery.block,
+            network: [...(connector?.network ?? [])],
+        };
+        writeJson(join(runDir, `${task.id}.status.json`), snapshot);
+        const label = `${snapshot.phase}${snapshot.action ? ` (${snapshot.action})` : ''}${waitUntil ? ` until ${new Date(waitUntil).toISOString()}` : ''}${snapshot.block ? ` [${snapshot.block.reason}]` : ''}`;
+        if (label !== lastLog) { console.log(`[${task.id}] ${label}`); lastLog = label; }
+        return snapshot;
     }
-    
-    while (crashAttempts < MAX_CRASH_RETRIES) {
-        console.log(`[Runner] Running task: ${task.id} - ${task.ques}`);
-        console.log(`[Runner] URL: ${task.web}`);
 
-        let startTime = Date.now();
-        let context: any = null;
-        let agent: any = null;
-        let totalInputTokens = 0;
-        let totalOutputTokens = 0;
-        let totalInputCost = 0.0;
-        let totalOutputCost = 0.0;
-        let actionCount = 0;
+    async function save() {
+        const memory = agent ? await agent.memory.toJSON() : null;
+        const result: TaskResult = {
+            ...usage,
+            status,
+            time: Date.now() - started,
+            actionCount,
+            memory,
+            progress: saveProgress(),
+            ...(block ? { block } : {}),
+            ...(budget ? { budget } : {}),
+            ...(error ? { error, timedOut: status === 'timeout' } : {}),
+        };
+        writeJson(join(runDir, `${task.id}.json`), result);
+    }
 
-        try {
-        const date = new Date();
-        const formattedDate = date.toLocaleDateString('en-US', {
-            month: 'long',
-            day: 'numeric',
-            year: 'numeric'
-        });
-
-        context = await chromium.launchPersistentContext("", {
-            channel: "chrome",
+    async function execute() {
+        context = await chromium.launchPersistentContext('', {
+            channel: 'chrome',
             headless: false,
             viewport: { width: 1024, height: 768 },
-            deviceScaleFactor: process.platform === 'darwin' ? 2 : 1
+            deviceScaleFactor: process.platform === 'darwin' ? 2 : 1,
         });
-
+        const { model, provider, temperature } = manifest.actor;
         agent = await startBrowserAgent({
-            browser: { context: context },
-            llm: {
-                provider: "claude-code",
-                options: {
-                    model: "claude-sonnet-4-20250514",
-                    temperature: 0.5
-                },
-            },
+            browser: { context },
+            llm: { provider, options: { model, temperature } },
+            telemetry: false,
             url: task.web,
-            actions: [
-                createAction({
-                    name: "answer",
-                    description: "Give final answer",
-                    schema: z.string(),
-                    resolver: async ({ input, agent }) => {
-                        console.log("ANSWER GIVEN:", input);
-                        await agent.queueDone();
-                    },
-                }),
-            ],
+            actions: [createAction({
+                name: 'answer',
+                description: 'Give the final answer, supported by what you observed on the website',
+                schema: z.string(),
+                resolver: async ({ agent }) => { await agent.queueDone(); },
+            })],
             narrate: true,
-            prompt: `Be careful to satisfy the task criteria precisely. If sequences of actions are failing, go one action at at time.\nConsider that today is ${formattedDate}.`,
-            screenshotMemoryLimit: 3,
+            prompt: `Satisfy the task criteria precisely. If a sequence fails, try one action at a time. Today is ${new Date().toISOString().slice(0, 10)}.`,
+            minScreenshots: 3,
+            maxActions: (manifest.limits ?? DEFAULT_LIMITS).maxActions,
         });
-
-        agent.events.on("tokensUsed", async (usage) => {
-            totalInputTokens += usage.inputTokens;
-            totalOutputTokens += usage.outputTokens;
-            totalInputCost += usage.inputCost ?? 0.0;
-            totalOutputCost += usage.inputCost ?? 0.0;
+        agent.events.on('tokensUsed', (event) => addUsage(usage, event));
+        agent.events.on('planningStarted', () => setPhase('planning'));
+        agent.events.on('actionStarted', action => setPhase('acting', action.variant));
+        agent.events.on('actionDone', () => {
+            actionCount++;
+            setPhase('observing');
         });
-
-        agent.events.on("actionDone", async () => {
-            const memory = await agent.memory.toJSON();
-            actionCount += 1;
-
-            fs.writeFileSync(
-                path.join("results", `${task.id}.json`),
-                JSON.stringify(
-                    {
-                        time: Date.now() - startTime,
-                        actionCount,
-                        totalInputTokens,
-                        totalOutputTokens,
-                        totalInputCost,
-                        totalOutputCost,
-                        memory,
-                    },
-                    null,
-                    4,
-                ),
-            );
+        agent.events.on('observationsRecorded', () => {
+            // Serialize checkpoints so an older snapshot cannot overwrite the final result.
+            checkpoint = checkpoint.then(save);
+            checkpoint.catch(() => {}); // Awaited and reported before the final save.
         });
+        await agent.act(taskPrompt(task));
+    }
 
-        // Set up timeout
-        const TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
+    await save(); // Even a launch failure is an attempted task.
+    // A small sidecar avoids repeatedly serializing a growing screenshot history.
+    const heartbeat = setInterval(() => {
+        try { saveProgress(); } catch (err) { console.error(`[${task.id}] Status write failed: ${err}`); }
+    }, 2000);
+    const timeoutError = new Error(`Task timed out after ${manifest.timeoutMs / 1000} seconds`);
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    try {
         await Promise.race([
-            agent.act(task.ques),
-            new Promise<void>((_, reject) => {
-                setTimeout(() => {
-                    reject(new Error(`Task timed out after 20 minutes`));
-                }, TIMEOUT_MS);
-            })
+            execute(),
+            new Promise<never>((_, reject) => {
+                deadline = setTimeout(() => {
+                    reject(timeoutError);
+                }, manifest.timeoutMs);
+            }),
         ]);
-
-            console.log(`[Runner] Finished task: ${task.id}`);
-            
-            // Explicitly save final state before exit - ensure answer gets written out
-            const finalMemory = await agent.memory.toJSON();
-            fs.writeFileSync(
-                path.join("results", `${task.id}.json`),
-                JSON.stringify(
-                    {
-                        time: Date.now() - startTime,
-                        actionCount,
-                        totalInputTokens,
-                        totalOutputTokens,
-                        totalInputCost,
-                        totalOutputCost,
-                        memory: finalMemory,
-                    },
-                    null,
-                    4,
-                ),
-            );
-            
-            // Delay to ensure file write completes
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            process.exit(0);
-
-        } catch (error) {
-            const errorMessage = (error as Error).message;
-            console.error(`[Runner] Error in task ${task.id}:`, error);
-            
-            // Check if it's a recoverable crash
-            const isRecoverableCrash = errorMessage.includes('net::ERR_ABORTED') || 
-                                      errorMessage.includes('Target page, context or browser has been closed') ||
-                                      errorMessage.includes('Failed to connect') ||
-                                      errorMessage.includes('ENOENT') ||
-                                      errorMessage.includes('ECONNREFUSED');
-            
-            if (isRecoverableCrash && crashAttempts < MAX_CRASH_RETRIES - 1) {
-                crashAttempts++;
-                console.log(`[Runner] 🔄 Retrying crashed task ${task.id} (crash attempt ${crashAttempts}/${MAX_CRASH_RETRIES})...`);
-                // Small delay before retrying
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                continue; // Retry the task
-            }
-            
-            // Save error state before failing
-            const memory = agent ? await agent.memory.toJSON() : null;
-            fs.writeFileSync(
-                path.join("results", `${task.id}.json`),
-                JSON.stringify(
-                    {
-                        time: Date.now() - startTime,
-                        actionCount,
-                        totalInputTokens,
-                        totalOutputTokens,
-                        totalInputCost,
-                        totalOutputCost,
-                        memory,
-                        error: errorMessage,
-                        timedOut: errorMessage.includes('timed out'),
-                        crashAttempts: crashAttempts + 1
-                    },
-                    null,
-                    4,
-                ),
-            );
-            
-            process.exit(1); // Failed after retries
+        status = 'completed';
+    } catch (err) {
+        block = err instanceof BrowserBlockedError ? err.block : undefined;
+        budget = err instanceof ActionLimitError ? { kind: 'actions', actual: actionCount, limit: err.limit } : undefined;
+        status = budget ? 'failed' : block ? 'blocked' : err === timeoutError ? 'timeout' : 'error';
+        error = err instanceof Error ? err.message : String(err);
+        console.error(`[${task.id}] ${error}`);
+    } finally {
+        clearTimeout(deadline);
+        clearInterval(heartbeat);
+        try {
+            await checkpoint;
+        } catch (err) {
+            status = 'error';
+            error = `Could not save checkpoint: ${err}`;
+        }
+        setPhase('finished');
+        await save();
+        // Stop before exiting, including after a timeout. Bound cleanup in case Chrome hangs.
+        let cleanupDeadline: ReturnType<typeof setTimeout> | undefined;
+        try {
+            await Promise.race([
+                (async () => {
+                    await agent?.stop();
+                    await context?.close();
+                })(),
+                new Promise<void>((resolve) => { cleanupDeadline = setTimeout(resolve, 5000); }),
+            ]);
         } finally {
-            // Cleanup
-            try {
-                if (agent) await agent.stop();
-            } catch (e) {
-                console.error("[Runner] Error stopping agent:", e);
-            }
-            
-            try {
-                if (context) await context.close();
-            } catch (e) {
-                console.error("[Runner] Error closing context:", e);
-            }
+            clearTimeout(cleanupDeadline);
         }
     }
-    
-    // Should never reach here
-    process.exit(1);
+    return status === 'completed' ? 0 : 1;
 }
 
-main().catch(err => {
-    console.error("Fatal error:", err);
-    process.exit(1);
-});
+if (import.meta.main) {
+    main().then(code => process.exit(code)).catch(error => {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exit(1);
+    });
+}

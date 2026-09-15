@@ -45,6 +45,13 @@ export class AgentError extends Error {
     }
 }
 
+export class ActionLimitError extends AgentError {
+    constructor(public readonly limit: number) {
+        super(`Task did not finish within ${limit} actions`, { variant: 'action_limit' });
+        this.name = 'ActionLimitError';
+    }
+}
+
 // // Agent will only throw these types of errors
 
 // import { ActionIngredient } from "./recipe/types";

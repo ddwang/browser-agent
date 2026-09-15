@@ -397,6 +397,10 @@ export class WebHarness { // implements StateComponent
         await this.page.goBack();
     }
 
+    async escape() {
+        await this.page.keyboard.press('Escape');
+    }
+
     async executeAction(action: WebAction) {
         if (action.variant === 'click') {
             await this.click(action);

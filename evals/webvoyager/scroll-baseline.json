@@ -1,0 +1,5 @@
+{
+    "name": "scroll-baseline-v1",
+    "description": "Four scroll-heavy tasks from baseline-v1. Compare scroll behavior before running the full suite.",
+    "taskIds": ["Allrecipes--0", "Apple--0", "Apple--6", "GitHub--3"]
+}

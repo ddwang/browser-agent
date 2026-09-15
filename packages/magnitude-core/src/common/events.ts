@@ -18,6 +18,8 @@ export interface AgentEvents {
     
     'actionStarted': (action: Action) => void;
     'actionDone': (action: Action) => void;
+    'observationsRecorded': () => void;
+    'planningStarted': () => void;
 
     'pause': () => void;
     'resume': () => void;

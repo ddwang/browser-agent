@@ -1,7 +1,7 @@
 import { convertToBamlClientOptions } from "./util";
 // Import ModularMemoryContext instead of old MemoryContext
 import { b, AgentContext } from "@/ai/baml_client"; 
-import { Image as BamlImage, Collector, ClientRegistry } from "@boundaryml/baml";
+import { Image as BamlImage, Collector, ClientRegistry, BamlValidationError, BamlClientFinishReasonError, type FunctionLog } from "@boundaryml/baml";
 import { Action, ActionIntent, Intent } from "@/actions/types";
 import { TestStepDefinition } from "@/types";
 import { BamlAsyncClient } from "./baml_client/async_client";
@@ -17,6 +17,7 @@ import { convertActionDefinitionsToBaml, convertZodToBaml } from "@/actions/util
 import { Image } from '@/memory/image';
 import EventEmitter from "eventemitter3";
 import { MultiMediaContentPart } from "@/memory/rendering";
+import { parsePlannerResponse, PlannerResponseError } from './plannerResponse';
 
 interface ModelHarnessOptions {
     llm: LLMClient;
@@ -41,12 +42,9 @@ export class ModelHarness {
      */
     public readonly events: EventEmitter<ModelHarnessEvents> = new EventEmitter();
     private options: Required<ModelHarnessOptions>;
-    private collector!: Collector;
     private cr!: ClientRegistry;
     private baml!: BamlAsyncClient;
     private logger: Logger;
-    private prevTotalInputTokens: number = 0;
-    private prevTotalOutputTokens: number = 0;
 
     constructor(options: ModelHarnessOptions) {
         this.options = {
@@ -59,7 +57,6 @@ export class ModelHarness {
 
     async setup() {
         // Must be called after constructor
-        this.collector = new Collector("macro");
         this.cr = new ClientRegistry();
         let bamlClientOptions = await convertToBamlClientOptions(this.options.llm);
         this.cr.addLlmClient(
@@ -70,45 +67,53 @@ export class ModelHarness {
         );
         this.cr.setPrimary('Magnus');
 
-        this.baml = b.withOptions({ collector: this.collector, clientRegistry: this.cr });
+        this.baml = b.withOptions({ clientRegistry: this.cr });
     }
 
     describeModel(): string {
         return `${this.options.llm.provider}:${'model' in this.options.llm.options ? this.options.llm.options.model : 'unknown'}`;
     }
 
-    private _reportUsage(): void {
-        // console.log('this.collector.last', this.collector.last)
-        // if (this.collector.last) console.log("calls:", this.collector.last.calls)//console.log("Response: ", this.collector.last.calls[-1].httpResponse);
-        //console.log('last call:', this.collector.last?.calls.at(-1)?.httpResponse?.body.json());
-        // Get tokens used since last call to reportUsage
-        //console.log(this.collector.usage);
+    private async _withUsage<T>(invoke: (collector: Collector) => Promise<T>): Promise<T> {
+        // Scope usage to this invocation, including failed parses and provider
+        // retries. A shared cumulative collector can double-count concurrent calls.
+        const collector = new Collector('model-call');
+        try {
+            return await invoke(collector);
+        } finally {
+            for (const log of collector.logs) {
+                for (const call of log.calls) {
+                    try { this._reportCallUsage(call); }
+                    catch { this.logger.warn('Unable to report model response usage'); }
+                }
+            }
+        }
+    }
 
-        let inputTokens: number = 0;
-        let outputTokens: number = 0;
+    private _reportCallUsage(call: FunctionLog['calls'][number]): void {
+        let inputTokens = call.usage?.inputTokens;
+        let outputTokens = call.usage?.outputTokens;
         let cacheWriteInputTokens: number = 0;
         let cacheReadInputTokens: number = 0;
 
         if (this.options.llm.provider === 'anthropic' || this.options.llm.provider === 'claude-code') {
-            type AnthropicUsage = { input_tokens: number, cache_creation_input_tokens: number, cache_read_input_tokens: number, output_tokens: number, service_tier: string };
-            const usage = this.collector.last?.calls.at(-1)?.httpResponse?.body.json().usage as AnthropicUsage;
-            //console.log("Usage from Anthropic:", usage);
-            if (!usage) {
-                // Sometimes apparently this happens? Happened once after extract for example
-                logger.warn("No usage returned from Anthropic provider, cached cost may be inaccurate");
-                inputTokens = (this.collector.usage.inputTokens ?? 0) - this.prevTotalInputTokens;
-                outputTokens = (this.collector.usage.outputTokens ?? 0) - this.prevTotalOutputTokens;
-            } else {
-                inputTokens = usage.input_tokens;
-                outputTokens = usage.output_tokens;
-                cacheWriteInputTokens = usage.cache_creation_input_tokens;
-                cacheReadInputTokens = usage.cache_read_input_tokens;
-            }
-            
-        } else {
-            inputTokens = (this.collector.usage.inputTokens ?? 0) - this.prevTotalInputTokens;
-            outputTokens = (this.collector.usage.outputTokens ?? 0) - this.prevTotalOutputTokens;
+            // Anthropic's input_tokens excludes cache reads/writes. BAML's
+            // normalized usage does not expose that breakdown.
+            try {
+                const usage = call.httpResponse?.body.json()?.usage;
+                if (usage) {
+                    inputTokens = usage.input_tokens ?? inputTokens;
+                    outputTokens = usage.output_tokens ?? outputTokens;
+                    cacheWriteInputTokens = usage.cache_creation_input_tokens ?? 0;
+                    cacheReadInputTokens = usage.cache_read_input_tokens ?? 0;
+                }
+            } catch { /* Non-JSON error response; use per-call usage if available. */ }
         }
+        // A transport failure with no usage is not a paid completion. In
+        // particular, never reuse the preceding successful response's usage.
+        if (inputTokens == null && outputTokens == null) return;
+        inputTokens ??= 0;
+        outputTokens ??= 0;
 
         const model = (this.options.llm.options as any).model ?? 'unknown';
 
@@ -121,6 +126,9 @@ export class ModelHarness {
             'claude-3.5-sonnet': { inputTokens: 3.00, outputTokens: 15.00, cacheWriteInputTokens: 3.75, cacheReadInputTokens: 0.30 },
             'claude-3.7-sonnet': { inputTokens: 3.00, outputTokens: 15.00, cacheWriteInputTokens: 3.75, cacheReadInputTokens: 0.30 },
             'claude-sonnet-4': { inputTokens: 3.00, outputTokens: 15.00, cacheWriteInputTokens: 3.75, cacheReadInputTokens: 0.30 },
+            // Standard API pricing, using the default 5-minute cache TTL:
+            // https://platform.claude.com/docs/en/models/sonnet-5/overview#pricing
+            'claude-sonnet-5': { inputTokens: 2.00, outputTokens: 10.00, cacheWriteInputTokens: 2.50, cacheReadInputTokens: 0.20 },
             'claude-haiku-4-5': { inputTokens: 1.00, outputTokens: 5.00, cacheWriteInputTokens: 1.25, cacheReadInputTokens: 0.10 },
             'claude-opus-4': { inputTokens: 15.00, outputTokens: 75.00, cacheWriteInputTokens: 18.75, cacheReadInputTokens: 1.50 },
             'gpt-4.1': { inputTokens: 2.00, outputTokens: 8.00 },
@@ -170,8 +178,6 @@ export class ModelHarness {
         this.events.emit('tokensUsed', usage);
         //console.log("Usage:", usage);
 
-        this.prevTotalInputTokens += inputTokens;
-        this.prevTotalOutputTokens += outputTokens;
     }
 
     async partialAct<T>(
@@ -184,23 +190,26 @@ export class ModelHarness {
 
         tb.PartialRecipe.addProperty('actions', tb.list(convertActionDefinitionsToBaml(tb, actionVocabulary))).description('Always provide at least one action');
 
-        const start = Date.now();
-        // Assuming this.baml.CreatePartialRecipe is now typed to accept ModularMemoryContext
-        // after BAML generation picked up changes in planner.baml
-        const response = await this.baml.CreatePartialRecipe( 
-            context,
-            task,
-            data,
-            this.options.llm.provider === 'claude-code',
-            { tb }
-        );
-        this.logger.trace(`createPartialRecipe took ${Date.now()-start}ms`);
-        // BAML does not carry over action type to @@dynamic of PartialRecipe, so forced cast necssary
-        //return response as unknown as { actions: z.infer<ActionDefinition<T>['schema']>[] };//, finished: boolean };
-        this._reportUsage();
-        return {
-            reasoning: response.reasoning,//(response.observations ? response.observations + " " : "") + response.meta_reasoning + " " + response.reasoning,
-            actions: response.actions// as z.infer<ActionDefinition<T>['schema']>[]
+        for (let attempt = 0; ; attempt++) {
+            try {
+                return await this._withUsage(async collector => {
+                    await this.baml.CreatePartialRecipe(
+                        context, task, data,
+                        this.options.llm.provider === 'claude-code',
+                        { tb, collector }
+                    );
+                    return parsePlannerResponse(collector.last?.rawLlmResponse ?? null, actionVocabulary);
+                });
+            } catch (error) {
+                if (!(error instanceof PlannerResponseError || error instanceof BamlValidationError || error instanceof BamlClientFinishReasonError)) throw error;
+                if (attempt === 1) throw new PlannerResponseError('Planner returned an invalid plan on both attempts');
+                this.logger.warn('Invalid planner response; retrying once with the same observations');
+                // No invalid output is appended to memory or executed. Keep the
+                // correction short even when the rejected response is enormous.
+                context = { ...context, observationContent: [...context.observationContent, {
+                    role: 'user', cacheControl: false, content: ['Your previous response was rejected as an invalid plan. No actions were executed. Return only one complete JSON object with concise reasoning and a non-empty actions array matching the schema. No XML, prose, simulated tool calls, or imagined observations. Plan only the next batch from the observations above.'],
+                }] };
+            }
         }
     }
 
@@ -220,14 +229,14 @@ export class ModelHarness {
 
         // }
 
-        const resp = await this.baml.ExtractData(
+        const bamlScreenshot = await screenshot.toBaml();
+        const resp = await this._withUsage(collector => this.baml.ExtractData(
             instructions,
-            await screenshot.toBaml(),
+            bamlScreenshot,
             domContent,
             this.options.llm.provider === 'claude-code',
-            { tb }
-        );
-        this._reportUsage();
+            { tb, collector }
+        ));
 
         if (schema instanceof z.ZodObject) {
             return resp;
@@ -250,13 +259,12 @@ export class ModelHarness {
             tb.QueryResponse.addProperty('data', convertZodToBaml(tb, schema));
         }
 
-        const resp = await this.baml.QueryMemory(
+        const resp = await this._withUsage(collector => this.baml.QueryMemory(
             context,
             query,
             this.options.llm.provider === 'claude-code',
-            { tb }
-        );
-        this._reportUsage();
+            { tb, collector }
+        ));
         
         if (schema instanceof z.ZodObject) {
             return resp;

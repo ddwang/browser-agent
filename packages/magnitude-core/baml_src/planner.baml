@@ -99,6 +99,11 @@ template_string TaskInstructions(task: string, taskData: MultiMediaContentPart[]
     Execute the task serially.
 
     Plan out as many actions as possible, but stopping at the point where you will need to observe to plan further.
+
+    Return exactly one complete JSON object matching the output schema, with "reasoning" and a non-empty "actions" array.
+    Keep reasoning concise. Do not include prose outside the JSON, Markdown fences, XML, or simulated tool calls.
+    The actions array is executed by the host after you respond. Do not pretend to execute actions or invent their results.
+    Use only the current observations to plan this batch, then stop and wait for new observations.
 "#
 
 // TODO: connector system instructions
