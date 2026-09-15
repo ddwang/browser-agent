@@ -120,3 +120,20 @@ and horizontal panel endpoints still trigger no-progress stops; hidden/offscreen
 scroll changes do not conceal unchanged clicks. Thresholds and browser-task
 instructions are unchanged. This is still a heuristic, not proof of a stall:
 canvas-only or cross-frame state changes are not fully represented.
+
+### OpenAI provider support (after holdout consumption)
+
+The OpenAI actor option was added at the user's request, not in response to a
+holdout failure. `--provider openai` selects `gpt-5.6-luna` with medium reasoning;
+the judge remains Anthropic Sonnet 5. Existing Haiku defaults, prompts, task text,
+criteria, recovery thresholds, and budgets are unchanged. The OpenAI adapter uses
+Chat Completions with local schema validation, not native OpenAI Structured Outputs.
+
+Verification used synthetic loopback provider responses, isolated CLI workers,
+and the existing local-browser fixtures: 296 tests passed, both core/eval type
+checks passed, and all five packages built. Checks cover separate actor/judge
+configuration and credentials, image transport, reasoning/output limits, refusal
+and truncation handling, bounded format retries, and cached-token cost accounting.
+No live OpenAI API or website evaluation ran because `OPENAI_API_KEY` was absent.
+This establishes offline integration coverage, not a Luna performance score.
+The consumed holdout and its judgments were not rerun or changed.

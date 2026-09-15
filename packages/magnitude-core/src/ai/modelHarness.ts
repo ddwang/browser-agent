@@ -106,6 +106,12 @@ export class ModelHarness {
                     try { reason = collector.last?.calls.at(-1)?.httpResponse?.body.json()?.stop_reason; }
                     catch { /* A transport error may not contain JSON. */ }
                     if (reason === 'refusal' || reason === 'max_tokens') throw new ModelResponseError(reason);
+                } else if (this.options.llm.provider === 'openai') {
+                    let choice: any;
+                    try { choice = collector.last?.calls.at(-1)?.httpResponse?.body.json()?.choices?.[0]; }
+                    catch { /* A transport error may not contain JSON. */ }
+                    if (choice?.message?.refusal || choice?.finish_reason === 'content_filter') throw new ModelResponseError('refusal');
+                    if (choice?.finish_reason === 'length') throw new ModelResponseError('max_tokens');
                 }
             }
         } finally {
@@ -136,6 +142,19 @@ export class ModelHarness {
                     cacheReadInputTokens = usage.cache_read_input_tokens ?? 0;
                 }
             } catch { /* Non-JSON error response; use per-call usage if available. */ }
+        } else if (this.options.llm.provider === 'openai') {
+            try {
+                const usage = call.httpResponse?.body.json()?.usage;
+                if (usage) {
+                    // OpenAI includes cached input in prompt_tokens and reasoning
+                    // output in completion_tokens. Neither should be counted twice.
+                    cacheReadInputTokens = usage.prompt_tokens_details?.cached_tokens ?? 0;
+                    cacheWriteInputTokens = usage.prompt_tokens_details?.cache_write_tokens ?? 0;
+                    const totalInputTokens = usage.prompt_tokens ?? inputTokens;
+                    if (totalInputTokens != null) inputTokens = totalInputTokens - cacheReadInputTokens - cacheWriteInputTokens;
+                    outputTokens = usage.completion_tokens ?? outputTokens;
+                }
+            } catch { /* Non-JSON error response; use per-call usage if available. */ }
         }
         // A transport failure with no usage is not a paid completion. In
         // particular, never reuse the preceding successful response's usage.
@@ -144,6 +163,7 @@ export class ModelHarness {
         outputTokens ??= 0;
 
         const model = (this.options.llm.options as any).model ?? 'unknown';
+        const isLuna = /^gpt-5\.6-luna(?:-\d{4}-\d{2}-\d{2})?$/.test(model);
 
         // Get cost if known
         const knownCostMap: Record<string, { inputTokens: number, outputTokens: number, cacheWriteInputTokens?: number, cacheReadInputTokens?: number }> = {
@@ -163,6 +183,8 @@ export class ModelHarness {
             'gpt-4.1-mini': { inputTokens: 0.40, outputTokens: 1.60 },
             'gpt-4.1-nano': { inputTokens: 0.10, outputTokens: 0.40 },
             'gpt-4o': { inputTokens: 3.75, outputTokens: 15.00 },
+            // https://developers.openai.com/api/docs/models/gpt-5.6-luna
+            'gpt-5.6-luna': { inputTokens: 0.20, outputTokens: 1.20, cacheWriteInputTokens: 0.25, cacheReadInputTokens: 0.02 },
             // Assuming Nebius prices, may be higher
             'qwen2.5-vl-72b': { inputTokens: 0.25, outputTokens: 0.75 }
         };
@@ -173,12 +195,21 @@ export class ModelHarness {
         let cacheReadInputTokenCost: number | undefined;
 
         for (const [name, costs] of Object.entries(knownCostMap)) {
-            if (model.includes(name)) {
+            if (name === 'gpt-5.6-luna' ? isLuna : model.includes(name)) {
                 inputTokenCost = costs.inputTokens / 1_000_000;
                 outputTokenCost = costs.outputTokens / 1_000_000;
                 cacheReadInputTokenCost = costs.cacheReadInputTokens ? costs.cacheReadInputTokens / 1_000_000 : undefined;
                 cacheWriteInputTokenCost = costs.cacheWriteInputTokens ? costs.cacheWriteInputTokens / 1_000_000 : undefined;
             }
+        }
+
+        // Luna long-context pricing applies to the entire request, including
+        // cached input. Output usage already includes billed reasoning tokens.
+        if (isLuna && inputTokens + cacheReadInputTokens + cacheWriteInputTokens > 272_000) {
+            if (inputTokenCost !== undefined) inputTokenCost *= 2;
+            if (cacheWriteInputTokenCost !== undefined) cacheWriteInputTokenCost *= 2;
+            if (cacheReadInputTokenCost !== undefined) cacheReadInputTokenCost *= 2;
+            if (outputTokenCost !== undefined) outputTokenCost *= 1.5;
         }
 
         // console.log("cacheWriteInputTokenCost:", cacheWriteInputTokenCost);
@@ -193,7 +224,7 @@ export class ModelHarness {
             outputTokens: outputTokens,
             ...(cacheWriteInputTokens ? { cacheWriteInputTokens } : {}),
             ...(cacheReadInputTokens ? { cacheReadInputTokens } : {}),
-            ...(inputTokenCost ? {
+            ...(inputTokenCost !== undefined && (!cacheWriteInputTokens || cacheWriteInputTokenCost !== undefined) && (!cacheReadInputTokens || cacheReadInputTokenCost !== undefined) ? {
                 inputCost: inputTokens * inputTokenCost +
                     ( cacheWriteInputTokenCost ? cacheWriteInputTokenCost * cacheWriteInputTokens : 0.0 ) +
                     ( cacheReadInputTokenCost ? cacheReadInputTokenCost * cacheReadInputTokens : 0.0 )

@@ -75,7 +75,12 @@ export interface OpenAIClient {
     options: {
         model: string,
         apiKey?: string,
-        temperature?: number
+        baseUrl?: string,
+        /** Omitted by default: reasoning models may reject sampling parameters. */
+        temperature?: number,
+        reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max',
+        /** Includes both visible output and reasoning tokens. */
+        maxCompletionTokens?: number,
     }
 }
 

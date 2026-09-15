@@ -55,6 +55,8 @@ function report(runDir: string, manifest: RunManifest) {
 async function checkCredentials(provider: ModelConfig['provider']) {
     if (provider === 'anthropic') {
         if (!process.env.ANTHROPIC_API_KEY) throw new Error('Set ANTHROPIC_API_KEY in your environment or a local .env file before running evals.');
+    } else if (provider === 'openai') {
+        if (!process.env.OPENAI_API_KEY) throw new Error('Set OPENAI_API_KEY in your environment or a local .env file before running evals.');
     } else {
         if (!existsSync(join(homedir(), '.magnitude', 'credentials', 'claudeCode.json'))) {
             throw new Error('Magnitude Claude Code credentials are missing. Authenticate through create-magnitude-app, or use --provider anthropic with ANTHROPIC_API_KEY.');
@@ -174,10 +176,13 @@ program.command('run [input]')
     .option('--suite <path>', 'JSON file containing taskIds or explicit tasks; input can select a task/site within it')
     .option('--run-dir <path>', 'Results directory (default: a new timestamped directory)')
     .option('-w, --workers <number>', 'Parallel task workers', positiveInteger, 1)
-    .option('--model <name>', 'Actor model', defaultActor)
+    .option('--model <name>', 'Actor model (default: Haiku 4.5, or gpt-5.6-luna with --provider openai)')
     .option('--judge-model <name>', 'Judge model, fixed for comparisons', defaultJudge)
-    .addOption(new Option('--provider <name>', 'Authentication provider for actor and judge').choices(['anthropic', 'claude-code']).default('anthropic'))
-    .option('--temperature <number>', 'Actor temperature', temperature, 0.2)
+    .addOption(new Option('--provider <name>', 'Actor provider').choices(['anthropic', 'claude-code', 'openai']).default('anthropic'))
+    .addOption(new Option('--judge-provider <name>', 'Judge provider (default: anthropic, or claude-code for a Claude Code actor)').choices(['anthropic', 'claude-code']))
+    .option('--temperature <number>', 'Actor temperature (default: 0.2 for Claude; omitted for OpenAI)', temperature)
+    .addOption(new Option('--reasoning-effort <level>', 'OpenAI actor reasoning effort (default: medium for gpt-5.6-luna; otherwise API default)').choices(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']))
+    .option('--max-completion-tokens <number>', 'OpenAI actor output limit, including reasoning tokens (default: API default)', positiveInteger)
     .option('--timeout <seconds>', 'Task timeout, including setup', positiveInteger, 1200)
     .option('--judge-timeout <seconds>', 'Judge process timeout', positiveInteger, 300)
     .option('--max-actions <number>', 'Fail tasks that cannot finish within this many actions', positiveInteger, DEFAULT_LIMITS.maxActions)
@@ -199,9 +204,20 @@ program.command('run [input]')
         if (!tasks.length) return;
         const runDir = resolve(options.runDir ?? join(import.meta.dir, 'results', new Date().toISOString().replaceAll(':', '-')));
         const manifestPath = join(runDir, 'manifest.json');
-        const actor: ModelConfig = { provider: options.provider, model: options.model, temperature: options.temperature };
+        if (options.provider !== 'openai' && (options.reasoningEffort !== undefined || options.maxCompletionTokens !== undefined)) {
+            throw new Error('--reasoning-effort and --max-completion-tokens require --provider openai.');
+        }
+        const model = options.model ?? (options.provider === 'openai' ? 'gpt-5.6-luna' : defaultActor);
+        const reasoningEffort = options.reasoningEffort ?? (model === 'gpt-5.6-luna' ? 'medium' : undefined);
+        const actor: ModelConfig = options.provider === 'openai'
+            ? { provider: 'openai', model,
+                ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+                ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
+                ...(options.maxCompletionTokens !== undefined ? { maxCompletionTokens: options.maxCompletionTokens } : {}),
+            }
+            : { provider: options.provider, model, temperature: options.temperature ?? 0.2 };
         // Sonnet 5 only accepts the API's default sampling temperature (1).
-        const judge: ModelConfig = { provider: options.provider, model: options.judgeModel, temperature: options.judgeModel === 'claude-sonnet-5' ? 1 : 0 };
+        const judge: ModelConfig = { provider: options.judgeProvider ?? (options.provider === 'claude-code' ? 'claude-code' : 'anthropic'), model: options.judgeModel, temperature: options.judgeModel === 'claude-sonnet-5' ? 1 : 0 };
         let manifest: RunManifest = {
             partition: holdout ? 'holdout' : 'development',
             createdAt: new Date().toISOString(),
@@ -234,6 +250,7 @@ program.command('run [input]')
         ));
         if (!pending.length) { console.log('No tasks to run. Use a new run directory for another baseline.'); return; }
         await checkCredentials(actor.provider);
+        if (options.eval && judge.provider !== actor.provider) await checkCredentials(judge.provider);
         mkdirSync(runDir, { recursive: true });
         if (!previous) writeJson(manifestPath, manifest);
         console.log(`Run directory: ${runDir}\nRunning ${pending.length} tasks with ${options.workers} workers`);

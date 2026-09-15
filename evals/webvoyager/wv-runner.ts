@@ -78,10 +78,10 @@ async function main() {
             viewport: { width: 1024, height: 768 },
             deviceScaleFactor: process.platform === 'darwin' ? 2 : 1,
         });
-        const { model, provider, temperature } = manifest.actor;
+        const { provider, ...modelOptions } = manifest.actor;
         agent = await startBrowserAgent({
             browser: { context },
-            llm: { provider, options: { model, temperature } },
+            llm: { provider, options: modelOptions },
             telemetry: false,
             url: task.web,
             actions: [createAction({

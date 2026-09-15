@@ -32,9 +32,46 @@ The default actor is the project's Haiku 4.5 model; the judge is Sonnet 5
 (`claude-sonnet-5`), with its required default temperature of 1 and default adaptive
 thinking. Other judge models use temperature 0. Override the actor with `--model`
 and the judge with `--judge-model`.
-Both use the same provider. Existing Magnitude Claude Code credentials can be used
-with `--provider claude-code`; this path uses the project's existing authentication
-implementation and is not verified by the offline checks.
+`--provider` selects the actor provider independently of the judge. Existing
+Magnitude Claude Code credentials can be used with `--provider claude-code`; this
+also defaults the judge to Claude Code for backward compatibility. Override judge
+authentication with `--judge-provider anthropic|claude-code`. Live Claude Code
+authentication is not verified by the offline checks.
+
+### OpenAI actor with Sonnet 5 judging
+
+Add `OPENAI_API_KEY` alongside `ANTHROPIC_API_KEY` in `.env`, then run:
+
+```sh
+bun evals/webvoyager/wv.ts run --suite evals/webvoyager/baseline.json --provider openai --model gpt-5.6-luna --eval
+```
+
+With `--provider openai`, the actor defaults to `gpt-5.6-luna` and `medium`
+reasoning effort; the judge remains Anthropic Sonnet 5 with temperature 1. Both
+credentials are checked before starting a scored run. An unscored run only needs
+the actor's key; separate `eval` only needs the saved judge's credentials.
+
+Use `--reasoning-effort <level>` and `--max-completion-tokens <number>` to control
+OpenAI reasoning and output limits. The latter includes reasoning tokens, not
+just the visible plan. These options are saved in the manifest and cannot change
+when resuming a run. No temperature is sent to OpenAI unless explicitly supplied
+with `--temperature`; only set parameters supported by the selected model.
+Other OpenAI models use API-default reasoning unless overridden. Add `--dry-run`
+to inspect the exact configuration without credentials or model calls.
+
+The OpenAI path uses the existing BAML Chat Completions adapter with screenshot
+inputs and local schema validation. It does not yet enable OpenAI native
+Structured Outputs. Plans still undergo strict whole-response validation and at
+most one format-repair attempt. Refusals, content-filter stops, and output-token
+truncation fail without executing a partial plan. Sonnet's native structured
+output and judge prompt are unchanged.
+
+Usage separates uncached input, cache reads, and cache writes. Completion-token
+usage already includes reasoning tokens. Luna cost estimates use the
+[documented standard pricing](https://developers.openai.com/api/docs/models/gpt-5.6-luna),
+including cache-write and long-context rates; unknown model or cache prices remain
+`null`. Offline transport/CLI checks establish compatibility, not task performance.
+Do not reuse the consumed holdout to tune or claim a fresh model comparison.
 
 ## Run a baseline
 
@@ -84,7 +121,7 @@ Judges run in separate processes with a 300-second limit, configurable with
 
 Each run saves:
 
-- `manifest.json`: selected task text and criteria, models, temperatures, timeouts, worker count,
+- `manifest.json`: selected task text and criteria, providers, models, sampling/reasoning options, timeouts, worker count,
   Git revision, dirty-worktree status, source/dependency hash, and judge version.
 - `<task-id>.json`: observations, elapsed milliseconds, action count, model usage,
   and execution status or error.

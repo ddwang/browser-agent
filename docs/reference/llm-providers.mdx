@@ -103,13 +103,34 @@ interface AnthropicClient {
 ```
 
 ## OpenAI
+
+Set `OPENAI_API_KEY` and select an OpenAI actor explicitly when Anthropic
+credentials are also present:
+
+```typescript
+const agent = await startBrowserAgent({
+    llm: {
+        provider: 'openai',
+        options: { model: 'gpt-5.6-luna', reasoningEffort: 'medium' }
+    }
+});
+```
+
+When no `llm` is supplied, browser agents use Haiku if `ANTHROPIC_API_KEY` is set,
+or Luna if only `OPENAI_API_KEY` is set. OpenAI uses the existing Chat Completions
+adapter. Temperature is omitted by default; explicit values and reasoning levels
+must be supported by the selected model. Output limits include reasoning tokens.
+
 ```typescript
 interface OpenAIClient {
     provider: 'openai',
     options: {
         model: string,
         apiKey?: string,
-        temperature?: number
+        baseUrl?: string, // default: https://api.openai.com/v1
+        temperature?: number, // no client-side default
+        reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max',
+        maxCompletionTokens?: number
     }
 }
 ```

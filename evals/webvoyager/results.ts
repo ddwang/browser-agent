@@ -1,4 +1,4 @@
-import type { ModelUsage } from '../../packages/magnitude-core/src/ai/types';
+import type { ModelUsage, OpenAIClient } from '../../packages/magnitude-core/src/ai/types';
 import type { SerializedAgentMemory } from '../../packages/magnitude-core/src/memory/agentMemory';
 import { renameSync, writeFileSync } from 'node:fs';
 import type { BrowserBlock, HttpDiagnostic } from '../../packages/magnitude-core/src/web/recovery';
@@ -20,9 +20,11 @@ export interface Task {
 }
 
 export interface ModelConfig {
-    provider: 'anthropic' | 'claude-code';
+    provider: 'anthropic' | 'claude-code' | 'openai';
     model: string;
-    temperature: number;
+    temperature?: number;
+    reasoningEffort?: OpenAIClient['options']['reasoningEffort'];
+    maxCompletionTokens?: number;
 }
 
 export interface RunManifest {

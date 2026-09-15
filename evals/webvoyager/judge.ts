@@ -21,8 +21,9 @@ export async function evaluate(task: Task, run: TaskResult, config: ModelConfig,
         reasoning: `Budget failure: ${budget.kind} ${budget.actual} exceeds limit ${budget.limit}. The judge was not called.`,
         budget, time: Date.now() - started, usage,
     };
+    const { provider, ...modelOptions } = config;
     const agent = new Agent({
-        llm: { provider: config.provider, options: { model: config.model, temperature: config.temperature } },
+        llm: { provider, options: modelOptions },
         telemetry: false,
     });
     agent.events.on('tokensUsed', event => addUsage(usage, event));

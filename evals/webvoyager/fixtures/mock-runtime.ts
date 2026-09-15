@@ -5,11 +5,13 @@ import { spawn, execFileSync } from 'node:child_process';
 import { BrowserBlockedError } from '../../../packages/magnitude-core/src/web/recovery';
 import { ActionLimitError } from '../../../packages/magnitude-core/src/agent/errors';
 import hardSuite from '../baseline.json';
+import assert from 'node:assert/strict';
 const spawnProcess = spawn;
 const executeFile = execFileSync;
 
 const usage = { llm: { provider: 'anthropic', model: 'fixture' }, inputTokens: 100, outputTokens: 10, inputCost: 0.01, outputCost: 0.07 };
 class FakeAgent {
+    constructor(private options?: any) {}
     events = new EventEmitter();
     observations: any[] = [];
     memory = {
@@ -29,6 +31,9 @@ class FakeAgent {
     getConnector() { return undefined; }
     async stop() {}
     async act(prompt: string) {
+        if (process.env.EVAL_TEST_FAILURE === 'mixed-providers') assert.deepEqual(this.options.llm, {
+            provider: 'openai', options: { model: 'gpt-5.6-luna', reasoningEffort: 'medium', maxCompletionTokens: 8192 },
+        });
         checkCriteria(prompt);
         this.events.emit('planningStarted');
         if (process.env.EVAL_TEST_FAILURE === 'timeout') return new Promise<void>(() => {});
@@ -58,6 +63,9 @@ class FakeAgent {
         this.events.emit('observationsRecorded');
     }
     async query(prompt: string) {
+        if (process.env.EVAL_TEST_FAILURE === 'mixed-providers') assert.deepEqual(this.options.llm, {
+            provider: 'anthropic', options: { model: 'claude-sonnet-5', temperature: 1 },
+        });
         checkCriteria(prompt);
         if (process.env.EVAL_TEST_FAILURE === 'judge-timeout') return new Promise<void>(() => {});
         if (process.env.EVAL_TEST_FAILURE === 'judge') throw new Error('Synthetic judge failure');
@@ -72,7 +80,7 @@ function checkCriteria(prompt: string) {
     }
 }
 
-mock.module('../../../packages/magnitude-core/src/agent/browserAgent', () => ({ startBrowserAgent: async () => new FakeAgent() }));
+mock.module('../../../packages/magnitude-core/src/agent/browserAgent', () => ({ startBrowserAgent: async (options: any) => new FakeAgent(options) }));
 mock.module('../../../packages/magnitude-core/src/agent', () => ({ Agent: FakeAgent }));
 mock.module('patchright', () => ({ chromium: { launchPersistentContext: async () => ({ close: async () => {} }) } }));
 mock.module('node:child_process', () => ({

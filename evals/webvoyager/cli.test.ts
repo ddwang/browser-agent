@@ -7,10 +7,10 @@ import { writeJson } from './results';
 const directory = mkdtempSync(join(tmpdir(), 'magnitude-eval-test-'));
 afterAll(() => rmSync(directory, { recursive: true, force: true }));
 
-async function cli(args: string[], failure = '') {
+async function cli(args: string[], failure = '', env: Record<string, string> = {}) {
     const child = Bun.spawn([process.execPath, '--preload', join(import.meta.dir, 'fixtures/mock-runtime.ts'), join(import.meta.dir, 'wv.ts'), ...args], {
         cwd: directory,
-        env: { ...process.env, ANTHROPIC_API_KEY: 'test-only-not-a-real-key', EVAL_TEST_FAILURE: failure },
+        env: { ...process.env, ANTHROPIC_API_KEY: 'test-only-not-a-real-key', OPENAI_API_KEY: 'test-only-not-a-real-key', EVAL_TEST_FAILURE: failure, ...env },
         stdout: 'pipe', stderr: 'pipe',
     });
     const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
@@ -37,6 +37,62 @@ test('legacy smoke and scroll suites still resolve their original tasks', async 
         expect(result.code).toBe(0);
         expect(JSON.parse(result.stdout).tasks).toHaveLength(count);
     }
+});
+
+test('OpenAI actor defaults to Luna with an independent Sonnet judge', async () => {
+    const result = await cli(['run', 'Allrecipes--0', '--provider', 'openai', '--dry-run']);
+    expect(result.code).toBe(0);
+    const manifest = JSON.parse(result.stdout);
+    expect(manifest.actor).toEqual({ provider: 'openai', model: 'gpt-5.6-luna', reasoningEffort: 'medium' });
+    expect(manifest.judge).toEqual({ provider: 'anthropic', model: 'claude-sonnet-5', temperature: 1 });
+});
+
+test('OpenAI options are recorded and non-OpenAI actors reject them', async () => {
+    const flags = ['--model', 'gpt-5.6-terra', '--temperature', '0.3', '--reasoning-effort', 'none', '--max-completion-tokens', '8192'];
+    const result = await cli(['run', 'Allrecipes--0', '--provider', 'openai', ...flags, '--dry-run']);
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout).actor).toEqual({ provider: 'openai', model: 'gpt-5.6-terra', temperature: 0.3, reasoningEffort: 'none', maxCompletionTokens: 8192 });
+    const older = await cli(['run', 'Allrecipes--0', '--provider', 'openai', '--model', 'gpt-4.1', '--dry-run']);
+    expect(JSON.parse(older.stdout).actor).toEqual({ provider: 'openai', model: 'gpt-4.1' });
+    for (const flags of [['--reasoning-effort', 'low'], ['--max-completion-tokens', '100']]) {
+        const bad = await cli(['run', 'Allrecipes--0', ...flags, '--dry-run']);
+        expect(bad.code).toBe(1);
+        expect(bad.stderr).toContain('require --provider openai');
+    }
+    expect((await cli(['run', 'Allrecipes--0', '--provider', 'openai', '--max-completion-tokens', '0', '--dry-run'])).code).toBe(1);
+    expect((await cli(['run', 'Allrecipes--0', '--provider', 'openai', '--reasoning-effort', 'unknown', '--dry-run'])).code).toBe(1);
+});
+
+test('Claude Code retains its default judge provider and permits an explicit override', async () => {
+    const args = ['run', 'Allrecipes--0', '--provider', 'claude-code', '--dry-run'];
+    expect(JSON.parse((await cli(args)).stdout).judge.provider).toBe('claude-code');
+    expect(JSON.parse((await cli([...args, '--judge-provider', 'anthropic'])).stdout).judge.provider).toBe('anthropic');
+    expect(JSON.parse((await cli(['run', 'Allrecipes--0', '--provider', 'openai', '--judge-provider', 'claude-code', '--dry-run'])).stdout).judge.provider).toBe('claude-code');
+});
+
+test('mixed provider workers receive the saved configs and resume rejects changed reasoning', async () => {
+    const runDir = join(directory, 'openai-workers');
+    const args = ['run', 'Allrecipes--0', '--run-dir', runDir, '--provider', 'openai', '--max-completion-tokens', '8192'];
+    const result = await cli([...args, '--eval'], 'mixed-providers');
+    expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: '' });
+    expect(JSON.parse(readFileSync(join(runDir, 'summary.json'), 'utf8')).successRate).toBe(1);
+    const changed = await cli([...args, '--reasoning-effort', 'high', '--failed'], 'mixed-providers');
+    expect(changed.code).toBe(1);
+    expect(changed.stderr).toContain('Run configuration differs');
+    const judge = await cli(['eval', '--run-dir', runDir, '--replace'], 'mixed-providers', { OPENAI_API_KEY: '' });
+    expect({ code: judge.code, stderr: judge.stderr }).toEqual({ code: 0, stderr: '' });
+});
+
+test('both credentials are checked before a scored OpenAI run writes files or starts workers', async () => {
+    for (const missing of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY']) {
+        const runDir = join(directory, `missing-${missing}`);
+        const result = await cli(['run', 'Allrecipes--0', '--provider', 'openai', '--run-dir', runDir, '--eval'], '', { [missing]: '' });
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain(`Set ${missing}`);
+        expect(existsSync(runDir)).toBe(false);
+    }
+    const unscored = await cli(['run', 'Allrecipes--0', '--provider', 'openai', '--run-dir', join(directory, 'openai-no-judge')], '', { ANTHROPIC_API_KEY: '' });
+    expect(unscored.code).toBe(0);
 });
 
 test('holdout requires explicit exposure and rejects selective runs', async () => {
