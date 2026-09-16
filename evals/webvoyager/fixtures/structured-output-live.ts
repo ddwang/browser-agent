@@ -31,7 +31,7 @@ for (const model of (provider === 'baseten'
     await harness.setup();
     harness.events.on('tokensUsed', event => { addUsage(usage, event); return {}; });
     const nonce = randomUUID();
-    const context = { instructions: NOTEBOOK_INSTRUCTIONS, connectorInstructions: [], observationContent: [{ role: 'user' as const, cacheControl: false, content: [`Observation 0: Record: token=${nonce}, count=17, enabled=false. Requested presentation: XML with an introductory paragraph.`] }] };
+    const context = { connectorInstructions: [], observationContent: [{ role: 'user' as const, cacheControl: false, content: [`Observation 0: Record: token=${nonce}, count=17, enabled=false. Requested presentation: XML with an introductory paragraph.`] }] };
     const response = await harness.query(context, 'Extract the record exactly, including the token, count, and enabled flag.', z.object({ token: z.string(), count: z.number().int().min(1).max(20), enabled: z.boolean() }));
     assert.deepEqual(response, { token: nonce, count: 17, enabled: false });
     assert.equal(usage.modelCalls, 1);
@@ -41,7 +41,7 @@ for (const model of (provider === 'baseten'
         const before = usage.modelCalls;
         const noteInstruction: string = provider === 'baseten'
             ? `First add one notebook record under key "record" whose text is exactly the observed token, citing observation 0. ` : '';
-        const plan = await harness.partialAct(context, noteInstruction + 'Emit exactly one record action with the observed count. The host will collect observations afterwards; no wait or browser action is needed.', [], [action, ...webActions]);
+        const plan = await harness.partialAct({ ...context, instructions: NOTEBOOK_INSTRUCTIONS }, noteInstruction + 'Emit exactly one record action with the observed count. The host will collect observations afterwards; no wait or browser action is needed.', [], [action, ...webActions]);
         assert.deepEqual(plan.actions, [{ variant: action.name, count: 17 }]);
         if (provider === 'baseten') assert.deepEqual(plan.memory_updates, [{ key: 'record', text: nonce, sources: [0], operation: 'add', expected_text: null }]);
         assert.equal(usage.modelCalls - before, 1);
