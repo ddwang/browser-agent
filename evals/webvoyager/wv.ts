@@ -1,696 +1,310 @@
 #!/usr/bin/env bun
-import { startBrowserAgent } from "../../packages/magnitude-core/src/agent/browserAgent";
-import * as fs from "fs";
-import * as readline from "readline";
-import * as path from "path";
-import { createAction } from "../../packages/magnitude-core/src/actions";
-import z from "zod";
-import { Command } from "commander";
-import * as p from "@clack/prompts";
-import { Agent } from "../../packages/magnitude-core/src/agent";
-import { chromium } from "patchright";
-import { spawn } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { createHash } from 'node:crypto';
+import { execFileSync, spawn } from 'node:child_process';
+import { Command, InvalidArgumentError, Option } from 'commander';
+import { DEFAULT_LIMITS } from './budget';
+import { suiteTasks } from './tasks';
+import * as prompts from '@clack/prompts';
+import { emptyUsage, outcome, summarize, writeJson, JUDGE_VERSION, type Evaluation, type ModelConfig, type RunManifest, type Task, type TaskRecord, type TaskResult, type TaskProgress } from './results';
 
-const TASKS_PATH = path.join(__dirname, "data", "patchedTasks.jsonl");
+const dataPath = join(import.meta.dir, 'data', 'patchedTasks.jsonl');
+const defaultActor = 'claude-haiku-4-5-20251001';
+const defaultJudge = 'claude-sonnet-5';
 
-// src: https://github.com/MinorJerry/WebVoyager/blob/main/evaluation/auto_eval.py
-const EVALUATION_PROMPT = `
-As an evaluator, you will be presented with three primary components to assist you in your role:
-
-1. Web Task Instruction: This is a clear and specific directive provided in natural language, detailing the online activity to be carried out. These requirements may include conducting searches, verifying information, comparing prices, checking availability, or any other action relevant to the specified web service (such as Amazon, Apple, ArXiv, BBC News, Booking etc).
-
-2. Result Screenshots: This is a visual representation of the screen showing the result or intermediate state of performing a web task. It serves as visual proof of the actions taken in response to the instruction.
-
-3. Result Response: This is a textual response obtained after the execution of the web task. It serves as textual result in response to the instruction.
-
--- You DO NOT NEED to interact with web pages or perform actions such as booking flights or conducting searches on websites.
--- You SHOULD NOT make assumptions based on information not presented in the screenshots when comparing it to the instructions.
--- Your primary responsibility is to conduct a thorough assessment of the web task instruction against the outcome depicted in the screenshots and in the response, evaluating whether the actions taken align with the given instructions.
--- NOTE that the instruction may involve more than one task, for example, locating the garage and summarizing the review. Failing to complete either task, such as not providing a summary, should be considered unsuccessful.
--- NOTE that the screenshots are authentic, but the response provided by LLM is generated at the end of web browsing, and there may be discrepancies between the text and the screenshots.
--- Note the difference: 1) Result response may contradict the screenshots, then the content of the screenshots prevails, 2) The content in the Result response is not mentioned on the screenshots, choose to believe the content.
-
-You should elaborate on how you arrived at your final evaluation and then provide a definitive verdict on whether the task has been successfully accomplished, either as 'SUCCESS' or 'NOT SUCCESS'.
-`;
-
-interface Task {
-    web_name: string;
-    id: string;
-    ques: string;
-    web: string;
+function sourceHash() {
+    const root = resolve(import.meta.dir, '../..');
+    const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z', 'bun.lock', 'package.json', 'packages/magnitude-core', 'packages/magnitude-extract', 'evals/webvoyager'], { cwd: root, encoding: 'utf8' }).split('\0').filter(Boolean).sort();
+    const hash = createHash('sha256');
+    for (const file of files) hash.update(file).update(readFileSync(join(root, file)));
+    return hash.digest('hex');
 }
 
-interface RunOptions {
-    workers: string;
-    eval?: boolean;
-    failed?: boolean;
-    failedOnly?: boolean;
-    replace?: boolean;
+function readJson<T>(filename: string): T {
+    return JSON.parse(readFileSync(filename, 'utf8'));
 }
 
-interface EvalOptions {
-    workers: string;
-    replace?: boolean;
+function readOptional<T>(filename: string): T | undefined {
+    return existsSync(filename) ? readJson<T>(filename) : undefined;
 }
 
-// Helper functions
-async function findTaskById(
-    filePath: string,
-    taskId: string,
-): Promise<Task | null> {
-    const fileStream = fs.createReadStream(filePath);
-    const rl = readline.createInterface({
-        input: fileStream,
-        crlfDelay: Infinity,
+function loadRecords(runDir: string, manifest: RunManifest): TaskRecord[] {
+    return manifest.tasks.map(task => {
+        const run = readOptional<TaskResult>(join(runDir, `${task.id}.json`));
+        const progress = run?.status === 'running' ? readOptional<TaskProgress>(join(runDir, `${task.id}.status.json`)) : undefined;
+        if (run && progress) { run.progress = progress; run.time = progress.updatedAt - progress.startedAt; }
+        return { task, run, evaluation: readOptional<Evaluation>(join(runDir, `${task.id}.eval.json`)) };
     });
+}
 
-    for await (const line of rl) {
-        try {
-            const task: Task = JSON.parse(line);
-            if (task.id === taskId) {
-                return task;
-            }
-        } catch (error) {
-            console.error("Error parsing JSON line:", error);
+function report(runDir: string, manifest: RunManifest) {
+    const records = loadRecords(runDir, manifest);
+    const categories = [...new Set(manifest.tasks.map(task => task.web_name))];
+    return {
+        partition: manifest.partition ?? 'development',
+        ...summarize(records),
+        categories: Object.fromEntries(categories.map(category => [category, summarize(records.filter(record => record.task.web_name === category))])),
+        capabilities: Object.fromEntries([...new Set(manifest.tasks.flatMap(task => task.capabilities ?? []))]
+            .map(capability => [capability, summarize(records.filter(record => record.task.capabilities?.includes(capability)))])),
+        tasks: records.map(record => ({ id: record.task.id, outcome: outcome(record), timeMs: record.run?.time ?? null, progress: record.run?.progress, block: record.run?.block, budget: record.run?.budget ?? record.evaluation?.budget })),
+    };
+}
+
+async function checkCredentials(provider: ModelConfig['provider']) {
+    if (provider === 'anthropic') {
+        if (!process.env.ANTHROPIC_API_KEY) throw new Error('Set ANTHROPIC_API_KEY in your environment or a local .env file before running evals.');
+    } else if (provider === 'openai') {
+        if (!process.env.OPENAI_API_KEY) throw new Error('Set OPENAI_API_KEY in your environment or a local .env file before running evals.');
+    } else {
+        if (!existsSync(join(homedir(), '.magnitude', 'credentials', 'claudeCode.json'))) {
+            throw new Error('Magnitude Claude Code credentials are missing. Authenticate through create-magnitude-app, or use --provider anthropic with ANTHROPIC_API_KEY.');
         }
+        // Authenticate once before workers start, avoiding concurrent refreshes and prompts.
+        const { completeClaudeCodeAuthFlow } = await import('../../packages/magnitude-core/src/ai/claudeCode');
+        await completeClaudeCodeAuthFlow();
     }
-    return null;
 }
 
-async function getAllTasks(
-    filePath: string,
-    category?: string,
-): Promise<Task[]> {
-    const tasks: Task[] = [];
-    const fileStream = fs.createReadStream(filePath);
-    const rl = readline.createInterface({
-        input: fileStream,
-        crlfDelay: Infinity,
-    });
+async function parallel<T>(items: T[], workers: number, work: (item: T) => Promise<void>) {
+    let index = 0;
+    await Promise.all(Array.from({ length: Math.min(workers, items.length) }, async () => {
+        while (index < items.length) await work(items[index++]);
+    }));
+}
 
-    for await (const line of rl) {
-        try {
-            const task: Task = JSON.parse(line);
-            if (!category || task.web_name === category) {
-                tasks.push(task);
-            }
-        } catch (error) {
-            console.error("Error parsing JSON line:", error);
+function positiveInteger(value: string) {
+    const number = Number(value);
+    if (!Number.isSafeInteger(number) || number < 1) throw new InvalidArgumentError('Expected a positive integer');
+    return number;
+}
+
+function temperature(value: string) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0 || number > 1) throw new InvalidArgumentError('Expected a number from 0 to 1');
+    return number;
+}
+
+async function selectTasks(input: string | undefined, suite?: string, holdout = false): Promise<Task[]> {
+    const allTasks: Task[] = readFileSync(dataPath, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    const reservedSites = new Set(suiteTasks(readJson(join(import.meta.dir, 'holdout.json')), allTasks).map(task => task.web_name));
+    const checkReservation = (tasks: Task[]) => {
+        if (!holdout && tasks.some(task => reservedSites.has(task.web_name))) {
+            throw new Error('Holdout sites are reserved. Use the complete holdout suite with --allow-holdout after freezing the candidate.');
         }
+        return tasks;
+    };
+    if (suite) {
+        const selected = suiteTasks(readJson<unknown>(resolve(suite)), allTasks);
+        const matching = input ? selected.filter(task => task.id === input || task.web_name === input) : selected;
+        if (!matching.length) throw new Error(`Unknown task or category in suite: ${input}`);
+        return checkReservation(matching);
     }
-    return tasks;
-}
-
-async function getCategories(): Promise<Map<string, number>> {
-    const allTasks = await getAllTasks(TASKS_PATH);
-    const categories = new Map<string, number>();
-
-    for (const task of allTasks) {
-        categories.set(task.web_name, (categories.get(task.web_name) || 0) + 1);
+    if (input?.includes('--')) {
+        const task = allTasks.find(task => task.id === input);
+        if (!task) throw new Error(`Unknown task: ${input}`);
+        return checkReservation([task]);
     }
-
-    return categories;
-}
-
-function isTaskId(input: string): boolean {
-    // Task IDs have format "Category--number"
-    return input.includes("--");
-}
-
-async function selectCategories(): Promise<string[] | null> {
-    const categories = await getCategories();
-    
-    // Calculate total tasks
-    let totalTasks = 0;
-    for (const [_, count] of categories) {
-        totalTasks += count;
-    }
-    
-    // First ask: all or specific
-    const mode = await p.select({
-        message: "Which categories would you like to run?",
-        options: [
-            { value: "all", label: `All Categories (${totalTasks} tasks total)` },
-            { value: "specific", label: "Select specific categories" },
-        ],
-    });
-
-    if (p.isCancel(mode)) {
-        p.cancel("Operation cancelled");
-        return null;
-    }
-
-    if (mode === "all") {
-        return Array.from(categories.keys());
-    }
-
-    // User chose specific - show multiselect
-    const categoryOptions = Array.from(categories.entries()).map(
-        ([cat, count]) => ({
-            value: cat,
-            label: `${cat} (${count} tasks)`,
-        }),
-    );
-
-    const selected = await p.multiselect({
-        message: "Select categories:",
-        options: categoryOptions,
+    if (input && reservedSites.has(input)) checkReservation(allTasks.filter(task => task.web_name === input));
+    const candidates = (input ? allTasks.filter(task => task.web_name === input) : allTasks)
+        .filter(task => !reservedSites.has(task.web_name));
+    if (!candidates.length) throw new Error(`Unknown category: ${input}`);
+    const selected = await prompts.multiselect({
+        message: input ? `Select ${input} tasks` : 'Select development tasks (reserved holdout sites excluded; or pass --suite baseline.json)',
+        options: candidates.map(task => ({ value: task.id, label: `${task.id}: ${task.ques}` })),
         required: true,
     });
-
-    if (p.isCancel(selected)) {
-        p.cancel("Operation cancelled");
-        return null;
-    }
-
-    return selected as string[];
+    if (prompts.isCancel(selected)) return [];
+    return candidates.filter(task => selected.includes(task.id));
 }
 
-async function selectTasksFromCategory(category: string): Promise<Task[] | null> {
-    const categoryTasks = await getAllTasks(TASKS_PATH, category);
-
-    const mode = await p.select({
-        message: `Found ${categoryTasks.length} tasks in ${category}. How would you like to proceed?`,
-        options: [
-            { value: "all", label: `Run all ${categoryTasks.length} tasks` },
-            { value: "select", label: "Select specific tasks" },
-        ],
-    });
-
-    if (p.isCancel(mode)) {
-        p.cancel("Operation cancelled");
-        return null;
-    }
-
-    if (mode === "all") {
-        return categoryTasks;
-    }
-
-    const selectedIds = await p.multiselect({
-        message: "Select tasks to run:",
-        options: categoryTasks.map((task) => ({
-            value: task.id,
-            label: `${task.id}: ${task.ques.substring(0, 80)}${task.ques.length > 80 ? "..." : ""}`,
-        })),
-        required: true,
-    });
-
-    if (p.isCancel(selectedIds)) {
-        p.cancel("Operation cancelled");
-        return null;
-    }
-
-    return categoryTasks.filter((task) =>
-        (selectedIds as string[]).includes(task.id),
-    );
-}
-
-async function getTaskStatus(taskId: string): Promise<{
-    hasRun: boolean;
-    hasEval: boolean;
-    isSuccess: boolean;
-}> {
-    const resultPath = path.join("results", `${taskId}.json`);
-    const evalPath = path.join("results", `${taskId}.eval.json`);
-    
-    const hasRun = fs.existsSync(resultPath);
-    const hasEval = fs.existsSync(evalPath);
-    let isSuccess = false;
-
-    if (hasEval) {
-        try {
-            const evalData = JSON.parse(fs.readFileSync(evalPath, "utf-8"));
-            isSuccess = evalData.result === "SUCCESS";
-        } catch {
-            // Error reading eval
-        }
-    }
-
-    return { hasRun, hasEval, isSuccess };
-}
-
-async function filterTasksByOptions(tasks: Task[], options: RunOptions): Promise<Task[]> {
-    const filteredTasks: Task[] = [];
-
-    for (const task of tasks) {
-        const status = await getTaskStatus(task.id);
-
-        if (options.replace) {
-            // Run all tasks regardless of status
-            filteredTasks.push(task);
-        } else if (options.failedOnly) {
-            // Only run failed tasks (has run but not successful)
-            if (status.hasRun && !status.isSuccess) {
-                filteredTasks.push(task);
-            }
-        } else if (options.failed) {
-            // Run failed tasks and unrun tasks
-            if (!status.hasRun || !status.isSuccess) {
-                filteredTasks.push(task);
-            }
-        } else {
-            // Default: only run tasks that haven't been run OR haven't provided an answer (excludes timed out tasks)
-            const resultPath = path.join("results", `${task.id}.json`);
-            let hasAnswer = false;
-            let hasTimedOut = false;
-            
-            if (fs.existsSync(resultPath)) {
-                try {
-                    const resultData = JSON.parse(fs.readFileSync(resultPath, "utf-8"));
-                    
-                    // Check if task timed out
-                    if (resultData.timedOut === true) {
-                        hasTimedOut = true;
-                    }
-                    
-                    // Check if memory.observations contains an answer
-                    if (resultData.memory && resultData.memory.observations) {
-                        hasAnswer = resultData.memory.observations.some((obs: any) => 
-                            obs.source === "action:taken:answer"
-                        );
-                    }
-                } catch {
-                    // Error reading file, treat as no answer
-                }
-            }
-            
-            // Only run if: file doesn't exist, OR (has no answer AND didn't timeout)
-            if (!fs.existsSync(resultPath) || (!hasAnswer && !hasTimedOut)) {
-                filteredTasks.push(task);
-            }
-        }
-    }
-
-    return filteredTasks;
-}
-
-async function evalTask(taskId: string) {
-    const task = (await findTaskById(TASKS_PATH, taskId))!;
-
-    const memoryPath = path.join("results", `${task.id}.json`);
-    const memJson = JSON.parse(fs.readFileSync(memoryPath, "utf-8")).memory;
-
-    const agent = new Agent({
-        llm: {
-            provider: "claude-code",
-            options: {
-                model: "claude-sonnet-4-20250514",
-            },
-        },
-    });
-    await agent.start();
-    await agent.memory.loadJSON(memJson);
-
-    const evalResult = await agent.query(
-        EVALUATION_PROMPT + "\n\n" + `TASK: ${task.ques}`,
-        z.object({
-            reasoning: z.string(),
-            result: z.enum(["SUCCESS", "NOT SUCCESS"]),
-        }),
-    );
-    console.log(evalResult);
-
-    const evalPath = path.join("results", `${task.id}.eval.json`);
-    fs.writeFileSync(evalPath, JSON.stringify(evalResult, null, 4));
-}
-
-async function runTaskAsProcess(task: Task, runEval: boolean): Promise<boolean> {
-    return new Promise((resolve) => {
-        const child = spawn('bun', [
-            path.join(__dirname, 'wv-runner.ts'),
-            JSON.stringify(task),
-            String(runEval)
-        ], {
-            stdio: 'inherit',
-            env: process.env
-        });
-
-        const timeout = setTimeout(() => {
-            console.error(`Process timeout for task ${task.id}, killing process`);
+async function runWorker(script: string, runDir: string, taskId: string, timeoutMs: number) {
+    return new Promise<{ error?: string; timedOut: boolean; exitCode: number | null; signal: string | null }>((resolveWorker) => {
+        const child = spawn(process.execPath, [join(import.meta.dir, script), runDir, taskId], { stdio: 'inherit', env: process.env });
+        let killed = false;
+        let processError: string | undefined;
+        const timer = setTimeout(() => {
+            killed = true;
             child.kill('SIGKILL');
-            resolve(false);
-        }, 25 * 60 * 1000); // 25 minutes total timeout
-
-        child.on('exit', (code) => {
-            clearTimeout(timeout);
-            if (code === 0) {
-                console.log(`Process completed task ${task.id} successfully`);
-                resolve(true);
-            } else {
-                console.error(`Process failed task ${task.id} with code ${code}`);
-                resolve(false);
-            }
-        });
-
-        child.on('error', (err) => {
-            clearTimeout(timeout);
-            console.error(`Process error for task ${task.id}:`, err);
-            resolve(false);
+        }, timeoutMs);
+        child.once('error', error => { processError = error.message; });
+        child.once('close', (code, signal) => {
+            clearTimeout(timer);
+            resolveWorker({ timedOut: killed, exitCode: code, signal, error: killed ? 'Worker exceeded process deadline' : processError ?? (code === 0 ? undefined : `Worker exited with code ${code}${signal ? ` (${signal})` : ''}`) });
         });
     });
 }
 
-
-async function runTasksParallel(tasks: Task[], workers: number, runEval: boolean = false) {
-    // Run tasks in parallel with worker processes
-    let taskIndex = 0;
-    let completedTasks = 0;
-
-    const runWorker = async (workerId: number) => {
-        while (taskIndex < tasks.length) {
-            const currentIndex = taskIndex++;
-            const task = tasks[currentIndex];
-
-            console.log(
-                `\n[Worker ${workerId}] Starting task ${currentIndex + 1}/${tasks.length}: ${task.id}`,
-            );
-
-            const success = await runTaskAsProcess(task, runEval);
-            
-            if (success) {
-                completedTasks++;
-                console.log(
-                    `\n[Worker ${workerId}] Completed task ${currentIndex + 1}/${tasks.length}: ${task.id} (${completedTasks} total completed)`,
-                );
-            } else {
-                completedTasks++;
-                console.error(
-                    `\n[Worker ${workerId}] Failed task ${currentIndex + 1}/${tasks.length}: ${task.id}`,
-                );
-            }
-        }
-    };
-
-    const workerPromises: Promise<void>[] = [];
-    for (let i = 0; i < workers; i++) {
-        workerPromises.push(runWorker(i + 1));
+async function runTask(task: Task, runDir: string, manifest: RunManifest) {
+    const started = Date.now();
+    const resultPath = join(runDir, `${task.id}.json`);
+    writeJson(resultPath, { ...emptyUsage(), status: 'running', time: 0, actionCount: 0, memory: null } satisfies TaskResult);
+    const worker = await runWorker('wv-runner.ts', runDir, task.id, manifest.timeoutMs + 15_000);
+    const previous = readJson<TaskResult>(resultPath);
+    if (worker.timedOut || previous.status === 'running' || (worker.error && previous.status === 'completed')) {
+        writeJson(resultPath, {
+            ...previous,
+            status: worker.timedOut ? 'timeout' : 'error',
+            timedOut: worker.timedOut,
+            time: Date.now() - started,
+            error: worker.error ?? 'Worker exited without a final result',
+            worker: { exitCode: worker.exitCode, signal: worker.signal, savedStatus: previous.status },
+        } satisfies TaskResult);
     }
-
-    await Promise.all(workerPromises);
-
-    console.log(`\nCompleted ${tasks.length} task${tasks.length !== 1 ? "s" : ""}`);
 }
 
-async function evalTasksParallel(taskIds: string[], workers: number) {
-    let taskIndex = 0;
-    let completedTasks = 0;
-
-    const runWorker = async (workerId: number) => {
-        while (taskIndex < taskIds.length) {
-            const currentIndex = taskIndex++;
-            const taskId = taskIds[currentIndex];
-
-            console.log(
-                `\n[Worker ${workerId}] Starting evaluation ${currentIndex + 1}/${taskIds.length}: ${taskId}`,
-            );
-
-            try {
-                await evalTask(taskId);
-                completedTasks++;
-                console.log(
-                    `\n[Worker ${workerId}] Completed evaluation ${currentIndex + 1}/${taskIds.length}: ${taskId} (${completedTasks} total completed)`,
-                );
-            } catch (error) {
-                console.error(
-                    `\n[Worker ${workerId}] Error evaluating task ${taskId}:`,
-                    error,
-                );
-                completedTasks++;
-            }
-        }
-    };
-
-    const workerPromises: Promise<void>[] = [];
-    for (let i = 0; i < workers; i++) {
-        workerPromises.push(runWorker(i + 1));
+async function scoreTask(task: Task, runDir: string, manifest: RunManifest) {
+    const run = readOptional<TaskResult>(join(runDir, `${task.id}.json`));
+    if (!run || run.status !== 'completed') return;
+    const started = Date.now();
+    const evalPath = join(runDir, `${task.id}.eval.json`);
+    writeJson(evalPath, { time: 0, usage: emptyUsage() });
+    const worker = await runWorker('judge.ts', runDir, task.id, manifest.judgeTimeoutMs);
+    let evaluation = readJson<Evaluation>(evalPath);
+    if (worker.error || (!evaluation.result && !evaluation.error)) {
+        evaluation = { time: Date.now() - started, usage: emptyUsage(), error: worker.error ?? 'Judge exited without a verdict' };
+        writeJson(evalPath, evaluation);
     }
-
-    await Promise.all(workerPromises);
-
-    console.log(`\nCompleted evaluation of ${taskIds.length} task${taskIds.length !== 1 ? "s" : ""}`);
+    console.log(`${task.id}: ${evaluation.result ?? 'JUDGE ERROR'}`);
 }
 
-// Commands
-const program = new Command();
+const program = new Command().name('webvoyager');
 
-program
-    .command("run [input]")
-    .description("Run tasks by category or task ID")
-    .option("-w, --workers <number>", "Number of parallel workers", "1")
-    .option("--eval", "Automatically run evaluation after each task")
-    .option("--failed", "Include failed tasks (default: only incomplete tasks) - useful for pass@N")
-    .option("--failed-only", "Only run failed tasks")
-    .option("--replace", "Run all tasks regardless of status")
-    .action(async (input: string | undefined, options: RunOptions) => {
-        const workers = parseInt(options.workers);
-        let tasksToRun: Task[] = [];
-
-        if (input && isTaskId(input)) {
-            // Single task ID provided
-            const task = await findTaskById(TASKS_PATH, input);
-            if (!task) {
-                console.error(`Task ${input} not found`);
-                return;
-            }
-            tasksToRun = [task];
-        } else if (input) {
-            // Category name provided
-            const categoryTasks = await getAllTasks(TASKS_PATH, input);
-            if (categoryTasks.length === 0) {
-                console.error(`No tasks found for category: ${input}`);
-                return;
-            }
-            
-            // Ask for task selection
-            const selectedTasks = await selectTasksFromCategory(input);
-            if (!selectedTasks) return;
-            
-            tasksToRun = await filterTasksByOptions(selectedTasks, options);
-        } else {
-            // No input - ask for categories
-            const selectedCategories = await selectCategories();
-            if (!selectedCategories) return;
-
-            if (selectedCategories.length === 1) {
-                // Single category - ask for task selection
-                const selectedTasks = await selectTasksFromCategory(selectedCategories[0]);
-                if (!selectedTasks) return;
-                
-                tasksToRun = await filterTasksByOptions(selectedTasks, options);
-            } else {
-                // Multiple categories - run all tasks in each
-                for (const category of selectedCategories) {
-                    const categoryTasks = await getAllTasks(TASKS_PATH, category);
-                    const filteredTasks = await filterTasksByOptions(categoryTasks, options);
-                    tasksToRun.push(...filteredTasks);
-                }
-            }
+program.command('run [input]')
+    .description('Run a task, selected category tasks, or a fixed suite')
+    .option('--suite <path>', 'JSON file containing taskIds or explicit tasks; input can select a task/site within it')
+    .option('--run-dir <path>', 'Results directory (default: a new timestamped directory)')
+    .option('-w, --workers <number>', 'Parallel task workers', positiveInteger, 1)
+    .option('--model <name>', 'Actor model (default: Haiku 4.5, or gpt-5.6-luna with --provider openai)')
+    .option('--judge-model <name>', 'Judge model, fixed for comparisons', defaultJudge)
+    .addOption(new Option('--provider <name>', 'Actor provider').choices(['anthropic', 'claude-code', 'openai']).default('anthropic'))
+    .addOption(new Option('--judge-provider <name>', 'Judge provider (default: anthropic, or claude-code for a Claude Code actor)').choices(['anthropic', 'claude-code']))
+    .option('--temperature <number>', 'Actor temperature (default: 0.2 for Claude; omitted for OpenAI)', temperature)
+    .addOption(new Option('--reasoning-effort <level>', 'OpenAI actor reasoning effort (default: medium for gpt-5.6-luna; otherwise API default)').choices(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']))
+    .option('--max-completion-tokens <number>', 'OpenAI actor output limit, including reasoning tokens (default: API default)', positiveInteger)
+    .option('--timeout <seconds>', 'Task timeout, including setup', positiveInteger, 1200)
+    .option('--judge-timeout <seconds>', 'Judge process timeout', positiveInteger, 300)
+    .option('--max-actions <number>', 'Fail tasks that cannot finish within this many actions', positiveInteger, DEFAULT_LIMITS.maxActions)
+    .option('--max-judge-mb <number>', 'Fail saved traces over this many MiB without calling the judge', positiveInteger, DEFAULT_LIMITS.maxJudgeBytes / 1024 / 1024)
+    .option('--eval', 'Score each completed task')
+    .option('--dry-run', 'Print selected tasks and configuration without running or writing files')
+    .option('--allow-holdout', 'Acknowledge one-shot holdout exposure; only use after freezing the candidate')
+    .option('--failed', 'Resume unrun and unsuccessful tasks in an explicit --run-dir')
+    .option('--failed-only', 'Resume only unsuccessful attempts in an explicit --run-dir')
+    .option('--replace', 'Replace selected results in an explicit --run-dir')
+    .action(async (input, options) => {
+        const holdout = options.suite && readJson<{ partition?: string }>(resolve(options.suite)).partition === 'holdout';
+        if (holdout) {
+            if (!options.allowHoldout) throw new Error('Holdout is reserved. Freeze the candidate, then use --allow-holdout. See EXPERIMENTS.md.');
+            if (input || options.failed || options.failedOnly || options.replace) throw new Error('Holdout runs require the complete suite without selective reruns.');
+            if (!options.eval && !options.dryRun) throw new Error('Holdout runs require --eval.');
         }
-
-        if (tasksToRun.length === 0) {
-            console.log("No tasks match the criteria");
+        const tasks = await selectTasks(input, options.suite, !!holdout);
+        if (!tasks.length) return;
+        const runDir = resolve(options.runDir ?? join(import.meta.dir, 'results', new Date().toISOString().replaceAll(':', '-')));
+        const manifestPath = join(runDir, 'manifest.json');
+        if (options.provider !== 'openai' && (options.reasoningEffort !== undefined || options.maxCompletionTokens !== undefined)) {
+            throw new Error('--reasoning-effort and --max-completion-tokens require --provider openai.');
+        }
+        const model = options.model ?? (options.provider === 'openai' ? 'gpt-5.6-luna' : defaultActor);
+        const reasoningEffort = options.reasoningEffort ?? (model === 'gpt-5.6-luna' ? 'medium' : undefined);
+        const actor: ModelConfig = options.provider === 'openai'
+            ? { provider: 'openai', model,
+                ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+                ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
+                ...(options.maxCompletionTokens !== undefined ? { maxCompletionTokens: options.maxCompletionTokens } : {}),
+            }
+            : { provider: options.provider, model, temperature: options.temperature ?? 0.2 };
+        // Sonnet 5 only accepts the API's default sampling temperature (1).
+        const judge: ModelConfig = { provider: options.judgeProvider ?? (options.provider === 'claude-code' ? 'claude-code' : 'anthropic'), model: options.judgeModel, temperature: options.judgeModel === 'claude-sonnet-5' ? 1 : 0 };
+        let manifest: RunManifest = {
+            partition: holdout ? 'holdout' : 'development',
+            createdAt: new Date().toISOString(),
+            revision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: import.meta.dir, encoding: 'utf8' }).trim(),
+            dirty: !!execFileSync('git', ['status', '--porcelain'], { cwd: import.meta.dir, encoding: 'utf8' }).trim(),
+            sourceHash: sourceHash(), judgeVersion: JUDGE_VERSION, workers: options.workers,
+            actor, judge, timeoutMs: options.timeout * 1000, judgeTimeoutMs: options.judgeTimeout * 1000, tasks,
+            limits: { maxActions: options.maxActions, maxJudgeBytes: options.maxJudgeMb * 1024 * 1024 },
+        };
+        if (options.dryRun) {
+            console.log(JSON.stringify({ runDir, ...manifest }, null, 2));
             return;
         }
-
-        p.outro(`Running ${tasksToRun.length} task${tasksToRun.length !== 1 ? "s" : ""} with ${workers} worker${workers !== 1 ? "s" : ""}`);
-        
-        await runTasksParallel(tasksToRun, workers, options.eval || false);
+        if ((options.failed || options.failedOnly || options.replace) && !options.runDir) throw new Error('Resume/replace flags require --run-dir. Omit them for a fresh first-attempt baseline.');
+        const previous = readOptional<RunManifest>(manifestPath);
+        if (previous?.partition === 'holdout') throw new Error('Holdout runs are immutable. Do not resume or replace their attempts.');
+        if (holdout && (manifest.dirty || previous)) throw new Error('Holdout runs require a clean committed candidate and a fresh run directory.');
+        if (previous) {
+            if (JSON.stringify(previous.actor) !== JSON.stringify(actor) || JSON.stringify(previous.judge) !== JSON.stringify(judge) || previous.workers !== manifest.workers || previous.timeoutMs !== manifest.timeoutMs || previous.judgeTimeoutMs !== manifest.judgeTimeoutMs || previous.sourceHash !== manifest.sourceHash || JSON.stringify(previous.limits ?? DEFAULT_LIMITS) !== JSON.stringify(manifest.limits)) {
+                throw new Error('Run configuration differs from its manifest. Use a new --run-dir.');
+            }
+            const savedTasks = new Set(previous.tasks.map(task => JSON.stringify(task)));
+            if (tasks.some(task => !savedTasks.has(JSON.stringify(task)))) throw new Error('Tasks differ from the saved run. Use a new --run-dir.');
+            manifest = previous;
+        }
+        const records = loadRecords(runDir, manifest);
+        const selectedIds = new Set(tasks.map(task => task.id));
+        const pending = records.filter(record => selectedIds.has(record.task.id) && (
+            options.replace || (options.failedOnly ? !!record.run && outcome(record) !== 'success'
+                : options.failed ? outcome(record) !== 'success' : !record.run)
+        ));
+        if (!pending.length) { console.log('No tasks to run. Use a new run directory for another baseline.'); return; }
+        await checkCredentials(actor.provider);
+        if (options.eval && judge.provider !== actor.provider) await checkCredentials(judge.provider);
+        mkdirSync(runDir, { recursive: true });
+        if (!previous) writeJson(manifestPath, manifest);
+        console.log(`Run directory: ${runDir}\nRunning ${pending.length} tasks with ${options.workers} workers`);
+        await parallel(pending, options.workers, async ({ task }) => {
+            // An explicit rerun must not retain the previous verdict.
+            writeJson(join(runDir, `${task.id}.eval.json`), { time: 0, usage: emptyUsage() });
+            await runTask(task, runDir, manifest);
+            if (options.eval) await scoreTask(task, runDir, manifest);
+            writeJson(join(runDir, 'summary.json'), report(runDir, manifest));
+        });
+        const summary = report(runDir, manifest);
+        console.log(JSON.stringify(summary, null, 2));
+        if (summary.counts.error || summary.counts.timeout || summary.counts.blocked || summary.counts.judge_error || summary.counts.failure) process.exitCode = 1;
     });
 
-program
-    .command("eval [input]")
-    .description("Evaluate tasks by category or task ID")
-    .option("-w, --workers <number>", "Number of parallel workers", "1")
-    .option("--replace", "Re-run evaluations even if they already exist")
-    .action(async (input: string | undefined, options: EvalOptions) => {
-        const workers = parseInt(options.workers);
-        let taskIdsToEval: string[] = [];
-
-        if (input && isTaskId(input)) {
-            // Single task ID provided
-            taskIdsToEval = [input];
-        } else if (input) {
-            // Category name provided
-            const categoryTasks = await getAllTasks(TASKS_PATH, input);
-            if (categoryTasks.length === 0) {
-                console.error(`No tasks found for category: ${input}`);
-                return;
-            }
-            
-            // Filter to tasks that have been run
-            for (const task of categoryTasks) {
-                const status = await getTaskStatus(task.id);
-                if (status.hasRun && (options.replace || !status.hasEval)) {
-                    taskIdsToEval.push(task.id);
-                }
-            }
-        } else {
-            // No input - ask for categories
-            const selectedCategories = await selectCategories();
-            if (!selectedCategories) return;
-
-            for (const category of selectedCategories) {
-                const categoryTasks = await getAllTasks(TASKS_PATH, category);
-                for (const task of categoryTasks) {
-                    const status = await getTaskStatus(task.id);
-                    if (status.hasRun && (options.replace || !status.hasEval)) {
-                        taskIdsToEval.push(task.id);
-                    }
-                }
-            }
-        }
-
-        if (taskIdsToEval.length === 0) {
-            console.log("No tasks need evaluation");
-            return;
-        }
-
-        p.outro(`Evaluating ${taskIdsToEval.length} task${taskIdsToEval.length !== 1 ? "s" : ""} with ${workers} worker${workers !== 1 ? "s" : ""}`);
-        
-        await evalTasksParallel(taskIdsToEval, workers);
+program.command('eval [input]')
+    .description('Score saved completed tasks using the run manifest’s judge')
+    .requiredOption('--run-dir <path>', 'Run to evaluate')
+    .option('-w, --workers <number>', 'Parallel judges', positiveInteger, 1)
+    .option('--replace', 'Replace existing evaluations')
+    .action(async (input, options) => {
+        const runDir = resolve(options.runDir);
+        const manifest = readJson<RunManifest>(join(runDir, 'manifest.json'));
+        if (manifest.partition === 'holdout') throw new Error('Holdout evaluations are immutable. Score only during the original complete run --eval.');
+        if (manifest.judgeVersion !== JUDGE_VERSION) throw new Error('Judge version differs from the saved run. Use its matching source revision, or start a new run.');
+        const records = loadRecords(runDir, manifest).filter(record =>
+            (!input || record.task.id === input || record.task.web_name === input)
+            && record.run?.status === 'completed'
+            && (options.replace || !record.evaluation?.result));
+        if (!records.length) { console.log('No tasks to evaluate'); return; }
+        await checkCredentials(manifest.judge.provider);
+        await parallel(records, options.workers, async ({ task }) => { await scoreTask(task, runDir, manifest); });
+        const summary = report(runDir, manifest);
+        writeJson(join(runDir, 'summary.json'), summary);
+        console.log(JSON.stringify(summary, null, 2));
+        if (summary.counts.judge_error) process.exitCode = 1;
     });
 
-program
-    .command("stats")
-    .description("Show evaluation statistics")
-    .option("-v, --verbose", "Show detailed stats for each task")
-    .action(async (options: { verbose?: boolean }) => {
-        await showStats(options.verbose || false);
+program.command('stats')
+    .description('Show all selected tasks, including unscored tasks and failures')
+    .requiredOption('--run-dir <path>', 'Run to summarize')
+    .option('-v, --verbose', 'Include individual task outcomes')
+    .action(options => {
+        const runDir = resolve(options.runDir);
+        const manifest = readJson<RunManifest>(join(runDir, 'manifest.json'));
+        const summary = report(runDir, manifest);
+        const { tasks, ...totals } = summary;
+        console.log(JSON.stringify(options.verbose ? summary : totals, null, 2));
     });
 
-async function showStats(verbose: boolean = false) {
-    const resultsDir = "results";
-    if (!fs.existsSync(resultsDir)) {
-        console.log("No results directory found.");
-        return;
-    }
-
-    const files = fs.readdirSync(resultsDir);
-    const evalFiles = files.filter(f => f.endsWith(".eval.json"));
-
-    if (evalFiles.length === 0) {
-        console.log("No evaluation results found.");
-        return;
-    }
-
-    const categoryStats = new Map<string, {
-        total: number;
-        success: number;
-        totalCost: number;
-        totalActions: number;
-        tasks?: Array<{
-            taskId: string;
-            success: boolean;
-            cost: number;
-            actions: number;
-            time: number;
-        }>;
-    }>();
-
-    for (const evalFile of evalFiles) {
-        const taskId = evalFile.replace(".eval.json", "");
-        const evalPath = path.join(resultsDir, evalFile);
-        const resultPath = path.join(resultsDir, `${taskId}.json`);
-
-        try {
-            const evalData = JSON.parse(fs.readFileSync(evalPath, "utf-8"));
-            const isSuccess = evalData.result === "SUCCESS";
-
-            const category = taskId.split("--")[0];
-
-            if (!categoryStats.has(category)) {
-                categoryStats.set(category, {
-                    total: 0,
-                    success: 0,
-                    totalCost: 0,
-                    totalActions: 0,
-                    tasks: verbose ? [] : undefined,
-                });
-            }
-
-            const stats = categoryStats.get(category)!;
-            stats.total += 1;
-            if (isSuccess) {
-                stats.success += 1;
-            }
-
-            let taskCost = 0;
-            let taskActions = 0;
-            let taskTime = 0;
-
-            if (fs.existsSync(resultPath)) {
-                const resultData = JSON.parse(fs.readFileSync(resultPath, "utf-8"));
-                taskCost = (resultData.totalInputCost || 0) + (resultData.totalOutputCost || 0);
-                taskActions = resultData.actionCount || 0;
-                taskTime = resultData.time || 0;
-
-                stats.totalCost += taskCost;
-                stats.totalActions += taskActions;
-            }
-
-            if (verbose && stats.tasks) {
-                stats.tasks.push({
-                    taskId,
-                    success: isSuccess,
-                    cost: taskCost,
-                    actions: taskActions,
-                    time: taskTime,
-                });
-            }
-        } catch (error) {
-            console.error(`Error processing ${evalFile}:`, error);
-        }
-    }
-
-    console.log("\n=== Evaluation Statistics by Category ===\n");
-    console.log("Category         | Success Rate      | Avg Cost   | Avg Actions");
-    console.log("-----------------|-------------------|------------|------------");
-
-    let totalTasks = 0;
-    let totalSuccess = 0;
-    let totalCost = 0;
-    let totalActions = 0;
-
-    for (const [category, stats] of categoryStats) {
-        const successRate = (stats.success / stats.total) * 100;
-        const avgCost = stats.totalCost / stats.total;
-        const avgActions = stats.totalActions / stats.total;
-
-        console.log(
-            `${category.padEnd(16)} | ${stats.success}/${stats.total} (${successRate.toFixed(1)}%)`.padEnd(37) +
-            ` | $${avgCost.toFixed(2).padStart(8)} | ${avgActions.toFixed(1).padStart(10)}`
-        );
-
-        if (verbose && stats.tasks) {
-            stats.tasks.sort((a, b) => a.taskId.localeCompare(b.taskId));
-
-            for (const task of stats.tasks) {
-                const timeMin = (task.time / 1000 / 60).toFixed(1);
-                const status = task.success ? "✓" : "✗";
-                console.log(
-                    `  ${status} ${task.taskId.padEnd(20)} | Cost: $${task.cost.toFixed(2).padStart(6)} | Actions: ${task.actions.toString().padStart(3)} | Time: ${timeMin.padStart(5)} min`
-                );
-            }
-            console.log();
-        }
-
-        totalTasks += stats.total;
-        totalSuccess += stats.success;
-        totalCost += stats.totalCost;
-        totalActions += stats.totalActions;
-    }
-
-    console.log("-----------------|-------------------|------------|------------");
-    const overallSuccessRate = (totalSuccess / totalTasks) * 100;
-    const overallAvgCost = totalCost / totalTasks;
-    const overallAvgActions = totalActions / totalTasks;
-
-    console.log(
-        `${"TOTAL".padEnd(16)} | ${totalSuccess}/${totalTasks} (${overallSuccessRate.toFixed(1)}%)`.padEnd(37) +
-        ` | $${overallAvgCost.toFixed(2).padStart(8)} | ${overallAvgActions.toFixed(1).padStart(10)}`
-    );
-
-    console.log(`\nTotal evaluated tasks: ${totalTasks}`);
+if (import.meta.main) {
+    program.parseAsync().catch(error => {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exitCode = 1;
+    });
 }
-
-program.parseAsync().catch(console.error);

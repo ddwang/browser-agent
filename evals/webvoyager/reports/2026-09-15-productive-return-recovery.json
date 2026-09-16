@@ -1,0 +1,454 @@
+{
+  "experiment": "Productive-return recovery",
+  "rawDirectory": ".context/notebook-live-2026-09-15T18-11-26.108Z",
+  "revision": "14b82efd737a0889bf33724b44b2b5bc300f07b0",
+  "sourceHash": "39a598822d1de15a5f9da83f66be25875d6988286b31cec2cbdd4567d4560464",
+  "cleanAtLaunch": true,
+  "cleanAndSourceHashUnchangedAtCompletion": true,
+  "actor": {
+    "provider": "openai",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "medium"
+  },
+  "judge": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "temperature": 1
+  },
+  "workers": 1,
+  "limits": {
+    "maxActions": 100,
+    "maxJudgeBytes": 25165824
+  },
+  "timeoutMs": 1200000,
+  "judgeTimeoutMs": 300000,
+  "validation": {
+    "offlineTests": 321,
+    "failedTests": 0,
+    "assertions": 4403,
+    "testFiles": 31,
+    "browserFixtureCases": 16,
+    "packageBuilds": 5,
+    "coreTypecheck": true,
+    "evalTypecheck": true
+  },
+  "summary": {
+    "selected": 4,
+    "attempted": 4,
+    "counts": {
+      "success": 3,
+      "failure": 0,
+      "timeout": 0,
+      "error": 1,
+      "blocked": 0,
+      "running": 0,
+      "interrupted": 0,
+      "judge_error": 0,
+      "unscored": 0,
+      "pending": 0
+    },
+    "successRate": 0.75,
+    "medianTimeMs": 117833,
+    "p95TimeMs": 272753,
+    "averageActions": 41.5,
+    "inputTokens": 802020,
+    "outputTokens": 29026,
+    "cachedInputTokens": 26112,
+    "estimatedActorCost": 0.19575743999999998,
+    "estimatedJudgeCost": 0.21376050000000002
+  },
+  "totals": {
+    "actions": 166,
+    "actorCalls": 107,
+    "judgeCalls": 3,
+    "cost": 0.40951793999999997,
+    "actorTimeMs": 528358,
+    "judgeTimeMs": 33903,
+    "wallTimeMs": 564447.6989746094
+  },
+  "exitCode": 1,
+  "tasks": [
+    {
+      "id": "Local Notebook--1",
+      "site": "Local Notebook",
+      "outcome": "success",
+      "status": "completed",
+      "result": "SUCCESS",
+      "actions": 4,
+      "actorCalls": 2,
+      "plans": 2,
+      "noteActions": 2,
+      "forgetActions": 0,
+      "retainedNotes": 2,
+      "noteErrors": 0,
+      "judgeCalls": 1,
+      "actorTimeMs": 14063,
+      "judgeTimeMs": 5658,
+      "actorCost": 0.00194924,
+      "judgeCost": 0.012988,
+      "memoryBytes": 118760,
+      "http429": 0,
+      "documentResponses": 2,
+      "allDocumentResponses200": true,
+      "recoveryObservations": 0,
+      "check": {
+        "id": "Local Notebook--1",
+        "status": "completed",
+        "exact": true,
+        "allVisited": true,
+        "notebookActions": 2,
+        "renderedNotes": 2,
+        "actions": 4,
+        "actorCalls": 2,
+        "judgeResult": "SUCCESS",
+        "visits": [
+          1
+        ],
+        "error": "",
+        "recordCount": 1,
+        "capturedBeforeFirstDeparture": 1,
+        "originalSourceLinkedFinalCoverage": 1,
+        "latestSourceLinkedFinalCoverage": 1
+      },
+      "answerDiagnostics": {
+        "mismatches": [],
+        "totalUnitsCorrect": true
+      },
+      "writeAudit": {
+        "id": "Local Notebook--1",
+        "status": "completed",
+        "counts": {
+          "adds": 2,
+          "corrections": 0,
+          "rejected": 0
+        },
+        "reconciles": true,
+        "violations": [],
+        "transitions": [],
+        "writes": []
+      }
+    },
+    {
+      "id": "Local Catalog--9",
+      "site": "Local Notebook",
+      "outcome": "success",
+      "status": "completed",
+      "result": "SUCCESS",
+      "actions": 37,
+      "actorCalls": 24,
+      "plans": 23,
+      "noteActions": 14,
+      "forgetActions": 0,
+      "retainedNotes": 14,
+      "noteErrors": 0,
+      "judgeCalls": 1,
+      "actorTimeMs": 123709,
+      "judgeTimeMs": 18222,
+      "actorCost": 0.03947248,
+      "judgeCost": 0.10204800000000001,
+      "memoryBytes": 1557104,
+      "http429": 0,
+      "groups": [
+        4,
+        4,
+        1
+      ],
+      "documentResponses": 23,
+      "allDocumentResponses200": true,
+      "recoveryObservations": 0,
+      "check": {
+        "id": "Local Catalog--9",
+        "status": "completed",
+        "exact": true,
+        "allVisited": true,
+        "notebookActions": 14,
+        "renderedNotes": 14,
+        "actions": 37,
+        "actorCalls": 24,
+        "judgeResult": "SUCCESS",
+        "visits": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "error": "",
+        "recordCount": 9,
+        "capturedBeforeFirstDeparture": 9,
+        "originalSourceLinkedFinalCoverage": 9,
+        "latestSourceLinkedFinalCoverage": 9
+      },
+      "answerDiagnostics": {
+        "mismatches": [],
+        "totalUnitsCorrect": true,
+        "qualificationCorrect": true
+      },
+      "writeAudit": {
+        "id": "Local Catalog--9",
+        "status": "completed",
+        "counts": {
+          "adds": 14,
+          "corrections": 0,
+          "rejected": 0
+        },
+        "reconciles": true,
+        "violations": [],
+        "transitions": [],
+        "writes": []
+      }
+    },
+    {
+      "id": "Local Catalog--22",
+      "site": "Local Notebook",
+      "outcome": "error",
+      "status": "error",
+      "actions": 84,
+      "actorCalls": 55,
+      "plans": 54,
+      "noteActions": 32,
+      "forgetActions": 0,
+      "retainedNotes": 30,
+      "noteErrors": 2,
+      "judgeCalls": 0,
+      "actorTimeMs": 272753,
+      "judgeTimeMs": 0,
+      "actorCost": 0.11207611999999999,
+      "judgeCost": 0,
+      "memoryBytes": 3553376,
+      "error": "Worker exited without a final result",
+      "http429": 0,
+      "worker": {
+        "exitCode": 0,
+        "signal": null,
+        "savedStatus": "running"
+      },
+      "groups": [
+        4,
+        4,
+        4,
+        4,
+        4,
+        2
+      ],
+      "documentResponses": 52,
+      "allDocumentResponses200": true,
+      "recoveryObservations": 0,
+      "check": {
+        "id": "Local Catalog--22",
+        "status": "error",
+        "exact": false,
+        "allVisited": true,
+        "notebookActions": 32,
+        "renderedNotes": 30,
+        "actions": 84,
+        "actorCalls": 55,
+        "visits": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "error": "Worker exited without a final result",
+        "recordCount": 22,
+        "capturedBeforeFirstDeparture": 18,
+        "originalSourceLinkedFinalCoverage": 18,
+        "latestSourceLinkedFinalCoverage": 18
+      },
+      "answerDiagnostics": {
+        "mismatches": [
+          {
+            "record": 1,
+            "field": "label",
+            "expected": "Lot-5fff76cf",
+            "actual": "Lot-5ff76cf"
+          },
+          {
+            "record": 2,
+            "field": "label",
+            "expected": "Lot-6b446c87",
+            "actual": "Lot-6b44c87"
+          },
+          {
+            "record": 13,
+            "field": "code",
+            "expected": "89de6cdc-d967",
+            "actual": "89de6ccd-d967"
+          },
+          {
+            "record": 18,
+            "field": "label",
+            "expected": "Lot-3169c5b9",
+            "actual": "Lot-316f9c5b9"
+          }
+        ],
+        "totalUnitsCorrect": true,
+        "qualificationCorrect": true
+      },
+      "writeAudit": {
+        "id": "Local Catalog--22",
+        "status": "error",
+        "counts": {
+          "adds": 30,
+          "corrections": 0,
+          "rejected": 2
+        },
+        "reconciles": true,
+        "violations": [],
+        "transitions": [],
+        "writes": [
+          {
+            "index": 225,
+            "operation": "add",
+            "key": "entry_lot_bb7b499d",
+            "saved": false,
+            "error": "Error: Note key \"entry_lot_bb7b499d\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+          },
+          {
+            "index": 242,
+            "operation": "add",
+            "key": "entry_lot_9151da2b",
+            "saved": false,
+            "error": "Error: Note key \"entry_lot_9151da2b\" already exists. Add a different record under a new key; use an explicit correction only for this record."
+          }
+        ]
+      }
+    },
+    {
+      "id": "Local Catalog Correction--10",
+      "site": "Local Notebook",
+      "outcome": "success",
+      "status": "completed",
+      "result": "SUCCESS",
+      "actions": 41,
+      "actorCalls": 26,
+      "plans": 25,
+      "noteActions": 16,
+      "forgetActions": 0,
+      "retainedNotes": 14,
+      "noteErrors": 0,
+      "judgeCalls": 1,
+      "actorTimeMs": 117833,
+      "judgeTimeMs": 10023,
+      "actorCost": 0.0422596,
+      "judgeCost": 0.0987245,
+      "memoryBytes": 1864391,
+      "http429": 0,
+      "groups": [
+        6,
+        4
+      ],
+      "correctionRecord": 3,
+      "documentResponses": 25,
+      "allDocumentResponses200": true,
+      "recoveryObservations": 0,
+      "check": {
+        "id": "Local Catalog Correction--10",
+        "status": "completed",
+        "exact": true,
+        "allVisited": true,
+        "notebookActions": 16,
+        "renderedNotes": 14,
+        "correctionRevisited": true,
+        "oldCodeMentionedInFinalNotes": false,
+        "actions": 41,
+        "actorCalls": 26,
+        "judgeResult": "SUCCESS",
+        "visits": [
+          1,
+          1,
+          2,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "error": "",
+        "recordCount": 10,
+        "capturedBeforeFirstDeparture": 10,
+        "originalSourceLinkedFinalCoverage": 9,
+        "latestSourceLinkedFinalCoverage": 10
+      },
+      "answerDiagnostics": {
+        "mismatches": [],
+        "totalUnitsCorrect": true,
+        "qualificationCorrect": true
+      },
+      "writeAudit": {
+        "id": "Local Catalog Correction--10",
+        "status": "completed",
+        "counts": {
+          "adds": 14,
+          "corrections": 2,
+          "rejected": 0
+        },
+        "reconciles": true,
+        "violations": [],
+        "transitions": [
+          {
+            "index": 31,
+            "key": "group1_directory_order",
+            "lostOriginalRecords": [],
+            "previousText": "Group 1 directory states that it is directory-only and links are not additional stock records. Entries are listed in this order: Lot-09e71b58, Lot-30d89042, Lot-dbf5831, Lot-?7464b77 (partly obscured by the cursor in the screenshot), Lot-381114f2, Lot-608bfd93. Next group and Audit overview links are present.",
+            "text": "Group 1 directory states that it is directory-only and links are not additional stock records. Entries are listed in this order: Lot-09e71b58, Lot-30d89042, Lot-dbf58631, Lot-44464b77, Lot-381114f2, Lot-608bfd93. Next group and Audit overview links are present."
+          },
+          {
+            "index": 129,
+            "key": "group1_lot_dbf58631",
+            "lostOriginalRecords": [
+              "Lot-dbf58631"
+            ],
+            "previousText": "Stock record: label Lot-dbf58631; units 706; confirmation code 89cc5eea-1f2d. Source URL: http://127.0.0.1:64788/c836a083-e4f8-4b3e-b03b-0562eab05e5f",
+            "text": "Stock record corrected after End of collection notice: label Lot-dbf58631; units 977; confirmation code ddff848f-d43a. Source URL: http://127.0.0.1:64788/c836a083-e4f8-4b3e-b03b-0562eab05e5f"
+          }
+        ],
+        "writes": [
+          {
+            "index": 31,
+            "operation": "correct",
+            "key": "group1_directory_order",
+            "saved": true
+          },
+          {
+            "index": 129,
+            "operation": "correct",
+            "key": "group1_lot_dbf58631",
+            "saved": true
+          }
+        ]
+      }
+    }
+  ],
+  "limitations": [
+    "Known developer-authored workflows with fresh random values, not a held-out or paired comparison.",
+    "The long task remains an unjudged runner error despite reaching the end and emitting an answer; its saved answer also has four transcription errors.",
+    "New page states are a bounded heuristic for progress. Long cycles, novel noise, and unrepresented visual changes remain limitations; action budgets are unchanged.",
+    "Matching note text and source references do not prove factual accuracy. Changed-source correction succeeded in one case, not a general reliability guarantee.",
+    "Three existing planner-format retries were counted inside these attempts. No selective reruns, rejudgments, runtime tuning, website benchmark, or consumed-holdout runs followed."
+  ]
+}

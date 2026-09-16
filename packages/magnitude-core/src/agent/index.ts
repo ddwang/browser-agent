@@ -8,10 +8,12 @@ import { AgentEvents } from "@/common/events";
 import { AgentConnector } from '@/connectors';
 import { Observation, RenderableContent } from '@/memory/observation';
 import { LLMClient } from "@/ai/types";
-import { AgentError } from "@/agent/errors";
-import { AgentMemory, AgentMemoryOptions } from "@/memory";
+import { ActionLimitError, AgentError } from "@/agent/errors";
+import { AgentMemory, AgentMemoryOptions, MemoryRenderOptions } from "@/memory";
 import { ActionDefinition } from "@/actions";
 import { taskActions } from "@/actions/taskActions";
+import { memoryActions } from '@/actions/memoryActions';
+import { NOTEBOOK_INSTRUCTIONS, type NoteUpdate } from '@/memory/notebook';
 import { ConnectorInstructions, AgentContext, traceAsync, MultiMediaContentPart } from "@/ai/baml_client";
 import { telemetrifyAgent } from '@/telemetry/events';
 import { isClaude } from '@/ai/util';
@@ -26,6 +28,7 @@ export interface AgentOptions {
     actions?: ActionDefinition<any>[]; // any additional actions not provided by connectors
     prompt?: string | null; // additional agent-level system prompt instructions
     telemetry?: boolean;
+    maxActions?: number;
     //executor?: GroundingClient;
 }
 
@@ -50,6 +53,7 @@ const DEFAULT_CONFIG: Required<Omit<AgentOptions, 'actions'> & { actions: Action
     } as LLMClient,
     prompt: null,
     telemetry: true,
+    maxActions: Infinity,
 };
 
 export class Agent {
@@ -84,6 +88,10 @@ export class Agent {
             actions: [...(baseConfig.actions || DEFAULT_CONFIG.actions)], 
         } as Required<AgentOptions>;
 
+        if (baseConfig.maxActions !== undefined && (!Number.isSafeInteger(baseConfig.maxActions) || baseConfig.maxActions < 1)) {
+            throw new Error('maxActions must be a positive integer');
+        }
+
         this.connectors = this.options.connectors;
 
         // Aggregate actions from connectors
@@ -91,6 +99,10 @@ export class Agent {
         this.actions = [...this.options.actions];
         for (const connector of this.connectors) {
             this.actions.push(...(connector.getActionSpace ? connector.getActionSpace() : []));
+        }
+        for (const action of memoryActions) {
+            if (this.actions.some(existing => existing.name === action.name)) throw new Error(`Action name '${action.name}' is reserved for task memory.`);
+            this.actions.push(action);
         }
         // Deduplicate actions by name
         // TODO: maybe error instead, or automatically differentiate them?
@@ -178,7 +190,7 @@ export class Agent {
         return actionDefinition;
     }
     
-    async exec(action: Action, memory?: AgentMemory): Promise<void> {
+    async exec(action: Action, memory?: AgentMemory): Promise<unknown> {
         /**
          * Execute an action that belongs to this Agent's action space.
          * Provide memory to record the action taken, its results, and any connector observations to that memory.
@@ -199,26 +211,32 @@ export class Agent {
             throw new AgentError(`Generated action '${action.variant}' violates input schema: ${parsed.error.message}`, { adaptable: true });
         }
 
+        const memoryOnly = memoryActions.includes(actionDefinition);
+        if (!memoryOnly) for (const connector of this.connectors) await connector.beforeAction?.(action);
         this.events.emit('actionStarted', action);
         
         const data = await actionDefinition.resolver(
-            { input: parsed.data, agent: this }
+            { input: parsed.data, agent: this, memory }
         );
 
         this.events.emit('actionDone', action);
 
         if (memory) {
             // Record action taken
-            memory.recordObservation(Observation.fromActionTaken(actionDefinition.name, JSON.stringify(action)));
+            memory.recordObservation(Observation.fromActionTaken(actionDefinition.name, JSON.stringify(action),
+                memoryOnly ? { type: 'notebook-write' } : undefined));
 
             // Record results of action
             if (data) {
-                memory.recordObservation(Observation.fromActionResult(actionDefinition.name, data));
+                memory.recordObservation(Observation.fromActionResult(actionDefinition.name, data,
+                    memoryOnly ? { type: 'notebook-result', limit: 1 } : undefined));
             }
 
             // Collect and record observations from connectors
-            await this._recordConnectorObservations(memory);
+            if (memoryOnly) this.events.emit('observationsRecorded'); // Checkpoint notes without another browser capture.
+            else await this._recordConnectorObservations(memory);
         }
+        return data;
     }
 
     protected async _recordConnectorObservations(memory: AgentMemory) {
@@ -230,6 +248,7 @@ export class Agent {
                 memory.recordObservation(obs);
             }
         }
+        this.events.emit('observationsRecorded');
     }
 
     get memory(): AgentMemory {
@@ -276,8 +295,8 @@ export class Agent {
         })(task));
     }
 
-    private async _buildContext(memory: AgentMemory): Promise<AgentContext> {
-        const messages = await memory.render();
+    private async _buildContext(memory: AgentMemory, options?: MemoryRenderOptions): Promise<AgentContext> {
+        const messages = await memory.render(options);
 
         const connectorInstructions: ConnectorInstructions[] = [];
 
@@ -304,6 +323,7 @@ export class Agent {
 
     async _act(description: string, memory: AgentMemory, options: ActOptions = {}): Promise<void> {
         this.doneActing = false;
+        for (const connector of this.connectors) connector.onTaskStart?.();
         logger.info(`Act: ${description}`);
 
         // for now simply add data to task
@@ -334,18 +354,23 @@ export class Agent {
         await this._recordConnectorObservations(memory);
         logger.info("Initial observations recorded");
 
+        let actionCount = 0;
         while (true) {
+            if (actionCount >= this.options.maxActions) throw new ActionLimitError(this.options.maxActions);
             // Removed direct screenshot/tabState access here; it's part of memoryContext via connectors
             logger.info(`Creating partial recipe`);
 
             let reasoning: string = "";
             let actions: Action[] = [];
+            let memoryUpdates: NoteUpdate[] = [];
 
             try {
+                this.events.emit('planningStarted');
                 const memoryContext = await this._buildContext(memory);
+                memoryContext.connectorInstructions.unshift({ connectorId: 'task_memory', instructions: NOTEBOOK_INSTRUCTIONS });
                 await retryOnError(
                     async () => {
-                        ({ reasoning, actions } = await this.models.partialAct(
+                        ({ reasoning, actions, memory_updates: memoryUpdates } = await this.models.partialAct(
                             memoryContext,
                             description,
                             dataContentParts,
@@ -389,11 +414,18 @@ export class Agent {
             this.events.emit('thought', reasoning);
             memory.recordThought(reasoning);
 
-            // Execute partial recipe
-            for (const action of actions) {
+            // Persist the review using the existing audited, budgeted note action.
+            // Empty reviews are free; each attempted write consumes one action.
+            const batch = [...memoryUpdates.map(note => ({ variant: 'memory:note', ...note })), ...actions];
+            for (const action of batch) {
                 await this._waitIfPaused();
                 if (this.doneActing) break;
-                await this.exec(action, memory);
+                if (actionCount >= this.options.maxActions) throw new ActionLimitError(this.options.maxActions);
+                const result = await this.exec(action, memory);
+                actionCount++;
+                // Preserve the current page when an update fails. Successful
+                // earlier writes remain; the next plan sees the failure result.
+                if (action.variant === 'memory:note' && (result as { saved?: unknown })?.saved === false) break;
 
                 // const postActionScreenshot = await this.screenshot();
                 // const actionDescriptor: ActionDescriptor = { ...action, screenshot: postActionScreenshot.image } as ActionDescriptor;
@@ -416,10 +448,10 @@ export class Agent {
         //this.currentTaskMemory = null;
     }
 
-    async query<T extends z.Schema>(query: string, schema: T): Promise<z.infer<T>> {
+    async query<T extends z.Schema>(query: string, schema: T, options?: MemoryRenderOptions): Promise<z.infer<T>> {
         // Record observations in case no act() was used beforehand
         await this._recordConnectorObservations(this.latestTaskMemory);
-        const memoryContext = await this._buildContext(this.memory);//this.memory.buildContext(this.connectors);
+        const memoryContext = await this._buildContext(this.memory, options);
         return await this.models.query(memoryContext, query, schema);
     }
 

@@ -11,6 +11,7 @@ export class Image {
      */
     // represents the start of a pipeline
     private img: Sharp;
+    private encoded?: Promise<{ base64: string; format: string; width: number; height: number }>;
     // Cached metadata property for sync access + required width/height properties
     //private metadata: Sharp['metadata'] & { width: number, height: number };
     //private content: string;
@@ -18,7 +19,8 @@ export class Image {
 
     //constructor(type: 'url' | 'base64', content: string, mediaType: ImageMediaType) {
     constructor(img: Sharp) {
-        this.img = img;
+        // Own the pipeline configuration; later caller edits cannot change it.
+        this.img = img.clone();
     }
 
     static fromBase64(base64: string) {
@@ -35,57 +37,45 @@ export class Image {
     }
 
     async getFormat(): Promise<keyof sharp.FormatEnum> {
-        const format = (await this.img.clone().metadata()).format;
-        if (!format) throw new Error("Unable to get image format");
-        return format;
+        return (await this.encode()).format as keyof sharp.FormatEnum;
+    }
+
+    private encode() {
+        // Share in-flight work across rendering, deduplication and checkpoints.
+        // Retain encoded strings, not both a Buffer and its base64 copy.
+        return this.encoded ??= this.img.clone().toBuffer({ resolveWithObject: true }).then(({ data, info }) => ({
+            base64: data.toString('base64'), format: info.format, width: info.width, height: info.height,
+        })).catch(error => {
+            this.encoded = undefined;
+            throw error;
+        });
     }
 
     /**
      * Convert the image to a JSON representation
      */
     async toJson(): Promise<StoredMedia> {
-        // if (this.type === 'url') {
-        //     return {
-        //         type: 'media',
-        //         mediaType: this.mediaType,//`image/${this.mediaType}`,
-        //         storageType: 'url',
-        //         url: this.content
-        //     };
-        // } else {
+        // Source metadata can describe raw input or a pre-conversion format.
+        // Use the format of the bytes emitted by the Sharp pipeline.
+        const { base64, format } = await this.encode();
         return {
             type: 'media',
-            //mediaType: this.mediaType,//`image/${this.mediaType}`,
-            format: await this.getFormat(),
+            format,
             storage: 'base64',
-            base64: await this.toBase64()//this.content
+            base64,
         };
-        //}
     }
 
     async toBase64(): Promise<string> {
-       const base64data = (await this.img.clone().toBuffer()).toString('base64');
-       //console.log("DATA (Image):", base64data.substring(0, 100));
-       return base64data;
-       //return `data:image/png;base64,${base64data}`;
+        return (await this.encode()).base64;
     }
 
     async toBaml(): Promise<BamlImage> {
-        // if (this.type === 'url') {
-        //     return BamlImage.fromUrl(this.content, this.mediaType);
-        // }
-        // else {//if (this.type === 'base64') {
-        //     return BamlImage.fromBase64(this.mediaType, this.content);
-        // }
-        const format = await this.getFormat();
-        const data = await this.toBase64();
-        //console.log("FORMAT:", format);
-        //console.log("DATA:", data.substring(0, 100));
-        return BamlImage.fromBase64(`image/${format}`, data);
-
+        const { format, base64 } = await this.toJson();
+        return BamlImage.fromBase64(`image/${format}`, base64);
     }
 
     async saveToFile(filepath: string): Promise<void> {
-        // We clone here to ensure the original sharp instance remains usable for other operations
         await this.img.clone().toFile(filepath);
         //console.log(`Image saved to ${filepath}`);
     }
@@ -93,7 +83,7 @@ export class Image {
     async getDimensions(): Promise<{ width: number, height: number }> {
         //const { width, height } = await this.img.clone().metadata();
         // Need to convert to buffer in order for metadata to be updated - otherwise it returns metadata of the original image
-        const { info: { width, height } } = await this.img.clone().toBuffer({ resolveWithObject: true });
+        const { width, height } = await this.encode();
         if (!width || !height) throw new Error("Unable to get dimensions from image");
         return { width, height };
     }
@@ -107,7 +97,7 @@ export class Image {
         //console.log("Before resizing:", await this.getDimensions());
         
         // if (!metadata.width || !metadata.height)
-        const resizedImage = new Image(await this.img.clone().resize({
+        const resizedImage = new Image(this.img.clone().resize({
             // Round width/height since sometimes they are floats due to rounding errors - sharp will throw if not integers
             width: Math.round(width),
             height: Math.round(height),

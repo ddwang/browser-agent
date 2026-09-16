@@ -2,12 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { renderJsonParts } from './renderJsonParts';
 import { Image } from '@/memory/image';
 import { Image as BamlImage } from '@boundaryml/baml';
+import sharp from 'sharp';
 
 // Create a mock Image that will convert to BamlImage
 class MockImage extends Image {
     constructor(private id: string) {
-        // Pass a dummy Sharp instance
-        super(null as any);
+        super(sharp());
     }
     
     async toBaml(): Promise<BamlImage> {

@@ -82,8 +82,11 @@ export async function convertToBamlClientOptions(client: LLMClient): Promise<Rec
     } else if (client.provider === 'openai') {
         options = {
             api_key: client.options.apiKey,
+            base_url: client.options.baseUrl,
             model: client.options.model,
-            temperature: temp,
+            temperature: client.options.temperature,
+            reasoning_effort: client.options.reasoningEffort,
+            max_completion_tokens: client.options.maxCompletionTokens,
         };
     } else if (client.provider === 'openai-generic') {
         options = {
@@ -125,6 +128,11 @@ export function tryDeriveUIGroundedClient(): LLMClient | null {
                 apiKey: process.env.ANTHROPIC_API_KEY
             }
         }
+    } else if (process.env.OPENAI_API_KEY) {
+        return {
+            provider: 'openai',
+            options: { model: 'gpt-5.6-luna', apiKey: process.env.OPENAI_API_KEY }
+        };
     } else {
         return null;
     }
@@ -154,13 +162,16 @@ export function buildDefaultBrowserAgentOptions(
     let llms: LLMClient[] = agentOptions.llm ? (Array.isArray(agentOptions.llm) ? agentOptions.llm : [agentOptions.llm]) : (envLlm ? [envLlm] : []);
 
     if (llms.length == 0) {
-        throw new Error("No LLM configured or available from environment. Set environment variable ANTHROPIC_API_KEY and try again. See https://docs.magnitude.run/customizing/llm-configuration for details");
+        throw new Error("No LLM configured or available from environment. Set ANTHROPIC_API_KEY or OPENAI_API_KEY, or configure llm explicitly. See https://docs.magnitude.run/customizing/llm-configuration for details");
     }
 
     // Set reasonable temp if not provided
     let virtualScreenDimensions = null;
     for (const llm of llms) {
-        let llmOptions: LLMClient['options'] = { temperature: DEFAULT_BROWSER_AGENT_TEMP, ...(llm?.options ?? {}) };
+        let llmOptions: LLMClient['options'] = {
+            ...(llm.provider === 'openai' ? {} : { temperature: DEFAULT_BROWSER_AGENT_TEMP }),
+            ...llm.options
+        };
         //let modifiedLlm = {...llm, options: llmOptions as any }
         llm.options = llmOptions;
 

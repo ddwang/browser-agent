@@ -3,10 +3,10 @@ import { ModelHarness, ModelHarnessEvents } from "./modelHarness";
 import { allBrowserAgentRoles, BrowserAgentRole, LLMClient } from "./types";
 import { ActionDefinition } from "@/actions";
 import { AgentContext } from "./baml_client";
-import { Action } from "@/actions/types";
 import { Image } from '@/memory/image';
 import EventEmitter from "eventemitter3";
 import z from "zod";
+import type { PlannerResponse } from './plannerResponse';
 
 
 export class MultiModelHarness {
@@ -55,7 +55,7 @@ export class MultiModelHarness {
         task: string,
         data: MultiMediaContentPart[],
         actionVocabulary: ActionDefinition<T>[]
-    ): Promise<{ reasoning: string, actions: Action[] }> {
+    ): Promise<PlannerResponse> {
         return await this.roles['act'].partialAct(context, task, data, actionVocabulary);
     }
 

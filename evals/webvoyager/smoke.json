@@ -1,0 +1,16 @@
+{
+    "name": "legacy-smoke",
+    "description": "The original 20-task baseline, preserved for historical comparisons. Includes weak criteria and live access barriers; use baseline.json for the harder main suite.",
+    "taskIds": [
+        "Allrecipes--0", "Allrecipes--4",
+        "Apple--0", "Apple--6",
+        "ArXiv--2", "ArXiv--5",
+        "BBC News--0", "BBC News--5",
+        "Cambridge Dictionary--0", "Cambridge Dictionary--4",
+        "Coursera--0", "Coursera--1",
+        "GitHub--0", "GitHub--3",
+        "Google Search--0", "Google Search--1",
+        "Huggingface--3", "Huggingface--4",
+        "Wolfram Alpha--0", "Wolfram Alpha--2"
+    ]
+}

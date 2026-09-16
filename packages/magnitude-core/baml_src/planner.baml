@@ -99,6 +99,14 @@ template_string TaskInstructions(task: string, taskData: MultiMediaContentPart[]
     Execute the task serially.
 
     Plan out as many actions as possible, but stopping at the point where you will need to observe to plan further.
+
+    Return exactly one complete JSON object matching the output schema, with "reasoning", "memory_updates", and a non-empty "actions" array.
+    First review the current observations: in memory_updates, save exact facts and completed checks needed later, with supporting observation numbers. Add each record under a separate key; add never overwrites an existing key. Correct only the same record by naming its key and copying its current text into expected_text; preserve its still-valid facts. Omitted keys remain unchanged. Use [] when nothing new needs retaining; do not invent facts or repeat unchanged notes.
+    The host saves memory_updates before executing actions. Record only evidence already observed, never the anticipated results of those actions. Each update consumes one action from the existing budget.
+    Keep reasoning concise. Do not include prose outside the JSON, Markdown fences, XML, or simulated tool calls.
+    The actions array is executed by the host after you respond. Do not pretend to execute actions or invent their results.
+    Base factual comparisons on observed evidence, including retained task notes from earlier observations. You do not need to reopen an unchanged source merely because its screenshot has left context.
+    Use the latest screenshot for coordinates and current UI state. Revisit sources when evidence is missing, conflicting, or may have changed. Do not assume future action results; stop and wait for new observations when needed.
 "#
 
 // TODO: connector system instructions

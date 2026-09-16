@@ -31,7 +31,7 @@ Otherwise, prompt caching will be enabled by default with `anthropic` or `claude
 
 ## Configuring retained screenshots
 
-By default, Magnitude will retain 1 screenshot plus any screenshots that were included in a previous cache write.
+By default, Magnitude retains 2 screenshots plus any screenshots still included in a previous cache write. The browser evaluation runner uses 3.
 
 If your task requires complicated interactions and you want to ensure the agent retains more screenshots in working memory, you can increase the `minScreenshots` option:
 ```ts
@@ -52,4 +52,27 @@ const cachedAgent = await startBrowserAgent({
 
 Anthropic provides 4 cache control messages at a time. The Magnitude agent will use one cache control on the system prompt so that it is always cached, and then cycle the other 3 with prompt cache writes and reads to optimize on screenshot tokens during the task.
 
-In addition - Magnitude only keeps one screenshot unless already cached, plus the last 20 thoughts from the agent. This means that context length will grow roughly linearly with task complexity, and is extremely performant compared to other computer use agent implementations which do not implement sliding-window memory or prompt caching.
+Magnitude keeps the configured number of recent screenshots, any still-cached screenshots, and the last 20 thoughts in the actor's context. The full observation history remains available in saved memory; filtering does not delete it.
+
+## Durable task notes
+
+Every planner response must include a `memory_updates` array reviewing the current observations. The host saves these updates before executing the response's actions. An empty array is valid when there are no new facts needed later, including an immediately finishable task. Each update reuses the notebook's stable key, text, and supporting observation numbers. Browser screenshots include the captured URL, which the host attaches to cited notes. These references link a model-written summary to its source; they do not prove that the summary is correct or complete.
+
+Notes survive screenshot and thought eviction. Each update includes `operation` and `expected_text` as well as `key`, `text`, and `sources`:
+
+- `add` requires a new key and `expected_text: null`. An existing key is rejected, never overwritten.
+- `correct` requires an existing key and its exact current text in `expected_text`. A missing key or stale text match is rejected. Only that key changes; omitted keys stay unchanged.
+
+Use a separate key for each record or independently correctable fact. A correction must preserve the targeted record's still-valid facts. The host checks key and text matching, not whether the replacement is true or whether it accidentally omits facts within that record. `memory:forget` still removes an explicitly named obsolete note. The actor sees the latest notebook, while saved memory retains the complete note-action audit. Notes are labeled as model-written data, not independent evidence or instructions from a page.
+
+The notebook allows 32 entries, 2,000 characters per note, and 64 KiB of total UTF-8 serialized note data, including source metadata. An invalid reference or capacity overflow returns an explicit error and leaves existing notes unchanged. The agent must correct, consolidate, or forget notes before retrying; nothing is silently evicted.
+
+Each attempted update executes as one audited `memory:note` action and consumes the normal action budget, including rejected writes. Empty reviews consume no actions. A rejected update stops the batch before any remaining updates or browser actions; the next plan sees the error. Earlier successful writes remain saved. Notes do not operate the browser, capture another screenshot, bypass a rate limit, or reset loop detection.
+
+Required reviews work with custom action lists and all actor providers. The planner uses `memory_updates` for writing and `memory:forget` for removing notes. Explicit `agent.exec()` callers use the same guarded `memory:note` schema and receive the action result. `memory.remember(note)` now adds only; `memory.remember(note, currentText)` explicitly corrects a matching record. This changes write semantics and the planner/action contract, not the saved-checkpoint format, and does not add a separate model call. Existing checkpoints with unique keys remain supported; duplicate checkpoint keys are rejected without replacing the current memory.
+
+Each `act()` call starts a fresh notebook unless you explicitly supply an existing `AgentMemory`. Steps within one `act([...])` call share it. `toJSON()` saves notes, and `loadJSON()` restores their source links from saved observations. Legacy checkpoints without notes remain supported.
+
+Queries use retained history by default and do not receive planner-only notebook commands. Use `agent.query(prompt, schema, { history: 'full' })` to inspect every observation, including repeated screenshots and superseded notebook writes. This audit view does not change the actor's retention, source visibility, or cache state. The eval runner uses it for judging.
+
+`Image` owns a cloned Sharp pipeline configuration and caches the first successful encoding. Rendering, hashing, and checkpointing share that encoding, including concurrent requests. `resize()` returns an independent image. Keep caller-owned source buffers and files unchanged for the image's lifetime; Sharp reads those inputs lazily.

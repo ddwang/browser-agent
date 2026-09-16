@@ -8,6 +8,7 @@ import { jsonToObservableData, MultiMediaJson, observableDataToJson } from './se
 import { applyMask, maskObservations } from './masking';
 import { mergeMessages } from './util';
 import { Image as BamlImage} from '@boundaryml/baml';
+import { TaskNotebook, type NoteInput, type NoteSource } from './notebook';
 
 // export interface AgentMemoryEvents {
 //     'thought': (thought: string) => void;
@@ -15,6 +16,7 @@ import { Image as BamlImage} from '@boundaryml/baml';
 
 export interface SerializedAgentMemory {
     instructions?: string;
+    notes?: NoteInput[];
     observations: {
         source: ObservationSource,
         role: ObservationRole,
@@ -31,7 +33,8 @@ export interface AgentMemoryOptions {
 }
 
 export interface MemoryRenderOptions {
-
+    /** Full audit history bypasses actor retention without changing actor visibility or cache state. */
+    history?: 'retained' | 'full';
 }
 
 // export interface FreezeState {
@@ -50,6 +53,8 @@ export class AgentMemory {
     //public readonly instructions: string | null;
 
     private observations: Observation[] = [];
+    private notebook = new TaskNotebook();
+    private visibleSourceIds = new Set<number>();
 
     //private freezeState?: FreezeState;
     private freezeMask?: boolean[];
@@ -71,13 +76,30 @@ export class AgentMemory {
     }
 
     public async render(options?: MemoryRenderOptions): Promise<MultiMediaMessage[]> {
+        if (options?.history === 'full') {
+            const messages: MultiMediaMessage[] = [];
+            for (const [index, observation] of this.observations.entries()) {
+                messages.push(await observation.render({ prefix: this.observationPrefix(observation, index) }));
+            }
+            const notes = this.notebook.render();
+            if (notes) messages.push({ role: 'user', cacheControl: false, content: [notes] });
+            return messages;
+        }
         if (this.options.promptCaching && this.cacheControlIndices.length >= CACHE_CONTROL_LIMIT) {
             this.freezeMask = undefined;
             this.cacheControlIndices = [];
         }
         const mask = await maskObservations(this.observations, this.freezeMask);
+        // Preserve complete note actions in the audit, not obsolete facts in actor context.
+        this.observations.forEach((observation, index) => {
+            if (observation.retention?.type === 'notebook-write') mask[index] = false;
+        });
 
         const visibleObservations = applyMask(this.observations, mask);
+        this.visibleSourceIds = new Set([
+            ...visibleObservations.filter(({ observation }) => observation.source.startsWith('connector:')).map(({ index }) => index),
+            ...this.notebook.sourceIds(),
+        ]);
 
         const lastVisible = visibleObservations.at(-1);
         if (lastVisible) this.cacheControlIndices.push(lastVisible.index); // index WRT full observation list
@@ -85,8 +107,7 @@ export class AgentMemory {
         let messages: MultiMediaMessage[] = [];
         for (const { observation, index } of visibleObservations) {
             const message = await observation.render({
-                prefix: observation.source.startsWith('action:taken') || observation.source.startsWith('thought') ?
-                    [`[${new Date(observation.timestamp).toTimeString().split(' ')[0]}]: `] : [],
+                prefix: this.observationPrefix(observation, index),
                 cacheControl: this.options.promptCaching && this.cacheControlIndices.includes(index)
             });
             messages.push(message);
@@ -95,23 +116,39 @@ export class AgentMemory {
         if (this.options.promptCaching) {
             this.freezeMask = mask;   
         }
+        const notes = this.notebook.render();
+        if (notes) messages.push({ role: 'user', cacheControl: false, content: [notes] });
 
         return messages;
     }
 
     public async simpleRender(): Promise<(BamlImage | string)[]> {
-        // Render with no filtering, no masking, no cache control
-        //let messages: MultiMediaMessage[] = [];
-        let content: (BamlImage | string)[] = [];
-        for (const observation of this.observations) {
-            const message = await observation.render({
-                prefix: observation.source.startsWith('action:taken') || observation.source.startsWith('thought') ?
-                    [`[${new Date(observation.timestamp).toTimeString().split(' ')[0]}]: `] : []
-            });
-            // ignore message stuff, just push content
-            content = [...content, ...message.content];
-        }
-        return content;
+        return (await this.render({ history: 'full' })).flatMap(message => message.content);
+    }
+
+    private observationPrefix(observation: Observation, index: number): string[] {
+        if (observation.source.startsWith('connector:')) return [`[Observation ${index}] ${observation.source}\n`];
+        return observation.source.startsWith('action:taken') || observation.source === 'thought'
+            ? [`[${new Date(observation.timestamp).toTimeString().split(' ')[0]}]: `] : [];
+    }
+
+    private resolveNoteSource(observations: Observation[], id: number): NoteSource {
+        const observation = observations[id];
+        if (!observation?.source.startsWith('connector:')) throw new Error(`Observation ${id} is not a captured connector source.`);
+        const data = observation.content;
+        const url = data && typeof data === 'object' && 'url' in data && typeof data.url === 'string' ? data.url : undefined;
+        return { observation: id, capturedAt: observation.timestamp, ...(url !== undefined ? { url } : {}) };
+    }
+
+    public remember(note: NoteInput, expectedText?: string): void {
+        this.notebook.put(note, id => {
+            if (!this.visibleSourceIds.has(id)) throw new Error(`Observation ${id} is not shown in the current context or notebook.`);
+            return this.resolveNoteSource(this.observations, id);
+        }, expectedText);
+    }
+
+    public forget(key: string): void {
+        this.notebook.forget(key);
     }
 
     public isEmpty(): boolean {
@@ -149,9 +186,11 @@ export class AgentMemory {
                 options: observation.retention,
             });
         }
+        const notes = this.notebook.toJSON();
         return {
             // TODO: include other options as well
             ...(this.options.instructions ? { instructions: this.options.instructions } : {}),
+            ...(notes.length ? { notes } : {}),
             observations: observations
         };
     }
@@ -159,7 +198,7 @@ export class AgentMemory {
     // TODO: turn into class static method / rework cons
     public async loadJSON(data: SerializedAgentMemory) {
         //jsonToObservableData(data);
-        const observations = [];
+        const observations: Observation[] = [];
         for (const observation of data.observations) {
             observations.push(new Observation(
                 observation.source,
@@ -173,7 +212,13 @@ export class AgentMemory {
         // nvm
         //this.instructions = this.instructions;
 
+        const notebook = new TaskNotebook();
+        for (const note of data.notes ?? []) notebook.put(note, id => this.resolveNoteSource(observations, id));
         this.observations = observations;
+        this.notebook = notebook;
+        this.visibleSourceIds.clear();
+        this.freezeMask = undefined;
+        this.cacheControlIndices = [];
 
 
         // return {

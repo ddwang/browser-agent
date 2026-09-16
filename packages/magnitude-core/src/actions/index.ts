@@ -1,4 +1,5 @@
-import { Agent } from "@/agent"
+import type { Agent } from "@/agent"
+import type { AgentMemory } from '@/memory/agentMemory';
 import { RenderableContent } from "@/memory/observation";
 import { z, Schema, ZodTypeAny } from "zod"
 
@@ -6,7 +7,7 @@ export interface ActionDefinition<T> {
     name: string;
     description?: string;
     schema: Schema<T>;
-    resolver: ({ input, agent }: { input: T, agent: Agent }) => Promise<void | RenderableContent>;
+    resolver: ({ input, agent, memory }: { input: T, agent: Agent, memory?: AgentMemory }) => Promise<void | RenderableContent>;
     render: (action: T) => string
 }
 
@@ -15,7 +16,7 @@ export function createAction<S extends ZodTypeAny>(
         name: string;
         description?: string;
         schema?: S;
-        resolver: ({ input, agent }: { input: z.infer<S>; agent: Agent }) => Promise<void | RenderableContent>;
+        resolver: ({ input, agent, memory }: { input: z.infer<S>; agent: Agent; memory?: AgentMemory }) => Promise<void | RenderableContent>;
         render?: (action: z.infer<S>) => string
     }
 ): ActionDefinition<z.infer<S>> {
@@ -34,4 +35,3 @@ export function createAction<S extends ZodTypeAny>(
 // 2. Create a helper type to extract the payload structure for a single action
 // This payload combines the 'name' (as a literal type) and the inferred schema.
 export type ActionPayload<A extends ActionDefinition<any>> = { name: A['name'] } & z.infer<A['schema']>;
-

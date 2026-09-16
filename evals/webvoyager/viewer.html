@@ -373,6 +373,39 @@
         let currentData = null;
         let categorizedTasks = {};
         let selectedTask = null;
+        let refreshingStatus = false;
+
+        const escapeText = value => String(value).replace(/[&<>"']/g, character => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        })[character]);
+
+        function renderProgress(progress, block) {
+            if (!progress) return '';
+            const barrier = block || progress.block;
+            let html = `<div class="task-question"><h3>Execution status</h3><p>${escapeText(progress.phase)}${progress.action ? `: ${escapeText(progress.action)}` : ''}</p>`;
+            if (progress.waitUntil) html += `<p>Wait until ${escapeText(new Date(progress.waitUntil).toLocaleString())}</p>`;
+            html += `<p>Last heartbeat: ${escapeText(new Date(progress.updatedAt).toLocaleString())}</p>`;
+            if (barrier) html += `<p>Barrier: ${escapeText(barrier.reason)} — ${escapeText(barrier.evidence)}</p>`;
+            html += `<details><summary>Recent HTTP diagnostics</summary><pre>${escapeText(JSON.stringify(progress.network, null, 2))}</pre></details></div>`;
+            return html;
+        }
+
+        setInterval(async () => {
+            if (refreshingStatus || currentData?.status !== 'running' || !selectedTask) return;
+            const taskId = selectedTask;
+            refreshingStatus = true;
+            try {
+                const response = await fetch(`/api/status/${encodeURIComponent(taskId)}`);
+                if (!response.ok) return;
+                const progress = await response.json();
+                if (!progress || selectedTask !== taskId) return;
+                currentData.progress = progress;
+                const panel = document.getElementById('executionStatus');
+                if (panel) panel.innerHTML = renderProgress(progress, currentData.block);
+                if (progress.phase === 'finished') await loadTaskData(taskId);
+            } catch (error) { console.error('Error refreshing execution status:', error); }
+            finally { refreshingStatus = false; }
+        }, 2000);
 
         async function loadTasksSidebar() {
             try {
@@ -423,6 +456,13 @@
                         // Meta info
                         const metaDiv = document.createElement('div');
                         metaDiv.className = 'task-meta';
+
+                        if (task.outcome) {
+                            const outcomeSpan = document.createElement('span');
+                            outcomeSpan.className = 'task-meta-item';
+                            outcomeSpan.textContent = task.outcome.replaceAll('_', ' ');
+                            metaDiv.appendChild(outcomeSpan);
+                        }
                         
                         if (task.time) {
                             const timeSpan = document.createElement('span');
@@ -432,7 +472,7 @@
                             metaDiv.appendChild(timeSpan);
                         }
                         
-                        if (task.cost !== undefined) {
+                        if (task.cost != null) {
                             const costSpan = document.createElement('span');
                             costSpan.className = 'task-meta-item';
                             costSpan.textContent = `$${task.cost.toFixed(2)}`;
@@ -504,22 +544,29 @@
         }
 
         function displayTaskData() {
-            if (!currentData || !currentData.memory || !currentData.memory.observations) {
+            if (!currentData) {
                 document.getElementById('content').innerHTML = 
                     '<div class="error">No observation data found for this task.</div>';
                 return;
             }
 
-            const observations = currentData.memory.observations;
+            const observations = currentData.memory?.observations || [];
             let html = '';
+            html += `<div id="executionStatus">${renderProgress(currentData.progress, currentData.block)}</div>`;
+            const budget = currentData.budget || currentData.evaluation?.budget;
+            if (budget) html += `<div class="error">Budget failure: ${budget.kind === 'actions' ? 'action count' : 'saved payload bytes'} ${Number(budget.actual).toLocaleString()}, limit ${Number(budget.limit).toLocaleString()}.</div>`;
 
             // Task question section
             if (currentData.task && currentData.task.ques) {
                 html += '<div class="task-question">';
                 html += '<h3>Task</h3>';
-                html += `<div class="task-question-text">${currentData.task.ques}</div>`;
+                html += `<div class="task-question-text">${escapeText(currentData.task.ques)}</div>`;
+                if (currentData.task.criteria?.length) {
+                    html += `<h4>Acceptance criteria (all required)</h4><ol>${currentData.task.criteria.map(criterion => `<li>${escapeText(criterion)}</li>`).join('')}</ol>`;
+                }
+                if (currentData.task.capabilities?.length) html += `<p>Capabilities: ${escapeText(currentData.task.capabilities.join(', '))}</p>`;
                 if (currentData.task.web) {
-                    html += `<div class="task-url">URL: <a href="${currentData.task.web}" target="_blank">${currentData.task.web}</a></div>`;
+                    html += `<div class="task-url">URL: <a href="${escapeText(currentData.task.web)}" target="_blank">${escapeText(currentData.task.web)}</a></div>`;
                 }
                 html += '</div>';
             }
@@ -549,7 +596,7 @@
                 }
                 
                 // Convert to string and format
-                answerText = String(answerText)
+                answerText = escapeText(answerText)
                     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                     .replace(/\n\n/g, '</p><p>')
                     .replace(/\n/g, '<br>');
@@ -566,12 +613,13 @@
             }
 
             // Evaluation section
-            if (currentData.evaluation) {
-                const isSuccess = currentData.evaluation.result === 'SUCCESS';
+            if (currentData.outcome || currentData.evaluation) {
+                const status = currentData.outcome || (currentData.evaluation.result === 'SUCCESS' ? 'success' : 'failure');
+                const isSuccess = status === 'success';
                 html += `<div class="evaluation ${isSuccess ? '' : 'failed'}">`;
-                html += `<div class="evaluation-result">${isSuccess ? '✅ SUCCESS' : '❌ NOT SUCCESS'}</div>`;
-                if (currentData.evaluation.reasoning) {
-                    html += `<div class="evaluation-reasoning">${currentData.evaluation.reasoning}</div>`;
+                html += `<div class="evaluation-result">${escapeText(status.replaceAll('_', ' ').toUpperCase())}</div>`;
+                if (currentData.evaluation?.reasoning) {
+                    html += `<div class="evaluation-reasoning">${escapeText(currentData.evaluation.reasoning)}</div>`;
                 }
                 html += '</div>';
             }
@@ -603,8 +651,8 @@
             }
             
             // Cost stats
-            if (currentData.totalInputCost !== undefined || currentData.totalOutputCost !== undefined) {
-                const totalCost = (currentData.totalInputCost || 0) + (currentData.totalOutputCost || 0);
+            if (currentData.totalInputCost != null && currentData.totalOutputCost != null) {
+                const totalCost = currentData.totalInputCost + currentData.totalOutputCost;
                 html += `<div class="stat-item">
                             <div class="stat-value">$${totalCost.toFixed(2)}</div>
                             <div class="stat-label">Total Cost</div>
@@ -642,8 +690,9 @@
                 html += '</div>';
 
                 // Display image if present
-                if (obs.data && obs.data.base64) {
-                    html += `<img class="observation-image" src="data:image/${obs.data.format || 'png'};base64,${obs.data.base64}" alt="Observation ${index + 1}">`;
+                const screenshot = obs.data?.screenshot?.base64 ? obs.data.screenshot : obs.data?.base64 ? obs.data : null;
+                if (screenshot) {
+                    html += `<img class="observation-image" src="data:image/${escapeText(screenshot.format || 'png')};base64,${escapeText(screenshot.base64)}" alt="Observation ${index + 1}">`;
                 }
 
                 // Display other data
@@ -654,16 +703,18 @@
                     if (obs.source) {
                         html += '<div class="data-section">';
                         html += '<div class="data-label">Source:</div>';
-                        html += `<div class="data-content">${obs.source}</div>`;
+                        html += `<div class="data-content">${escapeText(obs.source)}</div>`;
                         html += '</div>';
                     }
 
                     // Display any additional data fields
                     Object.keys(obs.data).forEach(key => {
+                        if (key === 'screenshot' && screenshot === obs.data.screenshot) return;
                         if (key !== 'base64' && key !== 'format' && key !== 'type' && key !== 'storage') {
+                            const value = obs.data[key]?.type === 'primitive' ? obs.data[key].content : obs.data[key];
                             html += '<div class="data-section">';
-                            html += `<div class="data-label">${key}:</div>`;
-                            html += `<div class="data-content">${JSON.stringify(obs.data[key], null, 2)}</div>`;
+                            html += `<div class="data-label">${escapeText(key)}:</div>`;
+                            html += `<div class="data-content">${escapeText(typeof value === 'string' ? value : JSON.stringify(value, null, 2))}</div>`;
                             html += '</div>';
                         }
                     });
@@ -672,7 +723,7 @@
                     if (obs.data.type && obs.data.type !== 'media') {
                         html += '<div class="data-section">';
                         html += '<div class="data-label">Type:</div>';
-                        html += `<div class="data-content">${obs.data.type}</div>`;
+                        html += `<div class="data-content">${escapeText(obs.data.type)}</div>`;
                         html += '</div>';
                     }
                     

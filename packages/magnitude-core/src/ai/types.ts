@@ -17,6 +17,8 @@ export interface AnthropicClient {
         apiKey?: string,
         temperature?: number,
         promptCaching?: boolean,
+        /** Default: enabled for known supporting models. False retains prompt-only JSON. */
+        structuredOutputs?: boolean,
     }   
 }
 
@@ -73,7 +75,12 @@ export interface OpenAIClient {
     options: {
         model: string,
         apiKey?: string,
-        temperature?: number
+        baseUrl?: string,
+        /** Omitted by default: reasoning models may reject sampling parameters. */
+        temperature?: number,
+        reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max',
+        /** Includes both visible output and reasoning tokens. */
+        maxCompletionTokens?: number,
     }
 }
 

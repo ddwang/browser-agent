@@ -2,7 +2,7 @@
  * Utilities for converting multi-media observation data to/from JSON
  */
 import { Base64Image } from "@/web/types";
-import { RenderableContent, ObservableDataObject } from "./observation";
+import { RenderableContent } from "./observation";
 import { Image } from './image';
 
 
@@ -66,19 +66,10 @@ export async function observableDataToJson(data: RenderableContent): Promise<Mul
     }
 
     if (typeof data === 'object') { // Known not to be null or array here
-        const processedObject: { [key: string]: any } = {};
-        for (const key in data) {
-            if (Object.prototype.hasOwnProperty.call(data, key)) {
-                const value = (data as ObservableDataObject)[key];
-                const processedValue = observableDataToJson(value);
-
-                // Only add the key to the new object if its processed value is not undefined
-                if (processedValue !== undefined) {
-                    processedObject[key] = processedValue;
-                }
-            }
-        }
-        return processedObject;
+        const entries = await Promise.all(Object.entries(data).map(async ([key, value]) =>
+            [key, await observableDataToJson(value)] as const));
+        // fromEntries preserves own keys such as __proto__ as data properties.
+        return Object.fromEntries(entries.filter(([, value]) => value !== undefined));
     }
 
     // Fallback for any unexpected data types not covered by ObservableData.
@@ -120,7 +111,6 @@ export async function jsonToObservableData(data: MultiMediaJson): Promise<Render
         }
 
         // Handle generic observable data object by recursively converting each property's value
-        const result: ObservableDataObject = {};
         const keys = Object.keys(data);
         
         // Process all values concurrently for better performance
@@ -128,12 +118,7 @@ export async function jsonToObservableData(data: MultiMediaJson): Promise<Render
             keys.map(key => jsonToObservableData((data as MultiMediaObject)[key]))
         );
 
-        // Reconstruct the object from the processed keys and values
-        keys.forEach((key, index) => {
-            result[key] = values[index];
-        });
-
-        return result;
+        return Object.fromEntries(keys.map((key, index) => [key, values[index]]));
     }
     
     // According to the MultiMediaJson type definition, raw primitives (string, number, boolean)

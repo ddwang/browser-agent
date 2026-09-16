@@ -1,5 +1,6 @@
 import { ActionDefinition } from '@/actions';
 import { Observation } from '@/memory/observation';
+import type { Action } from '@/actions/types';
 
 export interface AgentConnector {
     // Unique connector ID (required)
@@ -7,6 +8,8 @@ export interface AgentConnector {
     // Event handlers (optional)
     onStart?(): Promise<void>;
     onStop?(): Promise<void>;
+    beforeAction?(action: Action): Promise<void>;
+    onTaskStart?(): void;
     // Action space (optional)
     getActionSpace?(): ActionDefinition<any>[];
     // State retrieval (WIP)

@@ -1,25 +1,19 @@
 import { readdir, readFile } from "fs/promises";
-import { join } from "path";
+import { join, resolve } from "path";
 import * as readline from "readline";
 import * as fs from "fs";
+import { isTaskResultFile, outcome, type Task, type Evaluation } from './results';
 
 const port = 8000;
-const resultsDir = "./results";
+const resultsDir = resolve(process.argv[2] || join(import.meta.dir, 'results'));
 const TASKS_PATH = join(__dirname, "data", "patchedTasks.jsonl");
 
-interface Task {
-  web_name: string;
-  id: string;
-  ques: string;
-  web: string;
-}
-
-interface EvalData {
-  result: string;
-  reasoning?: string;
-}
-
 async function findTaskById(taskId: string): Promise<Task | null> {
+  const manifestPath = join(resultsDir, 'manifest.json');
+  if (fs.existsSync(manifestPath)) {
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    return manifest.tasks.find((task: Task) => task.id === taskId) ?? null;
+  }
   const fileStream = fs.createReadStream(TASKS_PATH);
   const rl = readline.createInterface({
     input: fileStream,
@@ -50,13 +44,22 @@ const server = Bun.serve({
       return await getTasksList();
     } else if (path === "/api/tasks-summary") {
       return await getTasksSummary();
+    } else if (path.startsWith('/api/status/')) {
+      const taskId = decodeURIComponent(path.slice('/api/status/'.length));
+      if (!await findTaskById(taskId)) return new Response('Unknown task', { status: 404 });
+      try {
+        return Response.json(JSON.parse(await readFile(join(resultsDir, `${taskId}.status.json`), 'utf8')));
+      } catch (error: any) {
+        if (error.code === 'ENOENT') return Response.json(null);
+        return new Response('Could not read execution status', { status: 500 });
+      }
     } else if (path.startsWith("/api/task/")) {
       const taskName = decodeURIComponent(path.slice(10));
       return await getTaskData(taskName);
     } else if (path === "/" || path === "") {
       // Serve the HTML file
       try {
-        const html = await Bun.file("./viewer.html").text();
+        const html = await Bun.file(join(import.meta.dir, 'viewer.html')).text();
         return new Response(html, {
           headers: { "content-type": "text/html" },
         });
@@ -73,7 +76,7 @@ async function getTasksList(): Promise<Response> {
   try {
     const files = await readdir(resultsDir);
     const tasks = files
-      .filter(file => file.endsWith(".json") && !file.endsWith(".eval.json"))
+      .filter(isTaskResultFile)
       .map(file => file.slice(0, -5)) // Remove .json extension
       .sort();
     
@@ -91,15 +94,18 @@ async function getTasksList(): Promise<Response> {
 async function getTasksSummary(): Promise<Response> {
   try {
     const files = await readdir(resultsDir);
-    const taskFiles = files.filter(file => file.endsWith(".json") && !file.endsWith(".eval.json"));
+    const manifestPath = join(resultsDir, 'manifest.json');
+    const manifest = fs.existsSync(manifestPath) ? JSON.parse(await readFile(manifestPath, 'utf8')) : null;
+    const taskFiles: string[] = manifest ? manifest.tasks.map((task: Task) => `${task.id}.json`) : files.filter(isTaskResultFile);
     
     const categorizedTasks: Record<string, Array<{
       id: string;
       success?: boolean;
       time?: number;
-      cost?: number;
+      cost?: number | null;
       tokens?: number;
       actions?: number;
+      outcome?: string;
     }>> = {};
     
     for (const file of taskFiles) {
@@ -113,28 +119,32 @@ async function getTasksSummary(): Promise<Response> {
       try {
         // Read task data
         const taskData = JSON.parse(await readFile(join(resultsDir, file), "utf-8"));
+        await loadProgress(taskId, taskData);
         
         // Try to read eval data
-        let evalData: EvalData | null = null;
+        let evalData: Evaluation | undefined;
         try {
           const evalContent = await readFile(join(resultsDir, `${taskId}.eval.json`), "utf-8");
-          evalData = JSON.parse(evalContent) as EvalData;
+          evalData = JSON.parse(evalContent);
         } catch {
           // No eval data
         }
         
+        const status = outcome({ run: taskData, evaluation: evalData });
         categorizedTasks[category].push({
           id: taskId,
-          success: evalData ? evalData.result === "SUCCESS" : undefined,
+          success: status === 'success' ? true : ['pending', 'unscored', 'running'].includes(status) ? undefined : false,
+          outcome: status,
           time: taskData.time,
-          cost: (taskData.totalInputCost || 0) + (taskData.totalOutputCost || 0),
+          cost: taskData.totalInputCost != null && taskData.totalOutputCost != null ? taskData.totalInputCost + taskData.totalOutputCost : null,
           tokens: (taskData.totalInputTokens || 0) + (taskData.totalOutputTokens || 0),
           actions: taskData.actionCount
         });
-      } catch (error) {
-        console.error(`Error processing ${taskId}:`, error);
+      } catch (error: any) {
+        if (error.code !== 'ENOENT') console.error(`Error processing ${taskId}:`, error);
         categorizedTasks[category].push({
-          id: taskId
+          id: taskId,
+          outcome: error.code === 'ENOENT' ? 'pending' : 'error',
         });
       }
     }
@@ -164,25 +174,28 @@ async function getTaskData(taskName: string): Promise<Response> {
     const filePath = join(resultsDir, `${taskName}.json`);
     const evalFilePath = join(resultsDir, `${taskName}.eval.json`);
     
-    const data = await readFile(filePath, "utf-8");
-    const parsedData = JSON.parse(data);
+    const runExists = fs.existsSync(filePath);
+    const parsedData = runExists ? JSON.parse(await readFile(filePath, 'utf8')) : { memory: null };
+    await loadProgress(taskName, parsedData);
     
     // Try to read evaluation data if it exists
-    let evalData: EvalData | null = null;
+    let evalData: Evaluation | undefined;
     try {
       const evalContent = await readFile(evalFilePath, "utf-8");
-      evalData = JSON.parse(evalContent) as EvalData;
+      evalData = JSON.parse(evalContent);
     } catch {
       // Eval file doesn't exist, that's okay
     }
     
     // Get task information
     const task = await findTaskById(taskName);
+    if (!task) return new Response('Unknown task', { status: 404 });
     
     // Combine task data with eval data and task info
     const combinedData = {
       ...parsedData,
       evaluation: evalData,
+      outcome: outcome({ run: runExists ? parsedData : undefined, evaluation: evalData }),
       task: task
     };
     
@@ -202,6 +215,14 @@ async function getTaskData(taskName: string): Promise<Response> {
       headers: { "content-type": "application/json" },
     });
   }
+}
+
+async function loadProgress(taskId: string, run: any) {
+  if (run.status !== 'running') return;
+  try {
+    run.progress = JSON.parse(await readFile(join(resultsDir, `${taskId}.status.json`), 'utf8'));
+    run.time = run.progress.updatedAt - run.progress.startedAt;
+  } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
 }
 
 console.log(`WebVoyager visualizer server running at http://localhost:${port}`);

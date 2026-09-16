@@ -1,8 +1,7 @@
 import { convertToBamlClientOptions } from "./util";
 // Import ModularMemoryContext instead of old MemoryContext
 import { b, AgentContext } from "@/ai/baml_client"; 
-import { Image as BamlImage, Collector, ClientRegistry } from "@boundaryml/baml";
-import { Action, ActionIntent, Intent } from "@/actions/types";
+import { Image as BamlImage, Collector, ClientRegistry, BamlValidationError, type FunctionLog } from "@boundaryml/baml";
 import { TestStepDefinition } from "@/types";
 import { BamlAsyncClient } from "./baml_client/async_client";
 import logger from "@/logger";
@@ -17,6 +16,9 @@ import { convertActionDefinitionsToBaml, convertZodToBaml } from "@/actions/util
 import { Image } from '@/memory/image';
 import EventEmitter from "eventemitter3";
 import { MultiMediaContentPart } from "@/memory/rendering";
+import { parsePlannerResponse, PlannerResponseError, memoryUpdatesSchema, type PlannerResponse } from './plannerResponse';
+import { anthropicOutputFormat, plannerSchema, usesStructuredOutput } from './structuredOutput';
+import { ModelResponseError } from './modelResponseError';
 
 interface ModelHarnessOptions {
     llm: LLMClient;
@@ -41,12 +43,15 @@ export class ModelHarness {
      */
     public readonly events: EventEmitter<ModelHarnessEvents> = new EventEmitter();
     private options: Required<ModelHarnessOptions>;
-    private collector!: Collector;
     private cr!: ClientRegistry;
+    private clientOptions!: Record<string, any>;
     private baml!: BamlAsyncClient;
     private logger: Logger;
-    private prevTotalInputTokens: number = 0;
-    private prevTotalOutputTokens: number = 0;
+    private planner?: {
+        vocabulary: Pick<ActionDefinition<any>, 'name' | 'description' | 'schema'>[];
+        tb: TypeBuilder;
+        clientRegistry: ClientRegistry;
+    };
 
     constructor(options: ModelHarnessOptions) {
         this.options = {
@@ -59,58 +64,111 @@ export class ModelHarness {
 
     async setup() {
         // Must be called after constructor
-        this.collector = new Collector("macro");
-        this.cr = new ClientRegistry();
-        let bamlClientOptions = await convertToBamlClientOptions(this.options.llm);
-        this.cr.addLlmClient(
+        this.planner = undefined;
+        this.clientOptions = await convertToBamlClientOptions(this.options.llm);
+        this.cr = this.createClientRegistry(this.clientOptions);
+        this.baml = b.withOptions({ clientRegistry: this.cr });
+    }
+
+    protected createClientRegistry(options: Record<string, any>): ClientRegistry {
+        const registry = new ClientRegistry();
+        registry.addLlmClient(
             'Magnus', 
             this.options.llm.provider === 'claude-code' ? 'anthropic' : this.options.llm.provider,
-            bamlClientOptions,
+            options,
             'DefaultRetryPolicy'
         );
-        this.cr.setPrimary('Magnus');
+        registry.setPrimary('Magnus');
+        return registry;
+    }
 
-        this.baml = b.withOptions({ collector: this.collector, clientRegistry: this.cr });
+    private clientForSchema(schema: Schema): ClientRegistry {
+        if (!usesStructuredOutput(this.options.llm)) return this.cr;
+        const format = anthropicOutputFormat(schema);
+        if (!format) {
+            this.logger.debug('Schema requires prompt-only output; native structured output cannot represent it');
+            return this.cr;
+        }
+        return this.createClientRegistry({ ...this.clientOptions, output_config: { format } });
     }
 
     describeModel(): string {
         return `${this.options.llm.provider}:${'model' in this.options.llm.options ? this.options.llm.options.model : 'unknown'}`;
     }
 
-    private _reportUsage(): void {
-        // console.log('this.collector.last', this.collector.last)
-        // if (this.collector.last) console.log("calls:", this.collector.last.calls)//console.log("Response: ", this.collector.last.calls[-1].httpResponse);
-        //console.log('last call:', this.collector.last?.calls.at(-1)?.httpResponse?.body.json());
-        // Get tokens used since last call to reportUsage
-        //console.log(this.collector.usage);
+    private async _withUsage<T>(invoke: (collector: Collector) => Promise<T>): Promise<T> {
+        // Scope usage to this invocation, including failed parses and provider
+        // retries. A shared cumulative collector can double-count concurrent calls.
+        const collector = new Collector('model-call');
+        try {
+            try {
+                return await invoke(collector);
+            } finally {
+                // Even syntactically complete JSON must not hide a provider
+                // refusal or a truncated batch. Neither gets a format retry.
+                if (this.options.llm.provider === 'anthropic' || this.options.llm.provider === 'claude-code') {
+                    let reason: unknown;
+                    try { reason = collector.last?.calls.at(-1)?.httpResponse?.body.json()?.stop_reason; }
+                    catch { /* A transport error may not contain JSON. */ }
+                    if (reason === 'refusal' || reason === 'max_tokens') throw new ModelResponseError(reason);
+                } else if (this.options.llm.provider === 'openai') {
+                    let choice: any;
+                    try { choice = collector.last?.calls.at(-1)?.httpResponse?.body.json()?.choices?.[0]; }
+                    catch { /* A transport error may not contain JSON. */ }
+                    if (choice?.message?.refusal || choice?.finish_reason === 'content_filter') throw new ModelResponseError('refusal');
+                    if (choice?.finish_reason === 'length') throw new ModelResponseError('max_tokens');
+                }
+            }
+        } finally {
+            for (const log of collector.logs) {
+                for (const call of log.calls) {
+                    try { this._reportCallUsage(call); }
+                    catch { this.logger.warn('Unable to report model response usage'); }
+                }
+            }
+        }
+    }
 
-        let inputTokens: number = 0;
-        let outputTokens: number = 0;
+    private _reportCallUsage(call: FunctionLog['calls'][number]): void {
+        let inputTokens = call.usage?.inputTokens;
+        let outputTokens = call.usage?.outputTokens;
         let cacheWriteInputTokens: number = 0;
         let cacheReadInputTokens: number = 0;
 
         if (this.options.llm.provider === 'anthropic' || this.options.llm.provider === 'claude-code') {
-            type AnthropicUsage = { input_tokens: number, cache_creation_input_tokens: number, cache_read_input_tokens: number, output_tokens: number, service_tier: string };
-            const usage = this.collector.last?.calls.at(-1)?.httpResponse?.body.json().usage as AnthropicUsage;
-            //console.log("Usage from Anthropic:", usage);
-            if (!usage) {
-                // Sometimes apparently this happens? Happened once after extract for example
-                logger.warn("No usage returned from Anthropic provider, cached cost may be inaccurate");
-                inputTokens = (this.collector.usage.inputTokens ?? 0) - this.prevTotalInputTokens;
-                outputTokens = (this.collector.usage.outputTokens ?? 0) - this.prevTotalOutputTokens;
-            } else {
-                inputTokens = usage.input_tokens;
-                outputTokens = usage.output_tokens;
-                cacheWriteInputTokens = usage.cache_creation_input_tokens;
-                cacheReadInputTokens = usage.cache_read_input_tokens;
-            }
-            
-        } else {
-            inputTokens = (this.collector.usage.inputTokens ?? 0) - this.prevTotalInputTokens;
-            outputTokens = (this.collector.usage.outputTokens ?? 0) - this.prevTotalOutputTokens;
+            // Anthropic's input_tokens excludes cache reads/writes. BAML's
+            // normalized usage does not expose that breakdown.
+            try {
+                const usage = call.httpResponse?.body.json()?.usage;
+                if (usage) {
+                    inputTokens = usage.input_tokens ?? inputTokens;
+                    outputTokens = usage.output_tokens ?? outputTokens;
+                    cacheWriteInputTokens = usage.cache_creation_input_tokens ?? 0;
+                    cacheReadInputTokens = usage.cache_read_input_tokens ?? 0;
+                }
+            } catch { /* Non-JSON error response; use per-call usage if available. */ }
+        } else if (this.options.llm.provider === 'openai') {
+            try {
+                const usage = call.httpResponse?.body.json()?.usage;
+                if (usage) {
+                    // OpenAI includes cached input in prompt_tokens and reasoning
+                    // output in completion_tokens. Neither should be counted twice.
+                    cacheReadInputTokens = usage.prompt_tokens_details?.cached_tokens ?? 0;
+                    cacheWriteInputTokens = usage.prompt_tokens_details?.cache_write_tokens ?? 0;
+                    const totalInputTokens = usage.prompt_tokens ?? inputTokens;
+                    if (totalInputTokens != null) inputTokens = totalInputTokens - cacheReadInputTokens - cacheWriteInputTokens;
+                    outputTokens = usage.completion_tokens ?? outputTokens;
+                }
+            } catch { /* Non-JSON error response; use per-call usage if available. */ }
         }
+        // A transport failure with no usage is not a paid completion. In
+        // particular, never reuse the preceding successful response's usage.
+        if (inputTokens == null && outputTokens == null) return;
+        inputTokens ??= 0;
+        outputTokens ??= 0;
 
         const model = (this.options.llm.options as any).model ?? 'unknown';
+        const isLuna = /^gpt-5\.6-luna(?:-\d{4}-\d{2}-\d{2})?$/.test(model);
 
         // Get cost if known
         const knownCostMap: Record<string, { inputTokens: number, outputTokens: number, cacheWriteInputTokens?: number, cacheReadInputTokens?: number }> = {
@@ -121,12 +179,17 @@ export class ModelHarness {
             'claude-3.5-sonnet': { inputTokens: 3.00, outputTokens: 15.00, cacheWriteInputTokens: 3.75, cacheReadInputTokens: 0.30 },
             'claude-3.7-sonnet': { inputTokens: 3.00, outputTokens: 15.00, cacheWriteInputTokens: 3.75, cacheReadInputTokens: 0.30 },
             'claude-sonnet-4': { inputTokens: 3.00, outputTokens: 15.00, cacheWriteInputTokens: 3.75, cacheReadInputTokens: 0.30 },
+            // Standard API pricing, using the default 5-minute cache TTL:
+            // https://platform.claude.com/docs/en/models/sonnet-5/overview#pricing
+            'claude-sonnet-5': { inputTokens: 2.00, outputTokens: 10.00, cacheWriteInputTokens: 2.50, cacheReadInputTokens: 0.20 },
             'claude-haiku-4-5': { inputTokens: 1.00, outputTokens: 5.00, cacheWriteInputTokens: 1.25, cacheReadInputTokens: 0.10 },
             'claude-opus-4': { inputTokens: 15.00, outputTokens: 75.00, cacheWriteInputTokens: 18.75, cacheReadInputTokens: 1.50 },
             'gpt-4.1': { inputTokens: 2.00, outputTokens: 8.00 },
             'gpt-4.1-mini': { inputTokens: 0.40, outputTokens: 1.60 },
             'gpt-4.1-nano': { inputTokens: 0.10, outputTokens: 0.40 },
             'gpt-4o': { inputTokens: 3.75, outputTokens: 15.00 },
+            // https://developers.openai.com/api/docs/models/gpt-5.6-luna
+            'gpt-5.6-luna': { inputTokens: 0.20, outputTokens: 1.20, cacheWriteInputTokens: 0.25, cacheReadInputTokens: 0.02 },
             // Assuming Nebius prices, may be higher
             'qwen2.5-vl-72b': { inputTokens: 0.25, outputTokens: 0.75 }
         };
@@ -137,12 +200,21 @@ export class ModelHarness {
         let cacheReadInputTokenCost: number | undefined;
 
         for (const [name, costs] of Object.entries(knownCostMap)) {
-            if (model.includes(name)) {
+            if (name === 'gpt-5.6-luna' ? isLuna : model.includes(name)) {
                 inputTokenCost = costs.inputTokens / 1_000_000;
                 outputTokenCost = costs.outputTokens / 1_000_000;
                 cacheReadInputTokenCost = costs.cacheReadInputTokens ? costs.cacheReadInputTokens / 1_000_000 : undefined;
                 cacheWriteInputTokenCost = costs.cacheWriteInputTokens ? costs.cacheWriteInputTokens / 1_000_000 : undefined;
             }
+        }
+
+        // Luna long-context pricing applies to the entire request, including
+        // cached input. Output usage already includes billed reasoning tokens.
+        if (isLuna && inputTokens + cacheReadInputTokens + cacheWriteInputTokens > 272_000) {
+            if (inputTokenCost !== undefined) inputTokenCost *= 2;
+            if (cacheWriteInputTokenCost !== undefined) cacheWriteInputTokenCost *= 2;
+            if (cacheReadInputTokenCost !== undefined) cacheReadInputTokenCost *= 2;
+            if (outputTokenCost !== undefined) outputTokenCost *= 1.5;
         }
 
         // console.log("cacheWriteInputTokenCost:", cacheWriteInputTokenCost);
@@ -157,7 +229,7 @@ export class ModelHarness {
             outputTokens: outputTokens,
             ...(cacheWriteInputTokens ? { cacheWriteInputTokens } : {}),
             ...(cacheReadInputTokens ? { cacheReadInputTokens } : {}),
-            ...(inputTokenCost ? {
+            ...(inputTokenCost !== undefined && (!cacheWriteInputTokens || cacheWriteInputTokenCost !== undefined) && (!cacheReadInputTokens || cacheReadInputTokenCost !== undefined) ? {
                 inputCost: inputTokens * inputTokenCost +
                     ( cacheWriteInputTokenCost ? cacheWriteInputTokenCost * cacheWriteInputTokens : 0.0 ) +
                     ( cacheReadInputTokenCost ? cacheReadInputTokenCost * cacheReadInputTokens : 0.0 )
@@ -170,8 +242,6 @@ export class ModelHarness {
         this.events.emit('tokensUsed', usage);
         //console.log("Usage:", usage);
 
-        this.prevTotalInputTokens += inputTokens;
-        this.prevTotalOutputTokens += outputTokens;
     }
 
     async partialAct<T>(
@@ -179,28 +249,57 @@ export class ModelHarness {
         task: string,
         data: MultiMediaContentPart[],
         actionVocabulary: ActionDefinition<T>[]
-    ): Promise<{ reasoning: string, actions: Action[] }> {
-        const tb = new TypeBuilder();
+    ): Promise<PlannerResponse> {
+        // Notes have one planner path: a required review before browser actions.
+        // Keep memory:note registered on Agent for execution and explicit callers.
+        actionVocabulary = actionVocabulary.filter(action => action.name !== 'memory:note');
+        if (!this.planner || this.planner.vocabulary.length !== actionVocabulary.length
+            || actionVocabulary.some((action, index) => {
+                const saved = this.planner!.vocabulary[index];
+                return action.name !== saved.name || action.description !== saved.description || action.schema !== saved.schema;
+            })) {
+            const tb = new TypeBuilder();
+            tb.PartialRecipe.addProperty('memory_updates', convertZodToBaml(tb, memoryUpdatesSchema)).description(memoryUpdatesSchema.description!);
+            tb.PartialRecipe.addProperty('actions', tb.list(convertActionDefinitionsToBaml(tb, actionVocabulary))).description('Always provide at least one action');
+            this.planner = {
+                vocabulary: actionVocabulary.map(({ name, description, schema }) => ({ name, description, schema })),
+                tb, clientRegistry: this.clientForSchema(plannerSchema(actionVocabulary)),
+            };
+        }
+        const { tb, clientRegistry } = this.planner;
 
-        tb.PartialRecipe.addProperty('actions', tb.list(convertActionDefinitionsToBaml(tb, actionVocabulary))).description('Always provide at least one action');
-
-        const start = Date.now();
-        // Assuming this.baml.CreatePartialRecipe is now typed to accept ModularMemoryContext
-        // after BAML generation picked up changes in planner.baml
-        const response = await this.baml.CreatePartialRecipe( 
-            context,
-            task,
-            data,
-            this.options.llm.provider === 'claude-code',
-            { tb }
-        );
-        this.logger.trace(`createPartialRecipe took ${Date.now()-start}ms`);
-        // BAML does not carry over action type to @@dynamic of PartialRecipe, so forced cast necssary
-        //return response as unknown as { actions: z.infer<ActionDefinition<T>['schema']>[] };//, finished: boolean };
-        this._reportUsage();
-        return {
-            reasoning: response.reasoning,//(response.observations ? response.observations + " " : "") + response.meta_reasoning + " " + response.reasoning,
-            actions: response.actions// as z.infer<ActionDefinition<T>['schema']>[]
+        for (let attempt = 0; ; attempt++) {
+            try {
+                return await this._withUsage(async collector => {
+                    let bamlRejected = false;
+                    try {
+                        await this.baml.CreatePartialRecipe(
+                            context, task, data,
+                            this.options.llm.provider === 'claude-code',
+                            { tb, collector, clientRegistry }
+                        );
+                    } catch (error) {
+                        if (!(error instanceof BamlValidationError)) throw error;
+                        bamlRejected = true;
+                    }
+                    // BAML can fail first or coerce invalid fields. Diagnose its
+                    // raw response locally, but never bypass either validator.
+                    const plan = parsePlannerResponse(collector.last?.rawLlmResponse ?? null, actionVocabulary);
+                    if (bamlRejected) throw new PlannerResponseError('$: BAML parser rejected the response despite local validation; return a plan matching the supplied schema');
+                    return plan;
+                });
+            } catch (error) {
+                if (!(error instanceof PlannerResponseError)) throw error;
+                this.logger.warn({ attempt: attempt + 1, diagnostic: error.diagnostic }, attempt === 0
+                    ? 'Invalid planner response; retrying once with the same observations'
+                    : 'Invalid planner response; no format retries remain');
+                if (attempt === 1) throw new PlannerResponseError(error.diagnostic, 'Planner returned an invalid plan on both attempts');
+                // No invalid output is appended to memory or executed. Keep the
+                // correction short even when the rejected response is enormous.
+                context = { ...context, observationContent: [...context.observationContent, {
+                    role: 'user', cacheControl: false, content: [`Your previous response was rejected as an invalid plan. No actions were executed. Validation: ${error.diagnostic}. Correct the reported fields. Return only one complete JSON object with concise reasoning, a memory_updates array (empty when nothing new needs retaining), and a non-empty actions array matching the schema. No XML, prose, simulated tool calls, or imagined observations. Plan only the next batch from the observations above.`],
+                }] };
+            }
         }
     }
 
@@ -220,20 +319,17 @@ export class ModelHarness {
 
         // }
 
-        const resp = await this.baml.ExtractData(
+        const clientRegistry = this.clientForSchema(schema instanceof z.ZodObject ? schema : z.object({ data: schema }));
+        const bamlScreenshot = await screenshot.toBaml();
+        const resp = await this._withUsage(collector => this.baml.ExtractData(
             instructions,
-            await screenshot.toBaml(),
+            bamlScreenshot,
             domContent,
             this.options.llm.provider === 'claude-code',
-            { tb }
-        );
-        this._reportUsage();
+            { tb, collector, clientRegistry }
+        ));
 
-        if (schema instanceof z.ZodObject) {
-            return resp;
-        } else {
-            return resp.data;
-        }
+        return schema.parse(schema instanceof z.ZodObject ? resp : resp.data);
     }
     // ^ extract could prob be a subset of query w trimmed mem
 
@@ -250,19 +346,15 @@ export class ModelHarness {
             tb.QueryResponse.addProperty('data', convertZodToBaml(tb, schema));
         }
 
-        const resp = await this.baml.QueryMemory(
+        const clientRegistry = this.clientForSchema(schema instanceof z.ZodObject ? schema : z.object({ data: schema }));
+        const resp = await this._withUsage(collector => this.baml.QueryMemory(
             context,
             query,
             this.options.llm.provider === 'claude-code',
-            { tb }
-        );
-        this._reportUsage();
+            { tb, collector, clientRegistry }
+        ));
         
-        if (schema instanceof z.ZodObject) {
-            return resp;
-        } else {
-            return resp.data;
-        }
+        return schema.parse(schema instanceof z.ZodObject ? resp : resp.data);
     }
 
     // async classifyCheckFailure(screenshot: Image, check: string, existingRecipe: Action[], tabState: TabState): Promise<BugDetectedFailure | MisalignmentFailure> {

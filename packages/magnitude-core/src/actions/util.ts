@@ -338,34 +338,14 @@ export function convertActionDefinitionsToBaml<T>(
     /**
      * Convert action definitions to BAML TypeBuilder union representing any one of the actions
      */
-    const actionTypes = [];
-    for (const { name, description, schema } of actionVocabulary) {
-        // Need to augment the schema a bit:
-        // (1) if object, unpack and include variant as literal { variant: name, ...others }
-        // (2) if primitive, add as name input { variant: name, input: <primitive> }
-        let wrapperSchema: ZodSchema<any>;
-
-        const baseWrapperSchema = z.object({
-            variant: description ? z.literal(name).describe(description) : z.literal(name)
-        });
-
-        if (schema instanceof ZodObject) {
-            // Merge the variant field with the existing object schema
-            // The original schema's fields will be at the top level alongside 'variant'.
-            wrapperSchema = baseWrapperSchema.merge(schema as ZodObject<any, any>);
-        } else {
-            wrapperSchema = baseWrapperSchema.extend({
-                input: schema,
-            });
-        }
-
-        //if (description) wrapperSchema = wrapperSchema.describe(description);
-
-        actionTypes.push(convertZodToBaml(tb, wrapperSchema))
-    }
-    return tb.union(actionTypes);
+    return tb.union(actionVocabulary.map(action => convertZodToBaml(tb, actionInputSchema(action))));
 }
 
+// One wire schema for BAML's prompt and provider-enforced structured output.
+export function actionInputSchema<T>({ name, description, schema }: ActionDefinition<T>): ZodSchema<any> {
+    const wrapper = z.object({ variant: description ? z.literal(name).describe(description) : z.literal(name) });
+    return schema instanceof ZodObject ? wrapper.merge(schema) : wrapper.extend({ input: schema });
+}
 
 //const tb = new TypeBuilder();
 //console.log(convertZodToBaml(tb, z.string()))

@@ -6,7 +6,6 @@
 import * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import { v4 as uuidv4 } from 'uuid';
-import { createHash } from 'crypto';
 import { 
   ElementType,
   ProcessingStrategy,
@@ -22,11 +21,9 @@ import type {
   LinkElement,
   CodeElement,
   FormulaElement,
-  CompositeElement,
   ElementMetadata,
   PartitionOptions, 
-  PartitionResult,
-  AnyElement
+  PartitionResult
 } from './types.js';
 import { DOMCleaner } from './cleaner.js';
 import { ElementClassifier } from './classifier.js';
@@ -593,22 +590,23 @@ export class DOMPartitioner {
    */
   private extractValue($: cheerio.CheerioAPI, $el: cheerio.Cheerio<AnyNode>): UnstructuredElement | null {
     const tagName = $el.prop('tagName')?.toLowerCase();
-    const type = $el.attr('type')?.toLowerCase();
     let text = '';
     
     // Extract appropriate text based on element type
     switch (tagName) {
-      case 'input':
+      case 'input': {
         const value = $el.attr('value') || $el.val() || '';
         text = value.toString();
         break;
+      }
       case 'button':
         text = $el.text().trim() || $el.attr('value') || '';
         break;
-      case 'select':
+      case 'select': {
         const selectedOption = $el.find('option:selected');
         text = selectedOption.text().trim() || selectedOption.attr('value') || '';
         break;
+      }
       case 'textarea':
         text = $el.text().trim() || $el.val()?.toString() || '';
         break;

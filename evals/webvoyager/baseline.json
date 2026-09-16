@@ -1,0 +1,200 @@
+{
+    "name": "hard-browser-tasks",
+    "description": "12 bounded, multi-step research and UI tasks with explicit acceptance criteria. Fixed paper/release targets; no login or purchases. Not a WebVoyager benchmark score. See hard-suite.md for reference checks and limitations.",
+    "tasks": [
+        {
+            "id": "ArXiv Hard--0",
+            "web_name": "ArXiv",
+            "web": "https://arxiv.org/search/advanced",
+            "capabilities": [
+                "constraints",
+                "extraction"
+            ],
+            "ques": "Use arXiv advanced search to find papers matching the unquoted words graph neural networks in the Abstract field, across all archives, with Submission date (most recent) from 2024-01-01 to 2024-01-03. Include cross-listed papers. Inspect the complete result set and identify every paper with more than five authors.",
+            "criteria": [
+                "Show the Abstract field, both date bounds, most-recent-submission date mode, and all-archives scope in browser evidence; do not substitute Title, original submission, or announcement date.",
+                "Report the total search result count and enumerate every result's arXiv ID and author count, including papers excluded by the author threshold.",
+                "For every qualifying paper, provide its title, arXiv URL, and complete author list. State the number of qualifying papers."
+            ]
+        },
+        {
+            "id": "ArXiv Hard--1",
+            "web_name": "ArXiv",
+            "web": "https://arxiv.org/search/advanced",
+            "capabilities": [
+                "stateful",
+                "comparison",
+                "constraints"
+            ],
+            "ques": "Compare arXiv Title and Abstract searches for the unquoted words graph neural networks. Use all archives, include cross-lists, and restrict Submission date (most recent) from 2024-01-01 to 2024-01-03. Run Title first, then refine that search by changing only the field to Abstract. Compare the actual paper sets, not just their sizes.",
+            "criteria": [
+                "Browser evidence must show Title followed by the refined Abstract search, with the same query text, dates, date mode, and archive scope.",
+                "Report both result counts and all arXiv IDs in each result set.",
+                "List the intersection, Title-only IDs, and Abstract-only IDs. Equal counts must not be treated as proof that the sets are identical.",
+                "Include a source URL for each search and for each paper appearing in only one set."
+            ]
+        },
+        {
+            "id": "ArXiv Hard--2",
+            "web_name": "ArXiv",
+            "web": "https://arxiv.org/",
+            "capabilities": [
+                "comparison",
+                "extraction"
+            ],
+            "ques": "Find the original arXiv records for Attention Is All You Need, BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding, and Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. Build a comparison table using the records, not prior knowledge.",
+            "criteria": [
+                "Open all three matching abstract pages and provide each exact title and arXiv ID/URL.",
+                "For each paper, report the complete author count, first and last authors, primary subject category, and original v1 submission date.",
+                "Report the highest version number submitted before 2024-01-01 and that version's date for each paper; distinguish original submission from revision dates.",
+                "Order the table by original submission date, oldest first, and identify which paper has the most authors."
+            ]
+        },
+        {
+            "id": "ArXiv Hard--3",
+            "web_name": "ArXiv",
+            "web": "https://arxiv.org/",
+            "capabilities": [
+                "extraction",
+                "comparison"
+            ],
+            "ques": "Audit the complete arXiv submission histories, through 2023-12-31, of Attention Is All You Need and Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. Read both history sections and reconcile their revision counts.",
+            "criteria": [
+                "For both papers, enumerate every version submitted before 2024-01-01 with version number and UTC calendar date, without omissions or duplicates.",
+                "Report total versions and total revisions separately for each paper; the original v1 submission is not a revision.",
+                "List the calendar years in which each paper was revised after v1, and identify the paper with more revisions.",
+                "Include both abstract-page URLs and browser evidence of the full history sections."
+            ]
+        },
+        {
+            "id": "Huggingface Hard--0",
+            "web_name": "Huggingface",
+            "web": "https://huggingface.co/models",
+            "capabilities": [
+                "constraints",
+                "comparison"
+            ],
+            "ques": "Compare sentence-transformers/all-MiniLM-L6-v2, sentence-transformers/all-mpnet-base-v2, and intfloat/e5-small-v2 for English retrieval. Select every model among these three that has embedding dimension at most 384, a documented default maximum input length of at least 512 tokens/word pieces, and an MIT or Apache-2.0 license.",
+            "criteria": [
+                "Inspect all three model cards and provide a table of full model ID, license ID, embedding dimension, and documented default truncation length, with a model-card URL per row.",
+                "Do not confuse embedding dimension, parameter count, transformer position capacity, and the documented sentence-encoder input limit.",
+                "For each model, explain which numerical or license constraint it satisfies or fails, then give the complete qualifying set.",
+                "For any selected E5 model, state the documented query and passage prefixes needed for retrieval. Do not run inference."
+            ]
+        },
+        {
+            "id": "Huggingface Hard--1",
+            "web_name": "Huggingface",
+            "web": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2",
+            "capabilities": [
+                "comparison",
+                "extraction"
+            ],
+            "ques": "Audit sentence-transformers/all-MiniLM-L6-v2 and sentence-transformers/all-mpnet-base-v2. Compare their model cards' truncation limits with sentence_bert_config.json and 1_Pooling/config.json, using the browser file viewer.",
+            "criteria": [
+                "Open both model cards and both named configuration files in each repository; include all six source URLs.",
+                "For each repository, report the card's default truncation length and sentence_bert_config.json max_seq_length, and say whether they agree.",
+                "Report word_embedding_dimension and every pooling_mode_* boolean present in each 1_Pooling/config.json, grouped by repository.",
+                "Explain which pooling mode is enabled and keep dimensions separate from maximum input length. Do not execute code or download model weights."
+            ]
+        },
+        {
+            "id": "Huggingface Hard--2",
+            "web_name": "Huggingface",
+            "web": "https://huggingface.co/datasets/stanfordnlp/sst2",
+            "capabilities": [
+                "stateful",
+                "comparison",
+                "extraction"
+            ],
+            "ques": "Use the stanfordnlp/sst2 dataset viewer to compare its train and validation splits. Inspect train, switch to validation, and then return to train. Do not substitute another SST-2 repository.",
+            "criteria": [
+                "Browser evidence must show train, validation, then train, with the active split visible each time.",
+                "Report exact train and validation row counts from the dataset card or viewer, not rounded values such as 67.3k.",
+                "For rows with idx 0 and 1 in each split, report the numeric label and corresponding sentiment name. Verify the mapping from the displayed schema/card.",
+                "Identify the viewer's data column names, provide split-specific source URLs, and finish with the train split selected."
+            ]
+        },
+        {
+            "id": "Huggingface Hard--3",
+            "web_name": "Huggingface",
+            "web": "https://huggingface.co/datasets/stanfordnlp/sst2",
+            "capabilities": [
+                "stateful",
+                "extraction"
+            ],
+            "ques": "In the stanfordnlp/sst2 train dataset viewer, collect every row with idx 95 through 104 inclusive. This crosses the default 100-row preview boundary. Use the viewer's next-page or row-navigation controls to inspect both sides of the boundary.",
+            "criteria": [
+                "Keep the train split selected and record browser evidence for rows on both sides of the page boundary; do not use an API or downloaded dataset.",
+                "Return exactly ten unique rows sorted by idx, each containing idx, numeric label, and sentiment name. Do not report row positions from another split.",
+                "Give the positive and negative counts for those ten rows and verify that they sum to ten.",
+                "Include viewer source URLs for the pages or row ranges used."
+            ]
+        },
+        {
+            "id": "GitHub Hard--0",
+            "web_name": "GitHub",
+            "web": "https://github.com/pallets/flask",
+            "capabilities": [
+                "comparison",
+                "extraction"
+            ],
+            "ques": "From the pallets/flask 3.1.0 release, trace the partitioned-session-cookie and secret-key-rotation features to their original issues and implementing pull requests. Distinguish a closed issue from a merged pull request.",
+            "criteria": [
+                "Find the 3.1.0 release notes and identify the exact configuration key introduced for each feature.",
+                "For each feature, open its linked original issue and implementing PR, and report their numbers, titles, URLs, and respective closed/merged states.",
+                "Verify the implementation relationship using the issue timeline or PR discussion; do not assume the issue number in the release notes is the implementation PR.",
+                "Include the release URL and keep the two feature-to-issue-to-PR mappings distinct. Do not post, react, or modify anything."
+            ]
+        },
+        {
+            "id": "GitHub Hard--1",
+            "web_name": "GitHub",
+            "web": "https://github.com/psf/requests",
+            "capabilities": [
+                "comparison",
+                "extraction"
+            ],
+            "ques": "Compare psf/requests v2.32.2 and v2.32.3 release notes. Trace the custom HTTPAdapter migration in v2.32.2 and both bug fixes in v2.32.3 to their linked pull requests.",
+            "criteria": [
+                "Open both release pages and report their release dates and source URLs.",
+                "For v2.32.2, distinguish the renamed private method, its new public replacement, and the separately deprecated older public method; include the migration PR number and URL.",
+                "For v2.32.3, enumerate both listed bug fixes and their distinct PR numbers/URLs. Keep the custom SSLContext and missing ssl-module problems separate.",
+                "Open all three linked PRs and verify each title and merged state. Do not infer merge status merely because a PR is closed."
+            ]
+        },
+        {
+            "id": "GitHub Hard--2",
+            "web_name": "GitHub",
+            "web": "https://github.com/pallets/flask",
+            "capabilities": [
+                "constraints",
+                "extraction"
+            ],
+            "ques": "Find the closed 3.1.0 milestone in pallets/flask and audit its complete closed-item inventory. Separate merged pull requests, unmerged closed pull requests, and closed issues.",
+            "criteria": [
+                "Verify the milestone title, closed state, closure date, and displayed open and closed item counts.",
+                "Enumerate every closed item's number, URL, and one of: merged PR, unmerged closed PR, or closed issue. Inspect ambiguous items individually and any additional pages if present.",
+                "Report totals for all three groups and reconcile their sum with the milestone's closed-item count; no duplicates or omitted items.",
+                "Do not assume every closed item is an issue or every closed PR was merged. Include the milestone URL."
+            ]
+        },
+        {
+            "id": "GitHub Hard--3",
+            "web_name": "GitHub",
+            "web": "https://github.com/pallets/flask",
+            "capabilities": [
+                "stateful",
+                "comparison",
+                "extraction"
+            ],
+            "ques": "Use GitHub's file viewer to compare pallets/flask pyproject.toml at tags 2.3.3 and 3.1.0. Open the file at 2.3.3, switch the ref to 3.1.0, and report the packaging requirement changes without substituting the main branch.",
+            "criteria": [
+                "Browser evidence must show the same pyproject.toml path at both specified tags, with 2.3.3 inspected before 3.1.0. Finish on the 3.1.0 file.",
+                "Report requires-python and the full direct project.dependencies list for each tag, including version constraints and any environment markers.",
+                "Identify changed dependency constraints and dependencies added or removed; distinguish direct runtime dependencies from build-system requirements and optional extras.",
+                "State whether the declared Python requirement permits Python 3.8 in each tag. Include both tag-specific file URLs. Do not execute code."
+            ]
+        }
+    ]
+}
