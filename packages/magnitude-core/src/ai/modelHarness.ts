@@ -20,6 +20,7 @@ import { parsePlannerResponse, PlannerResponseError, memoryUpdatesSchema, type P
 import { anthropicOutputFormat, plannerSchema, usesStructuredOutput } from './structuredOutput';
 import { ModelResponseError } from './modelResponseError';
 import { DEFAULT_BASETEN_MODEL } from './baseten';
+import { checkOperation, operationOptions } from '@/common/operation';
 
 interface ModelHarnessOptions {
     llm: LLMClient;
@@ -104,6 +105,7 @@ export class ModelHarness {
     }
 
     private async _withUsage<T>(invoke: (collector: Collector) => Promise<T>): Promise<T> {
+        checkOperation();
         // Scope usage to this invocation, including failed parses and provider
         // retries. A shared cumulative collector can double-count concurrent calls.
         const collector = new Collector('model-call');
@@ -111,6 +113,7 @@ export class ModelHarness {
             try {
                 return await invoke(collector);
             } finally {
+                checkOperation();
                 // Even syntactically complete JSON must not hide a provider
                 // refusal or a truncated batch. Neither gets a format retry.
                 if (this.options.llm.provider === 'anthropic' || this.options.llm.provider === 'claude-code') {
@@ -287,19 +290,22 @@ export class ModelHarness {
                         await this.baml.CreatePartialRecipe(
                             context, task, data,
                             this.options.llm.provider === 'claude-code',
-                            { tb, collector, clientRegistry }
+                            { tb, collector, clientRegistry, signal: operationOptions().signal }
                         );
                     } catch (error) {
+                        checkOperation();
                         if (!(error instanceof BamlValidationError)) throw error;
                         bamlRejected = true;
                     }
                     // BAML can fail first or coerce invalid fields. Diagnose its
                     // raw response locally, but never bypass either validator.
+                    checkOperation();
                     const plan = parsePlannerResponse(collector.last?.rawLlmResponse ?? null, actionVocabulary);
                     if (bamlRejected) throw new PlannerResponseError('$: BAML parser rejected the response despite local validation; return a plan matching the supplied schema');
                     return plan;
                 });
             } catch (error) {
+                checkOperation();
                 if (!(error instanceof PlannerResponseError)) throw error;
                 this.logger.warn({ attempt: attempt + 1, diagnostic: error.diagnostic }, attempt === 0
                     ? 'Invalid planner response; retrying once with the same observations'
@@ -337,7 +343,7 @@ export class ModelHarness {
             bamlScreenshot,
             domContent,
             this.options.llm.provider === 'claude-code',
-            { tb, collector, clientRegistry }
+            { tb, collector, clientRegistry, signal: operationOptions().signal }
         ));
 
         return schema.parse(schema instanceof z.ZodObject ? resp : resp.data);
@@ -362,7 +368,7 @@ export class ModelHarness {
             context,
             query,
             this.options.llm.provider === 'claude-code',
-            { tb, collector, clientRegistry }
+            { tb, collector, clientRegistry, signal: operationOptions().signal }
         ));
         
         return schema.parse(schema instanceof z.ZodObject ? resp : resp.data);

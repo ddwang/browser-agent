@@ -1,0 +1,86 @@
+---
+title: 'Cancellation and deadlines'
+description: 'Bound operations without allowing late responses to start new actions.'
+---
+
+Magnitude accepts a per-operation `AbortSignal` and an absolute `deadline` (Unix time in milliseconds). Neither option has a default limit. A deadline applies to the entire call, including all steps in `act([...])`, model requests, retries, pauses, and cooldowns.
+
+```typescript
+const controller = new AbortController();
+const result = agent.act('Complete the requested workflow', {
+  signal: controller.signal,
+  deadline: Date.now() + 60_000,
+});
+
+// On request cancellation:
+controller.abort('Request disconnected');
+
+try {
+  await result;
+} catch (error) {
+  // Translate the typed error into your application's tool outcome.
+  // A cancelled submission may already have reached the site.
+}
+```
+
+## Supported operations
+
+| Method | Operation options |
+| --- | --- |
+| `act(taskOrSteps, options)` | Alongside `prompt`, `data`, and `memory` |
+| `query(query, schema, options)` | Alongside memory-rendering options such as `history` |
+| `extract(instructions, schema, options)` | Third argument |
+| `nav(url, options)` | Second argument |
+| `exec(action, memory, options)` | Third argument; pass `undefined` for no memory |
+
+Existing calls without these options remain valid. `maxActions` and browser recovery settings remain agent-level configuration; cancellation does not replace those limits.
+
+## Cancellation versus idle
+
+Cancellation rejects the public call promptly and prevents subsequent Magnitude action dispatch. Model requests receive the cancellation signal; built-in waits stop. Late model output is discarded without saving thoughts or notes.
+
+An already-dispatched browser command or custom action might still be running. During that time, `agent.busy` remains `true`, and another operation rejects with `AgentBusyError`. `agent.whenIdle()` resolves only after the tracked work settles; it does not rethrow the operation's error.
+
+Keep the session out of your reuse pool until `whenIdle()` resolves. Await it in your session scheduler, not in a request handler that must return at its deadline. If custom work never settles, the agent stays busy; retire that session instead of forcing reuse. The lock is per agent, not a cross-process or shared-browser lock.
+
+Only one operation can run on an agent at a time. Nested calls to `act`, `query`, `extract`, `nav`, or `exec` from a custom action also reject as busy. Use the action's connector or underlying API for its implementation.
+
+`stop()` cancels the current operation and closes the browser context. Per-operation cancellation leaves the context open. `stop()` does not wait indefinitely for uncooperative custom work, and it does not make that work safe to reuse.
+
+## Typed outcomes
+
+Import these errors from `@ddwang/magnitude-core`:
+
+| Error | Meaning |
+| --- | --- |
+| `OperationCancelledError` | The caller cancelled, or `stop()` cancelled the operation. `cause` contains the supplied reason. |
+| `OperationDeadlineError` | The operation reached its `deadline`. |
+| `AgentBusyError` | Another operation is active or draining. |
+| `ActionLimitError` | The existing action budget was exhausted. |
+| `BrowserBlockedError` | Browser recovery stopped execution. Inspect `block.reason`, `block.evidence`, and optional `block.retryAt`. |
+
+If a site's `Retry-After` requires waiting beyond the operation deadline, Magnitude returns `BrowserBlockedError` with the original `retryAt`. It does not shorten the cooldown and retry early. An ordinary wait that reaches the deadline returns `OperationDeadlineError`.
+
+## Custom actions and connectors
+
+Action resolvers receive `signal` and `deadline` alongside `input`, `agent`, and `memory`. Connector `beforeAction`, `onTaskStart`, `collectObservations`, and `getInstructions` hooks receive the same controls as an optional final argument.
+
+Forward the signal to cancellable APIs, check it before side effects after asynchronous preparation, and await all work you start:
+
+```typescript
+import { createAction } from '@ddwang/magnitude-core';
+
+const action = createAction({
+  name: 'fetch-record',
+  resolver: async ({ signal }) => {
+    const response = await fetch('https://example.com/record', { signal });
+    const record = await response.text();
+    signal?.throwIfAborted();
+    return record;
+  },
+});
+```
+
+Magnitude cannot cancel arbitrary detached promises, undo a submission already sent, or control direct calls through `agent.page`, `agent.context`, or an external desktop interface. Built-in input cleanup may release a pressed mouse button or modifier after cancellation. A click or navigation already sent to Playwright may finish while the agent drains.
+
+Applications must verify consequential outcomes before retrying. Login verification, 2FA, persisted sessions, and unknown-outcome reporting remain application responsibilities. Cancellation preserves memory already recorded; choose explicitly whether to reuse it on a later call. No memory migration is required.

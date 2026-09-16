@@ -10,6 +10,7 @@ import { narrateAgent, narrateBrowserAgent } from "./narrator";
 import { PartitionOptions, partitionHtml, MarkdownSerializerOptions, serializeToMarkdown } from 'magnitude-extract';
 import EventEmitter from "eventemitter3";
 import { retry } from "@/common/retry";
+import { checkOperation, type OperationOptions } from '@/common/operation';
 
 // export interface StartAgentWithWebOptions {
 //     agentBaseOptions?: Partial<AgentOptions>;
@@ -60,16 +61,20 @@ export interface BrowserAgentEvents {
 }
 
 async function getFullPageContent(page: Page): Promise<string> {
+    checkOperation();
     // 1. Get all iframe element handles
     const iframeHandles = await page.locator('iframe').elementHandles();
 
     // 2. Iterate through each iframe handle
     for (const iframeHandle of iframeHandles) {
+        checkOperation();
         // 3. Get the Frame object for the iframe
         const frame = await iframeHandle.contentFrame();
+        checkOperation();
         if (frame) {
             // 4. Get the HTML content of the iframe
             const iframeContent = await frame.content();
+            checkOperation();
 
             // 5. Use evaluate to replace the iframe element with its content.
             // We pass the content as an argument to avoid issues with string escaping.
@@ -101,6 +106,7 @@ async function getFullPageContent(page: Page): Promise<string> {
     }
 
     // 6. Return the final, modified page content
+    checkOperation();
     return page.content();
 }
 
@@ -124,12 +130,19 @@ export class BrowserAgent extends Agent {
         return this.require(BrowserConnector).getHarness().context;
     }
 
-    async nav(url: string): Promise<void> {
-        this.browserAgentEvents.emit('nav', url);
-        await this.require(BrowserConnector).getHarness().navigate(url);
+    async nav(url: string, options: OperationOptions = {}): Promise<void> {
+        return this.runOperation(options, async () => {
+            this.browserAgentEvents.emit('nav', url);
+            checkOperation();
+            await this.require(BrowserConnector).getHarness().navigate(url);
+        });
     }
 
-    async extract<T extends Schema>(instructions: string, schema: T): Promise<z.infer<T>> {
+    async extract<T extends Schema>(instructions: string, schema: T, options: OperationOptions = {}): Promise<z.infer<T>> {
+        return this.runOperation(options, () => this._extract(instructions, schema));
+    }
+
+    private async _extract<T extends Schema>(instructions: string, schema: T): Promise<z.infer<T>> {
         this.browserAgentEvents.emit('extractStarted', instructions, schema);
         //const htmlContent = await this.page.content();
         const htmlContent = await retry(
@@ -168,8 +181,10 @@ export class BrowserAgent extends Agent {
         const markdown = serializeToMarkdown(result, markdownOptions);
 
         const screenshot = await this.require(BrowserConnector).getHarness().screenshot();
+        checkOperation();
         const data = await this.models.extract(instructions, schema, screenshot, markdown);
 
+        checkOperation();
         this.browserAgentEvents.emit('extractDone', instructions, data);
 
         return data;

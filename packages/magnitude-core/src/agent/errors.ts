@@ -1,4 +1,3 @@
-import { FailureDescriptor } from "../common";
 
 export interface AgentErrorOptions {
     variant?: string,
@@ -49,6 +48,28 @@ export class ActionLimitError extends AgentError {
     constructor(public readonly limit: number) {
         super(`Task did not finish within ${limit} actions`, { variant: 'action_limit' });
         this.name = 'ActionLimitError';
+    }
+}
+
+export class OperationCancelledError extends AgentError {
+    constructor(reason?: unknown) {
+        super('Operation cancelled', { variant: 'cancelled' });
+        this.name = 'OperationCancelledError';
+        this.cause = reason;
+    }
+}
+
+export class OperationDeadlineError extends AgentError {
+    constructor(public readonly deadline: number) {
+        super('Operation deadline exceeded', { variant: 'deadline' });
+        this.name = 'OperationDeadlineError';
+    }
+}
+
+export class AgentBusyError extends AgentError {
+    constructor() {
+        super('Agent has an active operation; await whenIdle() before reusing it', { variant: 'busy' });
+        this.name = 'AgentBusyError';
     }
 }
 

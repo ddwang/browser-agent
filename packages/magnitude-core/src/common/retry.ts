@@ -1,3 +1,5 @@
+import { checkOperation, operationSleep } from './operation';
+
 type RetryOptions = {
     retries?: number;
     delay?: number;
@@ -35,9 +37,13 @@ export async function retry<T>(
     const multiplier = exponential === true ? 2 : exponential || 1;
 
     for (let attempt = 0; attempt <= retries; attempt++) {
+        checkOperation();
         try {
-            return await fn();
+            const result = await fn();
+            checkOperation();
+            return result;
         } catch (error) {
+            checkOperation();
             if (!(error instanceof Error)) {
                 throw new Error(`Non-Error thrown: ${String(error)}`);
             }
@@ -58,7 +64,7 @@ export async function retry<T>(
                     delay * Math.pow(multiplier, attempt),
                     maxDelay
                 );
-                await new Promise(resolve => setTimeout(resolve, currentDelay));
+                await operationSleep(currentDelay);
             }
         }
     }
@@ -66,4 +72,3 @@ export async function retry<T>(
     // Unreachable
     return null as any;
 }
-

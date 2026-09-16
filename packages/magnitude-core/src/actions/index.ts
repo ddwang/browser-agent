@@ -2,12 +2,15 @@ import type { Agent } from "@/agent"
 import type { AgentMemory } from '@/memory/agentMemory';
 import { RenderableContent } from "@/memory/observation";
 import { z, Schema, ZodTypeAny } from "zod"
+import type { OperationOptions } from '@/common/operation';
+
+export type ActionContext<T> = { input: T; agent: Agent; memory?: AgentMemory } & OperationOptions;
 
 export interface ActionDefinition<T> {
     name: string;
     description?: string;
     schema: Schema<T>;
-    resolver: ({ input, agent, memory }: { input: T, agent: Agent, memory?: AgentMemory }) => Promise<void | RenderableContent>;
+    resolver: (context: ActionContext<T>) => Promise<void | RenderableContent>;
     render: (action: T) => string
 }
 
@@ -16,7 +19,7 @@ export function createAction<S extends ZodTypeAny>(
         name: string;
         description?: string;
         schema?: S;
-        resolver: ({ input, agent, memory }: { input: z.infer<S>; agent: Agent; memory?: AgentMemory }) => Promise<void | RenderableContent>;
+        resolver: (context: ActionContext<z.infer<S>>) => Promise<void | RenderableContent>;
         render?: (action: z.infer<S>) => string
     }
 ): ActionDefinition<z.infer<S>> {

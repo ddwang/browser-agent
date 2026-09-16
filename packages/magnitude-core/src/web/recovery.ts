@@ -133,9 +133,12 @@ export class BrowserRecovery {
         }
     }
 
-    waitDuration(requestedMs: number, now = Date.now()): number {
+    waitDuration(requestedMs: number, now = Date.now(), deadline?: number): number {
         const duration = Math.max(requestedMs, (this.block?.retryAt ?? now) - now, 0);
         if (this.block?.reason === 'rate_limit') {
+            if (deadline !== undefined && (this.block.retryAt ?? now) >= deadline) {
+                throw new BrowserBlockedError({ ...this.block, evidence: `${this.block.evidence}; Retry-After exceeds the remaining operation deadline` });
+            }
             if (this.rateWaitMs + duration > this.maxRateLimitWaitMs) {
                 throw new BrowserBlockedError({ ...this.block, evidence: `${this.block.evidence}; required wait exceeds the remaining rate-limit wait budget` });
             }

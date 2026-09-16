@@ -1,6 +1,7 @@
 import { ActionDefinition } from '@/actions';
 import { Observation } from '@/memory/observation';
 import type { Action } from '@/actions/types';
+import type { OperationOptions } from '@/common/operation';
 
 export interface AgentConnector {
     // Unique connector ID (required)
@@ -8,16 +9,16 @@ export interface AgentConnector {
     // Event handlers (optional)
     onStart?(): Promise<void>;
     onStop?(): Promise<void>;
-    beforeAction?(action: Action): Promise<void>;
-    onTaskStart?(): void;
+    beforeAction?(action: Action, options?: OperationOptions): Promise<void>;
+    onTaskStart?(options?: OperationOptions): void;
     // Action space (optional)
     getActionSpace?(): ActionDefinition<any>[];
     // State retrieval (WIP)
     //viewState?(): Promise<Observation>;
     // Observation retrieval (WIP)
-    collectObservations?(): Promise<Observation[]>;
+    collectObservations?(options?: OperationOptions): Promise<Observation[]>;
     // TODO: unify ^ prob return ObservableData from both viewState/collectObservations? or union/option of either
-    getInstructions?(): Promise<void | string>;
+    getInstructions?(options?: OperationOptions): Promise<void | string>;
 }
 
 //export { BrowserConnector, BrowserConnectorOptions } from './browserConnector';

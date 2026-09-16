@@ -79,6 +79,8 @@ await agent.stop();
 
 ## Methods
 
+All execution methods accept per-operation cancellation and deadline options. See [Cancellation and deadlines](/advanced/cancellation) for error types and session reuse requirements.
+
 ### `act(description, options?)`
 
 Executes one or more browser actions based on a natural language description. Magnitude interprets the description and determines the necessary interactions (clicks, types, scrolls, etc.).
@@ -114,7 +116,7 @@ await agent.act("Enter {username} into the user field", {
   </ResponseField>
 </Expandable>
 
-### `nav(url: string)`
+### `nav(url: string, options?)`
 
 Navigates to a URL.
 
@@ -131,7 +133,7 @@ const page = agent.page;
 const context = agent.context;
 ```
 
-### `extract(instructions, schema)`
+### `extract(instructions, schema, options?)`
 
 The `BrowserAgent` provides a powerful `extract()` method that uses AI to pull structured data from a webpage based on your instructions and a Zod schema.
 
@@ -175,5 +177,4 @@ await agent.stop();
 
 ### `stop()`
 
-Closes the browser and cleans up any resources used by the agent.
-
+Cancels active execution, closes the browser context, and cleans up resources. Use a per-operation signal to cancel without closing the context.
