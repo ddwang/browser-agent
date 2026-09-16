@@ -1,6 +1,7 @@
 import { retryOnError, retryOnErrorIsSuccess } from "@/common";
 import logger from "@/logger";
 import { Page } from "playwright";
+import { operationSleep } from '@/common/operation';
 
 export class CursorVisual {
     /**
@@ -37,7 +38,7 @@ export class CursorVisual {
         await this._drawVisual(x, y, false);
         // The pointer visual takes 0.3s on the transition, but awaiting script evaluation does not wait for this to complete.
         // So we wait 300ms manually.
-        await this.page.waitForTimeout(300);
+        await operationSleep(300);
     }
 
     async setupOnPage(): Promise<void> {

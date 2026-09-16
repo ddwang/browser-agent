@@ -82,6 +82,7 @@
                         "group": "Advanced",
                         "pages": [
                             "advanced/memory",
+                            "advanced/cancellation",
                             "advanced/roles"
                         ]
                     },

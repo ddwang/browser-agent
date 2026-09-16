@@ -2,6 +2,7 @@ import { Page, Request, Response } from 'playwright';
 import sharp from 'sharp';
 import logger from '@/logger';
 import { Logger } from 'pino';
+import { checkOperation, operationSleep } from '@/common/operation';
 
 // Maximum wait time for page stability in ms
 const DEFAULT_PAGE_STABILITY_TIMEOUT = 5000;
@@ -118,6 +119,7 @@ export class PageStabilityAnalyzer {
      * @param timeout Maximum time to wait for network stability
      */
     async waitForNetworkStability(timeout?: number): Promise<void> {
+        checkOperation();
         const maxWaitTime = timeout ?? this.options.maximumWaitPageLoadTime;
         const start = Date.now();
         this.log("Checking network stability");
@@ -257,7 +259,7 @@ export class PageStabilityAnalyzer {
             // Wait for idle time
             const startTime = Date.now();
             while (true) {
-                await new Promise(resolve => setTimeout(resolve, 100)); // Sleep 100ms
+                await operationSleep(100);
                 const now = Date.now();
 
                 if (pendingRequests.size === 0 &&
@@ -285,6 +287,7 @@ export class PageStabilityAnalyzer {
      * @param timeout Maximum time to wait for stability in ms
      */
     async waitForVisualStability(timeout: number = DEFAULT_PAGE_STABILITY_TIMEOUT): Promise<void> {
+        checkOperation();
         const start = Date.now();
 
         this.log("Checking visual stability");
@@ -297,7 +300,7 @@ export class PageStabilityAnalyzer {
             const deadline = start + timeout;
             while (Date.now() < deadline) {
                 this.log(`Waiting for ${this.options.checkInterval}`);
-                await this.page.waitForTimeout(this.options.checkInterval);
+                await operationSleep(this.options.checkInterval);
                 this.log(`Done waiting`);
 
                 try {
@@ -325,6 +328,7 @@ export class PageStabilityAnalyzer {
 
                     lastScreenshot = currentScreenshot;
                 } catch (e) {
+                    checkOperation();
                     this.log(`Screenshot/comparison error: ${e instanceof Error ? e.message : String(e)}`);
                     stabilityCount = 0;
                 }
@@ -333,6 +337,7 @@ export class PageStabilityAnalyzer {
             // If we exit the loop without returning, we timed out
             this.log("Visual stability check timed out");
         } catch (e) {
+            checkOperation();
             this.log(`Visual stability check error: ${e instanceof Error ? e.message : String(e)}`);
         } finally {
             const totalTime = (Date.now() - start) / 1000;
@@ -345,6 +350,7 @@ export class PageStabilityAnalyzer {
      * @param timeout Maximum time to wait for page load
      */
     async waitForStability(timeout?: number): Promise<void> {
+        checkOperation();
         const maxWaitTime = timeout ?? this.options.maximumWaitPageLoadTime;
         const startTime = Date.now();
         this.lastStart = startTime;
@@ -375,13 +381,14 @@ export class PageStabilityAnalyzer {
             if (now < minWaitDeadline) {
                 const remainingMinWait = minWaitDeadline - now;
                 this.log(`Waiting additional ${remainingMinWait}ms to meet minimum wait time`);
-                await new Promise(resolve => setTimeout(resolve, remainingMinWait));
+                await operationSleep(remainingMinWait);
             }
 
             const totalTime = Date.now() - startTime;
             this.log(`Page stability wait completed in ${totalTime}ms`);
 
         } catch (e) {
+            checkOperation();
             this.log(`Error during stability wait: ${e instanceof Error ? e.message : String(e)}`);
         }
     }

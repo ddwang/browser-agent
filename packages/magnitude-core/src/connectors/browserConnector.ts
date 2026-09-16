@@ -16,6 +16,8 @@ import { createHash } from 'node:crypto';
 import z from 'zod';
 import { BrowserBlockedError, BrowserRecovery, detectBlock, diagnosticUrl, retryAt, type HttpDiagnostic, type RecoveryOptions } from '@/web/recovery';
 import { retry } from '@/common/retry';
+import { checkOperation, currentOperation, drainAll, operationSleep } from '@/common/operation';
+import { OperationCancelledError } from '@/agent/errors';
 
 // export type BrowserOptions = ({ instance: Browser } | { launchOptions?: LaunchOptions }) & {
 //     contextOptions?: BrowserContextOptions;
@@ -159,6 +161,7 @@ export class BrowserConnector implements AgentConnector {
     };
 
     async beforeAction(action: Action): Promise<void> {
+        checkOperation();
         // Only browser-owned actions are subject to browser guards. Notebook,
         // task completion and caller-defined actions have independent semantics.
         if (!webActions.some(definition => definition.name === action.variant)) {
@@ -172,6 +175,7 @@ export class BrowserConnector implements AgentConnector {
                 await this.wait(0);
             }
         }
+        checkOperation();
         this.pendingAction = action;
     }
 
@@ -181,16 +185,20 @@ export class BrowserConnector implements AgentConnector {
     }
 
     async wait(requestedMs: number): Promise<void> {
+        checkOperation();
         if (!Number.isFinite(requestedMs) || requestedMs < 0) throw new Error('Wait must be a finite, nonnegative duration');
-        const duration = this.options.recovery === false ? requestedMs : this.recovery.waitDuration(requestedMs);
+        const operation = currentOperation();
+        const duration = this.options.recovery === false ? requestedMs : this.recovery.waitDuration(requestedMs, Date.now(), operation?.deadline);
         if (!duration) return;
+        const controller = new AbortController();
+        const abort = () => controller.abort(operation?.signal.reason);
+        operation?.signal.addEventListener('abort', abort, { once: true });
+        this.cancelWait = () => controller.abort(new OperationCancelledError('Browser stopped'));
         this.recovery.waitUntil = Date.now() + duration;
         try {
-            await new Promise<void>((resolve, reject) => {
-                const timer = setTimeout(resolve, duration);
-                this.cancelWait = () => { clearTimeout(timer); reject(new Error('Browser wait cancelled')); };
-            });
+            await operationSleep(duration, controller.signal);
         } finally {
+            operation?.signal.removeEventListener('abort', abort);
             this.cancelWait = undefined;
             this.recovery.waitUntil = undefined;
         }
@@ -214,7 +222,8 @@ export class BrowserConnector implements AgentConnector {
         if (!this.harness || !this.harness.page) {
             throw new Error("WebInteractionConnector: Harness or Page is not available for capturing state.");
         }
-        const [screenshot, tabs] = await Promise.all([
+        checkOperation();
+        const [screenshot, tabs] = await drainAll<[Image, TabState]>([
             this.harness.screenshot(),
             this.harness.retrieveTabState()
         ]);
@@ -252,6 +261,7 @@ export class BrowserConnector implements AgentConnector {
         const page = this.harness.page;
         const capturedUrl = page.url();
         const currentState = await this.captureCurrentState();
+        checkOperation();
         const observations: Observation[] = [];
 
         const currentTabs = currentState.tabs;
@@ -301,6 +311,7 @@ export class BrowserConnector implements AgentConnector {
                 scroll: [scrollX, scrollY], scrollers, input,
             };
         });
+        checkOperation();
         if (page !== this.harness.page || page.url() !== capturedUrl
             || currentTabs.tabs[currentTabs.activeTab]?.url !== capturedUrl) {
             throw new Error('Page navigated while capturing observations');

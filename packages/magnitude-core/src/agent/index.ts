@@ -8,7 +8,8 @@ import { AgentEvents } from "@/common/events";
 import { AgentConnector } from '@/connectors';
 import { Observation, RenderableContent } from '@/memory/observation';
 import { LLMClient } from "@/ai/types";
-import { ActionLimitError, AgentError } from "@/agent/errors";
+import { ActionLimitError, AgentBusyError, AgentError } from "@/agent/errors";
+import { Operation, checkOperation, currentOperation, operationOptions, untilAborted, type OperationOptions } from '@/common/operation';
 import { AgentMemory, AgentMemoryOptions, MemoryRenderOptions } from "@/memory";
 import { ActionDefinition } from "@/actions";
 import { taskActions } from "@/actions/taskActions";
@@ -32,7 +33,7 @@ export interface AgentOptions {
     //executor?: GroundingClient;
 }
 
-export interface ActOptions {
+export interface ActOptions extends OperationOptions {
     prompt?: string // additional task-level system prompt instructions
     // TODO: reimpl, or maybe for tc agent specifically
 	data?: RenderableContent,//string | Record<string, string>
@@ -77,6 +78,9 @@ export class Agent {
     private doneActing: boolean;
     private _paused: boolean = false;
     private _pauseResolve: (() => void) | null = null;
+    private activeOperation?: Operation;
+    private idle: Promise<void> = Promise.resolve();
+    private stopped = false;
 
     protected latestTaskMemory: AgentMemory;// | null = null;
 
@@ -158,6 +162,8 @@ export class Agent {
     }
 
     async start(): Promise<void> { 
+        checkOperation();
+        if (this.busy) throw new AgentBusyError();
         // Register telemetry if enabled - do on start instead of cons to prevent weird subclass event issues
         if (this.options.telemetry) telemetrifyAgent(this);
 
@@ -170,6 +176,7 @@ export class Agent {
             if (connector.onStart) await connector.onStart(); 
         }
         this.events.emit('start');
+        this.stopped = false;
         logger.info("Agent: All connectors started.");
 
         // logger.info("Making initial observations...");
@@ -190,7 +197,49 @@ export class Agent {
         return actionDefinition;
     }
     
-    async exec(action: Action, memory?: AgentMemory): Promise<unknown> {
+    /** True until underlying work settles, including after a cancelled caller returns. */
+    get busy(): boolean {
+        return this.activeOperation !== undefined;
+    }
+
+    whenIdle(): Promise<void> {
+        return this.idle;
+    }
+
+    protected async runOperation<T>(options: OperationOptions, fn: () => Promise<T>): Promise<T> {
+        const inherited = currentOperation();
+        if (inherited?.owner === this) inherited.check();
+        if (this.busy) throw new AgentBusyError();
+        if (this.stopped) throw new AgentError('Agent is stopped; call start() before using it');
+        const operation = new Operation(this, options);
+        this.activeOperation = operation;
+        let markIdle!: () => void;
+        this.idle = new Promise<void>(resolve => { markIdle = resolve; });
+        const worker = operation.run(async () => {
+            try {
+                operation.check();
+                const result = await fn();
+                operation.check();
+                return result;
+            } catch (error) {
+                operation.check(); // Preserve the cancellation/deadline cause through downstream errors.
+                throw error;
+            }
+        });
+        const settled = worker.finally(() => {
+            operation.dispose();
+            this.activeOperation = undefined;
+            markIdle();
+        });
+        return untilAborted(settled, operation.signal);
+    }
+
+    async exec(action: Action, memory?: AgentMemory, options: OperationOptions = {}): Promise<unknown> {
+        return this.runOperation(options, () => this._exec(action, memory));
+    }
+
+    private async _exec(action: Action, memory?: AgentMemory): Promise<unknown> {
+        checkOperation();
         /**
          * Execute an action that belongs to this Agent's action space.
          * Provide memory to record the action taken, its results, and any connector observations to that memory.
@@ -212,14 +261,20 @@ export class Agent {
         }
 
         const memoryOnly = memoryActions.includes(actionDefinition);
-        if (!memoryOnly) for (const connector of this.connectors) await connector.beforeAction?.(action);
+        if (!memoryOnly) for (const connector of this.connectors) {
+            await connector.beforeAction?.(action, operationOptions());
+            checkOperation();
+        }
         this.events.emit('actionStarted', action);
+        checkOperation();
         
         const data = await actionDefinition.resolver(
-            { input: parsed.data, agent: this, memory }
+            { input: parsed.data, agent: this, memory, ...operationOptions() }
         );
 
+        checkOperation();
         this.events.emit('actionDone', action);
+        checkOperation();
 
         if (memory) {
             // Record action taken
@@ -240,9 +295,11 @@ export class Agent {
     }
 
     protected async _recordConnectorObservations(memory: AgentMemory) {
+        checkOperation();
         for (const connector of this.connectors) {
             // could do Promise.all if matters
-            const connObservations = connector.collectObservations ? await connector.collectObservations() : [];
+            const connObservations = connector.collectObservations ? await connector.collectObservations(operationOptions()) : [];
+            checkOperation();
             //observations.push(...connObservations);
             for (const obs of connObservations) {
                 memory.recordObservation(obs);
@@ -257,6 +314,10 @@ export class Agent {
     }
 
     async act(taskOrSteps: string | string[], options: ActOptions = {}): Promise<void> {
+        return this.runOperation(options, () => this._runAct(taskOrSteps, options));
+    }
+
+    private async _runAct(taskOrSteps: string | string[], options: ActOptions): Promise<void> {
         const instructions = [
             ...(this.options.prompt ? [this.options.prompt] : []),
             ...(options.prompt ? [options.prompt] : []),
@@ -271,8 +332,10 @@ export class Agent {
             // trace overall task
             await (traceAsync('multistep', async (steps: string[], options: ActOptions) => {
                 for (const step of steps) {
+                    checkOperation();
                     this.events.emit('actStarted', step, options);
                     await this._traceAct(step, taskMemory, options);
+                    checkOperation();
                     this.events.emit('actDone', step, options);
                 }
             })(steps, options));
@@ -284,11 +347,12 @@ export class Agent {
             this.events.emit('actStarted', task, options);
 
             await this._traceAct(task, taskMemory, options);
+            checkOperation();
             this.events.emit('actDone', task, options);
         }
     }
 
-    async _traceAct(task: string, memory: AgentMemory, options: ActOptions = {}) {
+    private async _traceAct(task: string, memory: AgentMemory, options: ActOptions = {}) {
         // memory not serializable to trace so bake it
         await (traceAsync('act', async (task: string) => {
             await this._act(task, memory, options);
@@ -296,13 +360,16 @@ export class Agent {
     }
 
     private async _buildContext(memory: AgentMemory, options?: MemoryRenderOptions): Promise<AgentContext> {
+        checkOperation();
         const messages = await memory.render(options);
+        checkOperation();
 
         const connectorInstructions: ConnectorInstructions[] = [];
 
         for (const connector of this.connectors) {
             if (connector.getInstructions) {
-                const instructions = await connector.getInstructions();
+                const instructions = await connector.getInstructions(operationOptions());
+                checkOperation();
 
                 if (instructions) {
                     connectorInstructions.push({
@@ -321,9 +388,13 @@ export class Agent {
         };
     }
 
-    async _act(description: string, memory: AgentMemory, options: ActOptions = {}): Promise<void> {
+    private async _act(description: string, memory: AgentMemory, options: ActOptions = {}): Promise<void> {
+        checkOperation();
         this.doneActing = false;
-        for (const connector of this.connectors) connector.onTaskStart?.();
+        for (const connector of this.connectors) {
+            connector.onTaskStart?.(operationOptions());
+            checkOperation();
+        }
         logger.info(`Act: ${description}`);
 
         // for now simply add data to task
@@ -347,6 +418,7 @@ export class Agent {
         // Initialize task memory and record initial observations
         // Combine any agent-level and task-level instructions
         
+        checkOperation();
         this.latestTaskMemory = memory;
 
         // record initial observations
@@ -356,6 +428,7 @@ export class Agent {
 
         let actionCount = 0;
         while (true) {
+            checkOperation();
             if (actionCount >= this.options.maxActions) throw new ActionLimitError(this.options.maxActions);
             // Removed direct screenshot/tabState access here; it's part of memoryContext via connectors
             logger.info(`Creating partial recipe`);
@@ -376,6 +449,7 @@ export class Agent {
                             dataContentParts,
                             this.actions 
                         ));
+                        checkOperation();
                         if (actions.length === 0) {
                             // Empty action list behavior - default wait else ... err? what if not in action space?
                             //actions.push()
@@ -393,6 +467,7 @@ export class Agent {
                     }
                 );
             } catch (error: unknown) {
+                checkOperation();
                 logger.error(`Error planning actions: ${error instanceof Error ? error.message : String(error)}`);
                 /**
                  * (1) Failure to conform to JSON
@@ -412,6 +487,7 @@ export class Agent {
             
             // Could be emitted in memory and bubbled up instead of recordThought was called in more places
             this.events.emit('thought', reasoning);
+            checkOperation();
             memory.recordThought(reasoning);
 
             // Persist the review using the existing audited, budgeted note action.
@@ -419,9 +495,10 @@ export class Agent {
             const batch = [...memoryUpdates.map(note => ({ variant: 'memory:note', ...note })), ...actions];
             for (const action of batch) {
                 await this._waitIfPaused();
+                checkOperation();
                 if (this.doneActing) break;
                 if (actionCount >= this.options.maxActions) throw new ActionLimitError(this.options.maxActions);
-                const result = await this.exec(action, memory);
+                const result = await this._exec(action, memory);
                 actionCount++;
                 // Preserve the current page when an update fails. Successful
                 // earlier writes remain; the next plan sees the failure result.
@@ -448,31 +525,43 @@ export class Agent {
         //this.currentTaskMemory = null;
     }
 
-    async query<T extends z.Schema>(query: string, schema: T, options?: MemoryRenderOptions): Promise<z.infer<T>> {
-        // Record observations in case no act() was used beforehand
-        await this._recordConnectorObservations(this.latestTaskMemory);
-        const memoryContext = await this._buildContext(this.memory, options);
-        return await this.models.query(memoryContext, query, schema);
+    async query<T extends z.Schema>(query: string, schema: T, options: MemoryRenderOptions & OperationOptions = {}): Promise<z.infer<T>> {
+        return this.runOperation(options, async () => {
+            // Record observations in case no act() was used beforehand
+            await this._recordConnectorObservations(this.latestTaskMemory);
+            const memoryContext = await this._buildContext(this.memory, options);
+            return await this.models.query(memoryContext, query, schema);
+        });
     }
 
     async queueDone() {
+        checkOperation();
         this.doneActing = true;
     }
 
     private async _waitIfPaused(): Promise<void> {
+        checkOperation();
         if (!this._paused) return;
         this.events.emit('pause');
+        checkOperation();
+        if (!this._paused) return; // A pause listener may have resumed synchronously.
         logger.info("Agent: Paused");
-        await new Promise<void>((resolve) => {
-            this._pauseResolve = resolve;
-        });
+        try {
+            await untilAborted(new Promise<void>((resolve) => {
+                this._pauseResolve = resolve;
+            }), currentOperation()?.signal);
+        } finally {
+            this._pauseResolve = null;
+        }
     }
 
     pause(): void {
+        checkOperation();
         this._paused = true;
     }
 
     resume(): void {
+        checkOperation();
         this._paused = false;
         if (this._pauseResolve) {
             this._pauseResolve();
@@ -487,13 +576,18 @@ export class Agent {
     }
 
     async stop() {
+        checkOperation();
         /**
          * Stop the agent and close the browser context.
          * May be called asynchronously and interrupt an agent in the middle of a action sequence.
          */
+        this.stopped = true;
+        this.activeOperation?.cancel('Agent stopped');
         this.doneActing = true;
         if (this._paused) {
-            this.resume(); // unblock so loop can see doneActing and exit
+            this._paused = false;
+            this._pauseResolve?.();
+            this._pauseResolve = null;
         }
         logger.info("Agent: Stopping connectors...");
         for (const connector of this.connectors) {

@@ -8,6 +8,7 @@ import { TabManager, TabState } from "./tabs";
 import { DOMTransformer } from "./transformer";
 import { Image } from '@/memory/image';
 import EventEmitter from "eventemitter3";
+import { checkOperation, drainAll, operationSleep } from '@/common/operation';
 //import { StateComponent } from "@/facets";
 
 
@@ -117,11 +118,15 @@ export class WebHarness { // implements StateComponent
         const retries = 3;
 
         for (let attempt = 0; attempt <= retries; attempt++) {
+            checkOperation();
             try {
                 dpr = await this.page.evaluate(() => window.devicePixelRatio)
+                checkOperation();
                 buffer = await this.page.screenshot({ type: 'png', ...options }, );
+                checkOperation();
                 break; // Success! Exit the retry loop
             } catch (err) {
+                checkOperation();
                 // A few possibilities:
                 // 1. Target page, context or browser has been closed
                 // 2. Page navigation in progress
@@ -169,6 +174,7 @@ export class WebHarness { // implements StateComponent
         }
 
         for (const chunk of chunks) {
+            checkOperation();
             if (chunk == '<enter>') {
                 await this.page.keyboard.press('Enter');
             } else if (chunk == '<tab>') {
@@ -277,20 +283,27 @@ export class WebHarness { // implements StateComponent
         clickCount?: number;
         delay?: number;
     }) {
-        await Promise.all([
+        checkOperation();
+        await drainAll([
             this.visualizer.moveVirtualCursor(x, y),
             this.page.mouse.move(x, y, { steps: 20 })
         ])
         // await this.visualizer.moveVirtualCursor(x, y);
         // await this.page.mouse.move(x, y, { steps: 20 });
-        await this.visualizer.hideAll(); // hide / show pointer because no-pointer is not always consistent and visualizer can block click
-        await this.page.mouse.click(x, y);
-        await this.visualizer.showAll();
+        checkOperation();
+        await this.visualizer.hideAll(); // The visualizer can block clicks.
+        try {
+            checkOperation();
+            await this.page.mouse.click(x, y);
+        } finally {
+            await this.visualizer.showAll();
+        }
     }
 
     async hover({ x, y }: { x: number, y: number }, options?: { transform: boolean }) {
         if (options?.transform ?? true) ({ x, y } = await this.transformCoordinates({ x, y }));
-        await Promise.all([
+        checkOperation();
+        await drainAll([
             this.visualizer.moveVirtualCursor(x, y),
             this.page.mouse.move(x, y, { steps: 20 })
         ]);
@@ -305,10 +318,16 @@ export class WebHarness { // implements StateComponent
 
     async doubleClick({ x, y }: { x: number, y: number }, options?: { transform: boolean }) {
         if (options?.transform ?? true) ({ x, y } = await this.transformCoordinates({ x, y }));
+        checkOperation();
         await this.visualizer.moveVirtualCursor(x, y);
+        checkOperation();
         await this.visualizer.hideAll();
-        await this.page.mouse.dblclick(x, y);
-        await this.visualizer.showAll();
+        try {
+            checkOperation();
+            await this.page.mouse.dblclick(x, y);
+        } finally {
+            await this.visualizer.showAll();
+        }
         await this.waitForStability();
     }
 
@@ -318,18 +337,23 @@ export class WebHarness { // implements StateComponent
 
         //console.log(`Dragging: (${x1}, ${y1}) -> (${x2}, ${y2})`);
         
+        checkOperation();
         await this.page.mouse.move(x1, y1, { steps: 1 });
+        checkOperation();
         await this.page.mouse.down();
-        await this.visualizer.moveVirtualCursor(x1, y1);
-        await this.page.waitForTimeout(500);
-        
-        await Promise.all([
-            this.page.mouse.move(x2, y2, { steps: 20 }),
-            this.visualizer.moveVirtualCursor(x2, y2)
-        ]);
-        // await this.page.mouse.move(x2, y2, { steps: 100 });
-        // await this.visualizer.visualizeAction(x2, y2);
-        await this.page.mouse.up();
+        try {
+            checkOperation();
+            await this.visualizer.moveVirtualCursor(x1, y1);
+            await operationSleep(500);
+            checkOperation();
+            await drainAll([
+                this.page.mouse.move(x2, y2, { steps: 20 }),
+                this.visualizer.moveVirtualCursor(x2, y2)
+            ]);
+        } finally {
+            // Release input state even on cancellation; an already-sent drag cannot be undone.
+            await this.page.mouse.up();
+        }
         await this.waitForStability();
         //await this.visualizer.removeActionVisuals();
     }
@@ -345,59 +369,75 @@ export class WebHarness { // implements StateComponent
         if (options?.transform ?? true) ({ x, y } = await this.transformCoordinates({ x, y }));
         //console.log(`Post transform: ${x}, ${y}`);
         await this.visualizer.moveVirtualCursor(x, y);
-        this._click(x, y);
+        await this._click(x, y);
         await this._type(content);
         await this.waitForStability();
     }
     
     async scroll({ x, y, deltaX, deltaY }: { x: number, y: number, deltaX: number, deltaY: number }, options?: { transform: boolean }) {
         if (options?.transform ?? true) ({ x, y } = await this.transformCoordinates({ x, y }));
+        checkOperation();
         await this.visualizer.moveVirtualCursor(x, y);
+        checkOperation();
         await this.page.mouse.move(x, y);
+        checkOperation();
         await this.page.mouse.wheel(deltaX, deltaY);
         await this.waitForStability();
     }
 
     async switchTab({ index }: { index: number }) {
+        checkOperation();
         await this.tabs.switchTab(index);
         await this.waitForStability();
     }
 
     async newTab() {
+        checkOperation();
         await this.context.newPage();
         // Reasonable default and less confusing than white about:blank page
         await this.navigate("https://google.com");
     }
 
     async navigate(url: string) {
+        checkOperation();
         // Only wait for DOM content on goto since we handle waiting for network idle etc ourselves
         await this.page.goto(url, { waitUntil: 'domcontentloaded' });
         await this.waitForStability();
     }
 
     async selectAll() {
+        checkOperation();
         await this.page.keyboard.down('ControlOrMeta');
-        await this.page.keyboard.press('KeyA');
-        await this.page.keyboard.up('ControlOrMeta');
+        try {
+            checkOperation();
+            await this.page.keyboard.press('KeyA');
+        } finally {
+            await this.page.keyboard.up('ControlOrMeta');
+        }
     }
 
     async enter() {
+        checkOperation();
         await this.page.keyboard.press('Enter')
     }
 
     async backspace() {
+        checkOperation();
         await this.page.keyboard.press('Backspace')
     }
 
     async tab() {
+        checkOperation();
         await this.page.keyboard.press('Tab')
     }
 
     async goBack() {
+        checkOperation();
         await this.page.goBack();
     }
 
     async escape() {
+        checkOperation();
         await this.page.keyboard.press('Escape');
     }
 
@@ -420,7 +460,9 @@ export class WebHarness { // implements StateComponent
     }
 
     async waitForStability(timeout?: number): Promise<void> {
+        checkOperation();
         await this.stability.waitForStability(timeout);
+        checkOperation();
     }
 
     // async applyTransformations() {

@@ -1,4 +1,5 @@
 import { createAction } from ".";
+import { operationSleep } from '@/common/operation';
 import { z } from "zod";
 import { DesktopConnector } from "@/connectors/desktopConnector";
 
@@ -144,7 +145,7 @@ export const desktopWaitAction = createAction({
         seconds: z.number().describe("Seconds to wait"),
     }),
     resolver: async ({ input: { seconds }, agent }) => {
-        await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+        await operationSleep(seconds * 1000);
     },
     render: ({ seconds }) => `◴ wait ${seconds}s`
 });

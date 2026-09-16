@@ -1,4 +1,5 @@
 import logger from "@/logger";
+import { checkOperation, operationSleep } from './operation';
 
 // export interface RetryOptions {
 //     errorSubstrings: string[],
@@ -42,6 +43,7 @@ export async function retryOnErrorIsSuccess<T>(
         await retryOnError(fnToRetry, retryOptions);
         return true;
     } catch (error) {
+        checkOperation();
         return false;
     }
 }
@@ -65,9 +67,13 @@ export async function retryOnError<T>(
     }
 
     for (let attempt = 0; attempt <= options.retryLimit; attempt++) {
+        checkOperation();
         try {
-            return await fnToRetry();
+            const result = await fnToRetry();
+            checkOperation();
+            return result;
         } catch (error: any) {
+            checkOperation();
             lastError = error;
 
             const errorMessage = String(error?.message ?? error);
@@ -89,7 +95,7 @@ export async function retryOnError<T>(
                 }
             }
         }
-        await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+        if (attempt < options.retryLimit) await operationSleep(options.delayMs);
     }
 
     throw lastError;
