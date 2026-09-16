@@ -4,10 +4,15 @@ import type { LLMClient } from './types';
 import type { ActionDefinition } from '@/actions';
 import { actionInputSchema } from '@/actions/util';
 import { memoryUpdatesSchema } from './plannerResponse';
+import { DEFAULT_BASETEN_BASE_URL } from './baseten';
 
 type JsonSchema = Record<string, any>;
 
 export function usesStructuredOutput(client: LLMClient): boolean {
+    if (client.provider === 'baseten') {
+        return client.options.structuredOutputs ?? (client.options.baseUrl === undefined
+            || client.options.baseUrl.replace(/\/+$/, '') === DEFAULT_BASETEN_BASE_URL);
+    }
     if (client.provider !== 'anthropic') return false;
     // Unknown/older models and OAuth providers keep their existing transport.
     return client.options.structuredOutputs ?? /^claude-(?:haiku-4-5|sonnet-(?:4-5|4-6|5)|opus-(?:4-5|4-6|4-7|4-8|5))(?:-\d{8})?$/.test(client.options.model);

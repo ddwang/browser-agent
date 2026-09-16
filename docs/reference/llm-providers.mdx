@@ -4,7 +4,9 @@ description: "Instructions for configuring LLMs with different providers"
 icon: "cloudy"
 ---
 
-You can specify which LLM to use in `magnitude.config.ts`. If no LLM is configured and `ANTHROPIC_API_KEY` is available, Magnitude will use Claude Sonnet 4 automatically.
+You can specify which LLM to use in `magnitude.config.ts`. With no explicit LLM,
+browser agents select Haiku 4.5 if `ANTHROPIC_API_KEY` is set, Luna if
+`OPENAI_API_KEY` is set, or DeepSeek V4.1 Flash if `BASETEN_API_KEY` is set, in that order.
 
 
 <Warning>While a variety of LLM providers are supported, many of them do NOT have any visually grounded model. See [LLM Configuration](/customizing/llm-configuration) for details.</Warning>
@@ -97,10 +99,17 @@ interface AnthropicClient {
     options: {
         model: string,
         apiKey?: string,
-        temperature?: number
+        temperature?: number,
+        maxTokens?: number // includes thinking and response text; omitted uses the transport default
     }   
 }
 ```
+
+`maxTokens` is also available for `claude-code` clients. Set this ceiling
+explicitly for reasoning-heavy requests; thinking and the final answer share
+the [output budget](https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost#cost-control).
+The SDK does not change omitted limits. The WebVoyager CLI separately defaults
+new Sonnet 5 judge runs to 32,768 output tokens.
 
 ## OpenAI
 
@@ -134,6 +143,65 @@ interface OpenAIClient {
     }
 }
 ```
+
+## Baseten
+
+Set `BASETEN_API_KEY` and select Baseten explicitly when other provider keys are
+also present. This provider uses Baseten's managed
+[Model APIs](https://docs.baseten.co/inference/model-apis/overview), not a custom
+deployment's predict endpoint.
+
+```typescript
+const agent = await startBrowserAgent({
+    llm: {
+        provider: 'baseten',
+        options: {
+            model: 'deepseek-ai/DeepSeek-V4.1-Flash',
+            reasoningEffort: 'high',
+            maxTokens: 8192
+        }
+    }
+});
+```
+
+[DeepSeek V4.1 Flash](https://www.baseten.co/library/deepseek-v41-flash/) accepts
+text and screenshots. Other Baseten models can be selected by their model slug,
+but browser actions require image input and coordinate grounding; API compatibility
+does not establish browser-task performance.
+
+```typescript
+interface BasetenClient {
+    provider: 'baseten',
+    options: {
+        model: string,
+        apiKey?: string, // defaults to BASETEN_API_KEY, never OPENAI_API_KEY
+        baseUrl?: string, // defaults to https://inference.baseten.co/v1
+        temperature?: number, // no client-side default
+        reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max',
+        maxTokens?: number, // includes reasoning and visible output
+        structuredOutputs?: boolean // defaults on for hosted Model APIs
+    }
+}
+```
+
+Reasoning levels are model-dependent. DeepSeek V4.1 Flash accepts `none`, `low`,
+`high` (the API default), or `max`; other levels are rejected before a request.
+Unset sampling and output limits use the model's API defaults. Reasoning content
+is separate from the final JSON plan and is not executed.
+
+Hosted Model APIs use [native JSON-schema output](https://docs.baseten.co/inference/structured-outputs)
+for supported planner, query, and extraction schemas. Set `structuredOutputs: false` to opt out. Custom
+`baseUrl` endpoints retain prompt-only output unless explicitly enabled with
+`structuredOutputs: true`. The adapter reuses a conservative schema subset;
+open maps, recursive schemas, and other unsupported shapes retain prompt-only
+behavior through the existing BAML path. Provider errors do not trigger
+a silent downgrade. Value constraints and notebook semantics are still checked
+locally, with the same single planner-format retry.
+
+Schema enforcement constrains output structure, not factual correctness or source
+validity. It can add schema-processing overhead, and complex/custom schemas may
+not be supported. Test a fresh candidate before comparing browser performance;
+previous prompt-only benchmark runs remain separate historical results.
 
 ## OpenAI-compatible (OpenRouter, Ollama, etc.)
 

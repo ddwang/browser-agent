@@ -7,7 +7,7 @@ export type BrowserAgentRole= 'act' | 'extract' | 'query';
 export const allBrowserAgentRoles: BrowserAgentRole[] = ['act', 'extract', 'query'] as const;
 
 // Approximately mirrors https://docs.boundaryml.com/ref/llm-client-providers
-export type LLMClient = (AnthropicClient | ClaudeCodeClient | BedrockClient | GoogleAIClient | GoogleVertexClient | OpenAIClient | OpenAIGenericClient | AzureOpenAIClient) &
+export type LLMClient = (AnthropicClient | ClaudeCodeClient | BedrockClient | GoogleAIClient | GoogleVertexClient | OpenAIClient | BasetenClient | OpenAIGenericClient | AzureOpenAIClient) &
     { roles?: BrowserAgentRole[] };
 
 export interface AnthropicClient {
@@ -17,6 +17,8 @@ export interface AnthropicClient {
         apiKey?: string,
         temperature?: number,
         promptCaching?: boolean,
+        /** Maximum output tokens, including thinking. Omitted uses the transport default. */
+        maxTokens?: number,
         /** Default: enabled for known supporting models. False retains prompt-only JSON. */
         structuredOutputs?: boolean,
     }   
@@ -29,6 +31,8 @@ export interface ClaudeCodeClient {
         model: string,
         temperature?: number,
         promptCaching?: boolean,
+        /** Maximum output tokens, including thinking. Omitted uses the transport default. */
+        maxTokens?: number,
     }   
 }
 
@@ -81,6 +85,25 @@ export interface OpenAIClient {
         reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max',
         /** Includes both visible output and reasoning tokens. */
         maxCompletionTokens?: number,
+    }
+}
+
+export interface BasetenClient {
+    provider: 'baseten',
+    options: {
+        model: string,
+        /** Defaults to BASETEN_API_KEY; never falls back to OPENAI_API_KEY. */
+        apiKey?: string,
+        /** Defaults to https://inference.baseten.co/v1. */
+        baseUrl?: string,
+        /** Omitted by default to preserve model-specific sampling defaults. */
+        temperature?: number,
+        /** Model-dependent. DeepSeek V4.1 Flash accepts none, low, high, or max. */
+        reasoningEffort?: OpenAIClient['options']['reasoningEffort'],
+        /** Baseten max_tokens: includes both visible output and reasoning tokens. */
+        maxTokens?: number,
+        /** Default: enabled on the hosted Model API; custom base URLs require opt-in. */
+        structuredOutputs?: boolean,
     }
 }
 

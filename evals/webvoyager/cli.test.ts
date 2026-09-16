@@ -10,7 +10,7 @@ afterAll(() => rmSync(directory, { recursive: true, force: true }));
 async function cli(args: string[], failure = '', env: Record<string, string> = {}) {
     const child = Bun.spawn([process.execPath, '--preload', join(import.meta.dir, 'fixtures/mock-runtime.ts'), join(import.meta.dir, 'wv.ts'), ...args], {
         cwd: directory,
-        env: { ...process.env, ANTHROPIC_API_KEY: 'test-only-not-a-real-key', OPENAI_API_KEY: 'test-only-not-a-real-key', EVAL_TEST_FAILURE: failure, ...env },
+        env: { ...process.env, ANTHROPIC_API_KEY: 'test-only-not-a-real-key', OPENAI_API_KEY: 'test-only-not-a-real-key', BASETEN_API_KEY: 'test-only-not-a-real-key', EVAL_TEST_FAILURE: failure, ...env },
         stdout: 'pipe', stderr: 'pipe',
     });
     const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
@@ -26,7 +26,7 @@ test('dry run validates the harder suite and preserves its criteria without crea
     expect(new Set(manifest.tasks.map((task: any) => task.web_name)).size).toBe(3);
     expect(manifest.tasks.every((task: any) => task.criteria.length >= 3 && task.capabilities.length >= 2)).toBe(true);
     expect(manifest.actor).toEqual({ provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.2 });
-    expect(manifest.judge).toEqual({ provider: 'anthropic', model: 'claude-sonnet-5', temperature: 1 });
+    expect(manifest.judge).toEqual({ provider: 'anthropic', model: 'claude-sonnet-5', temperature: 1, maxTokens: 32_768 });
     expect(manifest.limits).toEqual({ maxActions: 100, maxJudgeBytes: 24 * 1024 * 1024 });
     expect(existsSync(runDir)).toBe(false);
 });
@@ -44,10 +44,10 @@ test('OpenAI actor defaults to Luna with an independent Sonnet judge', async () 
     expect(result.code).toBe(0);
     const manifest = JSON.parse(result.stdout);
     expect(manifest.actor).toEqual({ provider: 'openai', model: 'gpt-5.6-luna', reasoningEffort: 'medium' });
-    expect(manifest.judge).toEqual({ provider: 'anthropic', model: 'claude-sonnet-5', temperature: 1 });
+    expect(manifest.judge).toEqual({ provider: 'anthropic', model: 'claude-sonnet-5', temperature: 1, maxTokens: 32_768 });
 });
 
-test('OpenAI options are recorded and non-OpenAI actors reject them', async () => {
+test('OpenAI options are recorded and Claude actors reject them', async () => {
     const flags = ['--model', 'gpt-5.6-terra', '--temperature', '0.3', '--reasoning-effort', 'none', '--max-completion-tokens', '8192'];
     const result = await cli(['run', 'Allrecipes--0', '--provider', 'openai', ...flags, '--dry-run']);
     expect(result.code).toBe(0);
@@ -57,10 +57,37 @@ test('OpenAI options are recorded and non-OpenAI actors reject them', async () =
     for (const flags of [['--reasoning-effort', 'low'], ['--max-completion-tokens', '100']]) {
         const bad = await cli(['run', 'Allrecipes--0', ...flags, '--dry-run']);
         expect(bad.code).toBe(1);
-        expect(bad.stderr).toContain('require --provider openai');
+        expect(bad.stderr).toContain('requires --provider openai');
     }
     expect((await cli(['run', 'Allrecipes--0', '--provider', 'openai', '--max-completion-tokens', '0', '--dry-run'])).code).toBe(1);
     expect((await cli(['run', 'Allrecipes--0', '--provider', 'openai', '--reasoning-effort', 'unknown', '--dry-run'])).code).toBe(1);
+});
+
+test('Baseten defaults to DeepSeek V4.1 Flash with independent Sonnet judging', async () => {
+    const args = ['run', 'Allrecipes--0', '--provider', 'baseten', '--dry-run'];
+    const result = await cli(args);
+    expect(result.code).toBe(0);
+    const manifest = JSON.parse(result.stdout);
+    expect(manifest.actor).toEqual({ provider: 'baseten', model: 'deepseek-ai/DeepSeek-V4.1-Flash', reasoningEffort: 'high' });
+    expect(manifest.judge).toEqual({ provider: 'anthropic', model: 'claude-sonnet-5', temperature: 1, maxTokens: 32_768 });
+    const configured = await cli([...args, '--temperature', '0', '--reasoning-effort', 'none', '--max-tokens', '8192']);
+    expect(JSON.parse(configured.stdout).actor).toEqual({ provider: 'baseten', model: 'deepseek-ai/DeepSeek-V4.1-Flash',
+        temperature: 0, reasoningEffort: 'none', maxTokens: 8192 });
+    const other = await cli([...args, '--model', 'another-vision-model']);
+    expect(JSON.parse(other.stdout).actor).toEqual({ provider: 'baseten', model: 'another-vision-model' });
+    for (const effort of ['minimal', 'medium', 'xhigh']) {
+        const invalid = await cli([...args, '--reasoning-effort', effort]);
+        expect(invalid.code).toBe(1);
+        expect(invalid.stderr).toContain('reasoning effort must be none, low, high, or max');
+    }
+    for (const flags of [['--max-completion-tokens', '8192'], ['--max-tokens', '0']]) {
+        expect((await cli([...args, ...flags])).code).toBe(1);
+    }
+    for (const provider of ['anthropic', 'openai']) {
+        const invalid = await cli(['run', 'Allrecipes--0', '--provider', provider, '--max-tokens', '8192', '--dry-run']);
+        expect(invalid.code).toBe(1);
+        expect(invalid.stderr).toContain('--max-tokens requires --provider baseten');
+    }
 });
 
 test('Claude Code retains its default judge provider and permits an explicit override', async () => {
@@ -70,28 +97,32 @@ test('Claude Code retains its default judge provider and permits an explicit ove
     expect(JSON.parse((await cli(['run', 'Allrecipes--0', '--provider', 'openai', '--judge-provider', 'claude-code', '--dry-run'])).stdout).judge.provider).toBe('claude-code');
 });
 
-test('mixed provider workers receive the saved configs and resume rejects changed reasoning', async () => {
-    const runDir = join(directory, 'openai-workers');
-    const args = ['run', 'Allrecipes--0', '--run-dir', runDir, '--provider', 'openai', '--max-completion-tokens', '8192'];
-    const result = await cli([...args, '--eval'], 'mixed-providers');
+for (const provider of ['openai', 'baseten']) test(`${provider} workers receive saved configs and resume rejects changed options`, async () => {
+    const runDir = join(directory, `${provider}-workers`);
+    const tokenFlag = provider === 'baseten' ? '--max-tokens' : '--max-completion-tokens';
+    const scenario = `mixed-providers-${provider}`;
+    const args = ['run', 'Allrecipes--0', '--run-dir', runDir, '--provider', provider, tokenFlag, '8192'];
+    const result = await cli([...args, '--eval'], scenario);
     expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: '' });
     expect(JSON.parse(readFileSync(join(runDir, 'summary.json'), 'utf8')).successRate).toBe(1);
-    const changed = await cli([...args, '--reasoning-effort', 'high', '--failed'], 'mixed-providers');
-    expect(changed.code).toBe(1);
-    expect(changed.stderr).toContain('Run configuration differs');
-    const judge = await cli(['eval', '--run-dir', runDir, '--replace'], 'mixed-providers', { OPENAI_API_KEY: '' });
+    for (const flags of [['--reasoning-effort', 'low'], [tokenFlag, '4096'], ['--judge-max-tokens', '16384']]) {
+        const changed = await cli([...args, ...flags, '--failed'], scenario);
+        expect(changed.code).toBe(1);
+        expect(changed.stderr).toContain('Run configuration differs');
+    }
+    const judge = await cli(['eval', '--run-dir', runDir, '--replace'], scenario, { OPENAI_API_KEY: '', BASETEN_API_KEY: '' });
     expect({ code: judge.code, stderr: judge.stderr }).toEqual({ code: 0, stderr: '' });
 });
 
-test('both credentials are checked before a scored OpenAI run writes files or starts workers', async () => {
-    for (const missing of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY']) {
-        const runDir = join(directory, `missing-${missing}`);
-        const result = await cli(['run', 'Allrecipes--0', '--provider', 'openai', '--run-dir', runDir, '--eval'], '', { [missing]: '' });
+for (const provider of ['openai', 'baseten']) test(`both credentials are checked before a scored ${provider} run writes files or starts workers`, async () => {
+    for (const missing of [provider === 'baseten' ? 'BASETEN_API_KEY' : 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY']) {
+        const runDir = join(directory, `${provider}-missing-${missing}`);
+        const result = await cli(['run', 'Allrecipes--0', '--provider', provider, '--run-dir', runDir, '--eval'], '', { [missing]: '' });
         expect(result.code).toBe(1);
         expect(result.stderr).toContain(`Set ${missing}`);
         expect(existsSync(runDir)).toBe(false);
     }
-    const unscored = await cli(['run', 'Allrecipes--0', '--provider', 'openai', '--run-dir', join(directory, 'openai-no-judge')], '', { ANTHROPIC_API_KEY: '' });
+    const unscored = await cli(['run', 'Allrecipes--0', '--provider', provider, '--run-dir', join(directory, `${provider}-no-judge`)], '', { ANTHROPIC_API_KEY: '' });
     expect(unscored.code).toBe(0);
 });
 
@@ -235,6 +266,33 @@ test('other judge models retain temperature zero', async () => {
     const result = await cli(['run', 'Allrecipes--0', '--judge-model', 'claude-sonnet-4-5-20250929', '--dry-run']);
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout).judge).toEqual({ provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', temperature: 0 });
+});
+
+test('judge output budgets are configurable independently of actor limits', async () => {
+    for (const provider of ['anthropic', 'claude-code']) {
+        const result = await cli(['run', 'Allrecipes--0', '--judge-provider', provider, '--judge-max-tokens', '16384', '--dry-run']);
+        expect(result.code).toBe(0);
+        const manifest = JSON.parse(result.stdout);
+        expect(manifest.judge).toEqual({ provider, model: 'claude-sonnet-5', temperature: 1, maxTokens: 16384 });
+        expect(manifest.actor).toEqual({ provider: 'anthropic', model: 'claude-haiku-4-5-20251001', temperature: 0.2 });
+        expect(manifest.limits).toEqual({ maxActions: 100, maxJudgeBytes: 24 * 1024 * 1024 });
+    }
+    for (const value of ['0', '-1', '1.5', 'no-limit']) {
+        expect((await cli(['run', 'Allrecipes--0', '--judge-max-tokens', value, '--dry-run'])).code).toBe(1);
+    }
+});
+
+test('saved judge configurations without an explicit token cap are not upgraded by eval', async () => {
+    const runDir = join(directory, 'legacy-judge-budget');
+    expect((await cli(['run', 'Allrecipes--0', '--run-dir', runDir, '--eval'])).code).toBe(0);
+    const path = join(runDir, 'manifest.json');
+    const manifest = JSON.parse(readFileSync(path, 'utf8'));
+    delete manifest.judge.maxTokens;
+    writeJson(path, manifest);
+    const before = readFileSync(path, 'utf8');
+    const result = await cli(['eval', '--run-dir', runDir, '--replace'], 'legacy-judge-budget');
+    expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: '' });
+    expect(readFileSync(path, 'utf8')).toBe(before);
 });
 
 test('action and judge payload budgets are configurable and recorded', async () => {

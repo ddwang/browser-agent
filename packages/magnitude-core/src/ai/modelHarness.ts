@@ -19,6 +19,7 @@ import { MultiMediaContentPart } from "@/memory/rendering";
 import { parsePlannerResponse, PlannerResponseError, memoryUpdatesSchema, type PlannerResponse } from './plannerResponse';
 import { anthropicOutputFormat, plannerSchema, usesStructuredOutput } from './structuredOutput';
 import { ModelResponseError } from './modelResponseError';
+import { DEFAULT_BASETEN_MODEL } from './baseten';
 
 interface ModelHarnessOptions {
     llm: LLMClient;
@@ -74,7 +75,8 @@ export class ModelHarness {
         const registry = new ClientRegistry();
         registry.addLlmClient(
             'Magnus', 
-            this.options.llm.provider === 'claude-code' ? 'anthropic' : this.options.llm.provider,
+            this.options.llm.provider === 'claude-code' ? 'anthropic'
+                : this.options.llm.provider === 'baseten' ? 'openai-generic' : this.options.llm.provider,
             options,
             'DefaultRetryPolicy'
         );
@@ -84,12 +86,17 @@ export class ModelHarness {
 
     private clientForSchema(schema: Schema): ClientRegistry {
         if (!usesStructuredOutput(this.options.llm)) return this.cr;
+        // Reuse the conservative schema subset across providers; all original
+        // value constraints and notebook semantics remain locally validated.
         const format = anthropicOutputFormat(schema);
         if (!format) {
             this.logger.debug('Schema requires prompt-only output; native structured output cannot represent it');
             return this.cr;
         }
-        return this.createClientRegistry({ ...this.clientOptions, output_config: { format } });
+        const outputOptions = this.options.llm.provider === 'baseten'
+            ? { response_format: { type: 'json_schema', json_schema: { name: 'magnitude_response', strict: true, schema: format.schema } } }
+            : { output_config: { format } };
+        return this.createClientRegistry({ ...this.clientOptions, ...outputOptions });
     }
 
     describeModel(): string {
@@ -111,7 +118,7 @@ export class ModelHarness {
                     try { reason = collector.last?.calls.at(-1)?.httpResponse?.body.json()?.stop_reason; }
                     catch { /* A transport error may not contain JSON. */ }
                     if (reason === 'refusal' || reason === 'max_tokens') throw new ModelResponseError(reason);
-                } else if (this.options.llm.provider === 'openai') {
+                } else if (this.options.llm.provider === 'openai' || this.options.llm.provider === 'baseten') {
                     let choice: any;
                     try { choice = collector.last?.calls.at(-1)?.httpResponse?.body.json()?.choices?.[0]; }
                     catch { /* A transport error may not contain JSON. */ }
@@ -147,11 +154,11 @@ export class ModelHarness {
                     cacheReadInputTokens = usage.cache_read_input_tokens ?? 0;
                 }
             } catch { /* Non-JSON error response; use per-call usage if available. */ }
-        } else if (this.options.llm.provider === 'openai') {
+        } else if (this.options.llm.provider === 'openai' || this.options.llm.provider === 'baseten') {
             try {
                 const usage = call.httpResponse?.body.json()?.usage;
                 if (usage) {
-                    // OpenAI includes cached input in prompt_tokens and reasoning
+                    // Both providers include cached input in prompt_tokens and reasoning
                     // output in completion_tokens. Neither should be counted twice.
                     cacheReadInputTokens = usage.prompt_tokens_details?.cached_tokens ?? 0;
                     cacheWriteInputTokens = usage.prompt_tokens_details?.cache_write_tokens ?? 0;
@@ -171,7 +178,11 @@ export class ModelHarness {
         const isLuna = /^gpt-5\.6-luna(?:-\d{4}-\d{2}-\d{2})?$/.test(model);
 
         // Get cost if known
-        const knownCostMap: Record<string, { inputTokens: number, outputTokens: number, cacheWriteInputTokens?: number, cacheReadInputTokens?: number }> = {
+        const knownCostMap: Record<string, { inputTokens: number, outputTokens: number, cacheWriteInputTokens?: number, cacheReadInputTokens?: number }> = this.options.llm.provider === 'baseten' ? {
+            // Baseten Model API rates, verified 2026-09-15. Do not inherit other providers' prices.
+            // https://www.baseten.co/library/deepseek-v41-flash/
+            [DEFAULT_BASETEN_MODEL]: { inputTokens: 0.30, outputTokens: 1.20, cacheReadInputTokens: 0.03 },
+        } : {
             // TODO: track cached savings on Gemini
             'gemini-2.5-pro': { inputTokens: 1.25, outputTokens: 10.0 },
             'gemini-2.5-flash': { inputTokens: 0.30, outputTokens: 2.50 },
@@ -200,7 +211,7 @@ export class ModelHarness {
         let cacheReadInputTokenCost: number | undefined;
 
         for (const [name, costs] of Object.entries(knownCostMap)) {
-            if (name === 'gpt-5.6-luna' ? isLuna : model.includes(name)) {
+            if (this.options.llm.provider === 'baseten' ? model === name : name === 'gpt-5.6-luna' ? isLuna : model.includes(name)) {
                 inputTokenCost = costs.inputTokens / 1_000_000;
                 outputTokenCost = costs.outputTokens / 1_000_000;
                 cacheReadInputTokenCost = costs.cacheReadInputTokens ? costs.cacheReadInputTokens / 1_000_000 : undefined;

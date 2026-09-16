@@ -4,7 +4,7 @@ import { createAction } from '@/actions';
 import { webActions } from '@/actions/webActions';
 import { anthropicOutputFormat, plannerSchema, usesStructuredOutput } from './structuredOutput';
 
-test('native output is automatic only for known supported direct Anthropic models', () => {
+test('Anthropic native output is automatic only for known supported direct models', () => {
     for (const model of ['claude-haiku-4-5-20251001', 'claude-sonnet-5', 'claude-opus-4-6']) {
         expect(usesStructuredOutput({ provider: 'anthropic', options: { model } })).toBe(true);
         expect(usesStructuredOutput({ provider: 'anthropic', options: { model, structuredOutputs: false } })).toBe(false);
@@ -15,6 +15,19 @@ test('native output is automatic only for known supported direct Anthropic model
     expect(usesStructuredOutput({ provider: 'anthropic', options: { model: 'future-custom-model', structuredOutputs: true } })).toBe(true);
     expect(usesStructuredOutput({ provider: 'claude-code', options: { model: 'claude-sonnet-5' } })).toBe(false);
     expect(usesStructuredOutput({ provider: 'openai', options: { model: 'claude-sonnet-5' } })).toBe(false);
+});
+
+test('Baseten hosted Model APIs enable native output with an explicit custom-endpoint opt-in', () => {
+    for (const model of ['deepseek-ai/DeepSeek-V4.1-Flash', 'zai-org/GLM-5.3-Flash', 'future-hosted-model']) {
+        for (const baseUrl of [undefined, 'https://inference.baseten.co/v1', 'https://inference.baseten.co/v1/']) {
+            expect(usesStructuredOutput({ provider: 'baseten', options: { model, baseUrl } })).toBe(true);
+            expect(usesStructuredOutput({ provider: 'baseten', options: { model, baseUrl, structuredOutputs: false } })).toBe(false);
+        }
+    }
+    for (const baseUrl of ['http://127.0.0.1:8080/v1', 'https://inference.baseten.co/v1/custom', 'https://proxy.example/v1']) {
+        expect(usesStructuredOutput({ provider: 'baseten', options: { model: 'custom', baseUrl } })).toBe(false);
+        expect(usesStructuredOutput({ provider: 'baseten', options: { model: 'custom', baseUrl, structuredOutputs: true } })).toBe(true);
+    }
 });
 
 test('wire schema uses existing action definitions, including primitive and nested payloads', () => {
