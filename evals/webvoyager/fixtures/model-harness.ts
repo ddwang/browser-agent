@@ -5,7 +5,7 @@ import { ModelHarness } from '../../../packages/magnitude-core/src/ai/modelHarne
 import { type AgentContext } from '../../../packages/magnitude-core/src/ai/baml_client';
 import { createAction } from '../../../packages/magnitude-core/src/actions';
 import { Image } from '../../../packages/magnitude-core/src/memory/image';
-import type { ModelUsage } from '../../../packages/magnitude-core/src/ai/types';
+import type { AnthropicClient, ModelUsage } from '../../../packages/magnitude-core/src/ai/types';
 import { PlannerResponseError } from '../../../packages/magnitude-core/src/ai/plannerResponse';
 import { ModelResponseError } from '../../../packages/magnitude-core/src/ai/modelResponseError';
 import sharp from 'sharp';
@@ -32,7 +32,7 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request) 
 const context: AgentContext = { connectorInstructions: [], observationContent: [{ role: 'user', cacheControl: false, content: ['A button is visible at x=12.'] }] };
 const vocabulary = [createAction({ name: 'click', schema: z.object({ x: z.number() }), resolver: async () => {} })];
 
-async function fixture(sequence: Reply[], providerRetry = false) {
+async function fixture(sequence: Reply[], providerRetry = false, options: Partial<AnthropicClient['options']> = {}) {
     replies = [...sequence]; requests = [];
     let registryBuilds = 0;
     class FixtureHarness extends ModelHarness {
@@ -44,7 +44,7 @@ async function fixture(sequence: Reply[], providerRetry = false) {
             return registry;
         }
     }
-    const harness = new FixtureHarness({ llm: { provider: 'anthropic', options: { model: 'claude-haiku-4-5-20251001', apiKey: 'loopback-fixture' } } });
+    const harness = new FixtureHarness({ llm: { provider: 'anthropic', options: { model: 'claude-haiku-4-5-20251001', apiKey: 'loopback-fixture', ...options } } });
     await harness.setup();
     const usage: ModelUsage[] = [];
     harness.events.on('tokensUsed', entry => { usage.push(entry); return {}; });
@@ -53,6 +53,18 @@ async function fixture(sequence: Reply[], providerRetry = false) {
 }
 
 try {
+    {
+        const verdict = { reasoning: 'Synthetic evidence. '.repeat(1500), result: 'SUCCESS' };
+        const { harness, usage } = await fixture([{ text: JSON.stringify(verdict), outputTokens: 6000 }], false,
+            { model: 'claude-sonnet-5', temperature: 1, maxTokens: 32_768 });
+        assert.deepEqual(await harness.query(context, 'Evaluate the recorded evidence.', z.object({ reasoning: z.string(), result: z.enum(['SUCCESS', 'NOT SUCCESS']) })), verdict);
+        assert.equal(requests[0].model, 'claude-sonnet-5');
+        assert.equal(requests[0].max_tokens, 32_768);
+        assert.equal(requests[0].output_config.format.type, 'json_schema');
+        assert.equal(usage.length, 1);
+        assert.equal(usage[0].outputTokens, 6000);
+        console.log('PASS: explicit judge output budget reaches the native-schema transport and larger verdicts retain usage');
+    }
     {
         const changed = { ...plan, actions: [{ variant: 'tap', x: 'left' }] };
         const { harness, registryBuilds } = await fixture([

@@ -30,7 +30,10 @@ gitignored `.env` file. The runner does not save credentials in result files.
 
 The default actor is the project's Haiku 4.5 model; the judge is Sonnet 5
 (`claude-sonnet-5`), with its required default temperature of 1 and default adaptive
-thinking. Other judge models use temperature 0. Override the actor with `--model`
+thinking. New Sonnet 5 judge runs explicitly allow 32,768 output tokens, including
+thinking and the verdict. Override this ceiling with `--judge-max-tokens`; it is
+recorded as `judge.maxTokens` in the manifest. Other judge models retain their
+transport's output limit unless overridden and use temperature 0. Override the actor with `--model`
 and the judge with `--judge-model`.
 `--provider` selects the actor provider independently of the judge. Existing
 Magnitude Claude Code credentials can be used with `--provider claude-code`; this
@@ -72,6 +75,59 @@ usage already includes reasoning tokens. Luna cost estimates use the
 including cache-write and long-context rates; unknown model or cache prices remain
 `null`. Offline transport/CLI checks establish compatibility, not task performance.
 Do not reuse the consumed holdout to tune or claim a fresh model comparison.
+
+### Baseten DeepSeek actor with Sonnet 5 judging
+
+Add `BASETEN_API_KEY` alongside `ANTHROPIC_API_KEY` in your gitignored `.env`:
+
+```sh
+bun evals/webvoyager/wv.ts run --suite evals/webvoyager/baseline.json --provider baseten --eval
+```
+
+The Baseten actor defaults to `deepseek-ai/DeepSeek-V4.1-Flash` with `high`
+reasoning effort. The judge remains Anthropic Sonnet 5. Both keys are checked
+before a scored run; an unscored run only needs `BASETEN_API_KEY`. Baseten never
+uses `OPENAI_API_KEY`. Add `--dry-run` to preview the manifest without credentials,
+model calls, browser launches, or result files.
+
+Use `--reasoning-effort none|low|high|max` for DeepSeek V4.1 Flash. Its default
+matches [Baseten's reasoning API](https://docs.baseten.co/inference/model-apis/reasoning).
+Use `--max-tokens <number>` to cap reasoning plus visible output (for example,
+`--max-tokens 8192`). The OpenAI-specific `--max-completion-tokens` flag is not
+accepted for Baseten. Temperature and token limits use API defaults unless set.
+All explicit options are saved in the manifest and must match when resuming.
+Other model slugs can be selected with `--model`; their supported reasoning
+levels and image capabilities vary.
+
+The Baseten path uses the shared BAML Chat Completions transport, screenshot
+inputs, native JSON-schema output for supported schemas on the hosted Model API,
+and strict local plan validation. The SDK's `structuredOutputs: false` opts out;
+custom base URLs require `structuredOutputs: true` to enable native output.
+Unsupported schema shapes retain prompt-only compatibility; provider errors do
+not silently disable enforcement. Separate `reasoning_content` is not
+parsed as a plan. Refusals and truncation fail without executing partial actions.
+Native schema enforcement does not change prompts, notebook behavior, task
+criteria, actor budgets, or judge settings. This output-mode change makes earlier prompt-only runs historical
+comparisons, not measurements of the current candidate. Offline transport and CLI
+tests do not establish live task performance.
+
+An opt-in synthetic provider probe exercises typed extraction and a random action
+vocabulary with notebook updates on DeepSeek V4.1 Flash and GLM 5.3 Flash:
+
+```sh
+bun evals/webvoyager/fixtures/structured-output-live.ts .context/baseten-structured-output-probe.json baseten
+```
+
+Use a new output path for every attempt. This checks API/schema compatibility,
+not browser performance, and does not access the development or holdout sites.
+
+DeepSeek V4.1 Flash cost estimates use Baseten's
+[published Model API prices](https://www.baseten.co/library/deepseek-v41-flash/):
+$0.30 per million uncached input tokens, $0.03 per million cached input tokens,
+and $1.20 per million output tokens (verified September 15, 2026). Output usage
+includes reasoning; cached input is not counted twice. Other Baseten model prices
+remain unknown rather than inheriting another provider's rates. Use a fresh run
+directory for each configuration; do not reuse the consumed holdout for tuning.
 
 ## Run a baseline
 
@@ -118,6 +174,9 @@ no hidden browser-crash retries. `--timeout` sets the per-task limit in seconds
 plus its cleanup allowance is killed and recorded as a timeout.
 Judges run in separate processes with a 300-second limit, configurable with
 `--judge-timeout`. A judge timeout is recorded as `judge_error`.
+The judge's output-token budget is separate from actor action limits, saved-trace
+size limits, and both process deadlines. Raising it permits longer reasoning but
+does not force the model to use the full allowance; actual usage is still counted.
 
 Each run saves:
 
@@ -140,6 +199,12 @@ bun evals/webvoyager/viewer.ts <run-directory>
 
 The viewer serves on port 8000. The `eval` command only scores completed executions;
 runtime failures remain failures. Use `eval --replace` to replace saved judgments.
+`eval` always uses the saved judge configuration, so historical manifests without
+`judge.maxTokens` retain their original transport behavior. New judge defaults
+do not silently change old runs. To compare a different judge configuration,
+preserve the original artifacts and evaluate every completed trace into a separate
+result set, not only traces with failed judgments. Rescoring saved traces is not
+a new browser attempt or a complete benchmark when some tasks were never run.
 
 ## Compare results
 

@@ -27,11 +27,12 @@ export interface Task {
 }
 
 export interface ModelConfig {
-    provider: 'anthropic' | 'claude-code' | 'openai';
+    provider: 'anthropic' | 'claude-code' | 'openai' | 'baseten';
     model: string;
     temperature?: number;
     reasoningEffort?: OpenAIClient['options']['reasoningEffort'];
     maxCompletionTokens?: number;
+    maxTokens?: number;
 }
 
 export interface RunManifest {

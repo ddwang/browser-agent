@@ -7,6 +7,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { Command, InvalidArgumentError, Option } from 'commander';
 import { DEFAULT_LIMITS } from './budget';
 import { suiteTasks } from './tasks';
+import { DEFAULT_BASETEN_MODEL, validateBasetenOptions } from '../../packages/magnitude-core/src/ai/baseten';
 import * as prompts from '@clack/prompts';
 import { emptyUsage, outcome, summarize, writeJson, JUDGE_VERSION, type Evaluation, type ModelConfig, type RunManifest, type Task, type TaskRecord, type TaskResult, type TaskProgress } from './results';
 
@@ -53,10 +54,9 @@ function report(runDir: string, manifest: RunManifest) {
 }
 
 async function checkCredentials(provider: ModelConfig['provider']) {
-    if (provider === 'anthropic') {
-        if (!process.env.ANTHROPIC_API_KEY) throw new Error('Set ANTHROPIC_API_KEY in your environment or a local .env file before running evals.');
-    } else if (provider === 'openai') {
-        if (!process.env.OPENAI_API_KEY) throw new Error('Set OPENAI_API_KEY in your environment or a local .env file before running evals.');
+    if (provider === 'anthropic' || provider === 'openai' || provider === 'baseten') {
+        const key = `${provider.toUpperCase()}_API_KEY`;
+        if (!process.env[key]) throw new Error(`Set ${key} in your environment or a local .env file before running evals.`);
     } else {
         if (!existsSync(join(homedir(), '.magnitude', 'credentials', 'claudeCode.json'))) {
             throw new Error('Magnitude Claude Code credentials are missing. Authenticate through create-magnitude-app, or use --provider anthropic with ANTHROPIC_API_KEY.');
@@ -176,13 +176,15 @@ program.command('run [input]')
     .option('--suite <path>', 'JSON file containing taskIds or explicit tasks; input can select a task/site within it')
     .option('--run-dir <path>', 'Results directory (default: a new timestamped directory)')
     .option('-w, --workers <number>', 'Parallel task workers', positiveInteger, 1)
-    .option('--model <name>', 'Actor model (default: Haiku 4.5, or gpt-5.6-luna with --provider openai)')
+    .option('--model <name>', 'Actor model (default: Haiku 4.5, OpenAI Luna, or Baseten DeepSeek V4.1 Flash)')
     .option('--judge-model <name>', 'Judge model, fixed for comparisons', defaultJudge)
-    .addOption(new Option('--provider <name>', 'Actor provider').choices(['anthropic', 'claude-code', 'openai']).default('anthropic'))
+    .option('--judge-max-tokens <number>', 'Judge output budget, including thinking (default: 32768 for Sonnet 5; otherwise transport default)', positiveInteger)
+    .addOption(new Option('--provider <name>', 'Actor provider').choices(['anthropic', 'claude-code', 'openai', 'baseten']).default('anthropic'))
     .addOption(new Option('--judge-provider <name>', 'Judge provider (default: anthropic, or claude-code for a Claude Code actor)').choices(['anthropic', 'claude-code']))
-    .option('--temperature <number>', 'Actor temperature (default: 0.2 for Claude; omitted for OpenAI)', temperature)
-    .addOption(new Option('--reasoning-effort <level>', 'OpenAI actor reasoning effort (default: medium for gpt-5.6-luna; otherwise API default)').choices(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']))
+    .option('--temperature <number>', 'Actor temperature (default: 0.2 for Claude; omitted for OpenAI and Baseten)', temperature)
+    .addOption(new Option('--reasoning-effort <level>', 'OpenAI/Baseten reasoning effort (default: Luna medium, DeepSeek V4.1 Flash high; otherwise API default)').choices(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']))
     .option('--max-completion-tokens <number>', 'OpenAI actor output limit, including reasoning tokens (default: API default)', positiveInteger)
+    .option('--max-tokens <number>', 'Baseten actor output limit, including reasoning tokens (default: API default)', positiveInteger)
     .option('--timeout <seconds>', 'Task timeout, including setup', positiveInteger, 1200)
     .option('--judge-timeout <seconds>', 'Judge process timeout', positiveInteger, 300)
     .option('--max-actions <number>', 'Fail tasks that cannot finish within this many actions', positiveInteger, DEFAULT_LIMITS.maxActions)
@@ -204,20 +206,36 @@ program.command('run [input]')
         if (!tasks.length) return;
         const runDir = resolve(options.runDir ?? join(import.meta.dir, 'results', new Date().toISOString().replaceAll(':', '-')));
         const manifestPath = join(runDir, 'manifest.json');
-        if (options.provider !== 'openai' && (options.reasoningEffort !== undefined || options.maxCompletionTokens !== undefined)) {
-            throw new Error('--reasoning-effort and --max-completion-tokens require --provider openai.');
+        if (options.provider !== 'openai' && options.provider !== 'baseten' && options.reasoningEffort !== undefined) {
+            throw new Error('--reasoning-effort requires --provider openai or baseten.');
         }
-        const model = options.model ?? (options.provider === 'openai' ? 'gpt-5.6-luna' : defaultActor);
-        const reasoningEffort = options.reasoningEffort ?? (model === 'gpt-5.6-luna' ? 'medium' : undefined);
-        const actor: ModelConfig = options.provider === 'openai'
-            ? { provider: 'openai', model,
+        if (options.provider !== 'openai' && options.maxCompletionTokens !== undefined) {
+            throw new Error('--max-completion-tokens requires --provider openai.');
+        }
+        if (options.provider !== 'baseten' && options.maxTokens !== undefined) {
+            throw new Error('--max-tokens requires --provider baseten.');
+        }
+        const model = options.model ?? (options.provider === 'openai' ? 'gpt-5.6-luna'
+            : options.provider === 'baseten' ? DEFAULT_BASETEN_MODEL : defaultActor);
+        const reasoningEffort = options.reasoningEffort ?? (options.provider === 'openai' && model === 'gpt-5.6-luna' ? 'medium'
+            : options.provider === 'baseten' && model === DEFAULT_BASETEN_MODEL ? 'high' : undefined);
+        if (options.provider === 'baseten') validateBasetenOptions({ model, reasoningEffort });
+        const actor: ModelConfig = options.provider === 'openai' || options.provider === 'baseten'
+            ? { provider: options.provider, model,
                 ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
                 ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
                 ...(options.maxCompletionTokens !== undefined ? { maxCompletionTokens: options.maxCompletionTokens } : {}),
+                ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
             }
             : { provider: options.provider, model, temperature: options.temperature ?? 0.2 };
         // Sonnet 5 only accepts the API's default sampling temperature (1).
-        const judge: ModelConfig = { provider: options.judgeProvider ?? (options.provider === 'claude-code' ? 'claude-code' : 'anthropic'), model: options.judgeModel, temperature: options.judgeModel === 'claude-sonnet-5' ? 1 : 0 };
+        const judgeMaxTokens = options.judgeMaxTokens ?? (options.judgeModel === defaultJudge ? 32_768 : undefined);
+        const judge: ModelConfig = {
+            provider: options.judgeProvider ?? (options.provider === 'claude-code' ? 'claude-code' : 'anthropic'),
+            model: options.judgeModel,
+            temperature: options.judgeModel === 'claude-sonnet-5' ? 1 : 0,
+            ...(judgeMaxTokens !== undefined ? { maxTokens: judgeMaxTokens } : {}),
+        };
         let manifest: RunManifest = {
             partition: holdout ? 'holdout' : 'development',
             createdAt: new Date().toISOString(),

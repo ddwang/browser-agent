@@ -40,8 +40,11 @@ class FakeAgent {
     async act(prompt: string) {
         assert.deepEqual(this.options.recovery, { noProgress: true }, 'Eval runner explicitly opts in to heuristic loop termination');
         if (process.env.EVAL_TEST_FAILURE === 'prompt-date') assert.ok(this.options.prompt.includes('Today is 2001-02-03.'));
-        if (process.env.EVAL_TEST_FAILURE === 'mixed-providers') assert.deepEqual(this.options.llm, {
+        if (process.env.EVAL_TEST_FAILURE === 'mixed-providers-openai') assert.deepEqual(this.options.llm, {
             provider: 'openai', options: { model: 'gpt-5.6-luna', reasoningEffort: 'medium', maxCompletionTokens: 8192 },
+        });
+        if (process.env.EVAL_TEST_FAILURE === 'mixed-providers-baseten') assert.deepEqual(this.options.llm, {
+            provider: 'baseten', options: { model: 'deepseek-ai/DeepSeek-V4.1-Flash', reasoningEffort: 'high', maxTokens: 8192 },
         });
         checkCriteria(prompt);
         this.events.emit('planningStarted');
@@ -77,9 +80,10 @@ class FakeAgent {
     }
     async query(prompt: string, _schema: unknown, options: unknown) {
         assert.deepEqual(options, { history: 'full' });
-        if (process.env.EVAL_TEST_FAILURE === 'mixed-providers') assert.deepEqual(this.options.llm, {
-            provider: 'anthropic', options: { model: 'claude-sonnet-5', temperature: 1 },
+        if (process.env.EVAL_TEST_FAILURE?.startsWith('mixed-providers-')) assert.deepEqual(this.options.llm, {
+            provider: 'anthropic', options: { model: 'claude-sonnet-5', temperature: 1, maxTokens: 32_768 },
         });
+        if (process.env.EVAL_TEST_FAILURE === 'legacy-judge-budget') assert.equal(this.options.llm.options.maxTokens, undefined);
         checkCriteria(prompt);
         if (process.env.EVAL_TEST_FAILURE === 'judge-timeout') return new Promise<void>(() => {});
         if (process.env.EVAL_TEST_FAILURE === 'judge') throw new Error('Synthetic judge failure');

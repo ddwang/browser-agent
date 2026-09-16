@@ -2,6 +2,7 @@ import { type LLMClient } from '@/ai/types';
 import { Agent, AgentOptions } from "@/agent";
 import { BrowserConnector, BrowserConnectorOptions } from "@/connectors/browserConnector";
 import { completeClaudeCodeAuthFlow } from './claudeCode';
+import { DEFAULT_BASETEN_BASE_URL, DEFAULT_BASETEN_MODEL, validateBasetenOptions } from './baseten';
 
 function cleanNestedObject(obj: object): object {
     // Remove null/undefined key values entirely
@@ -32,6 +33,7 @@ export async function convertToBamlClientOptions(client: LLMClient): Promise<Rec
         options = {
             model: client.options.model,
             temperature: temp,
+            max_tokens: client.options.maxTokens,
             headers: {
                 'Authorization': `Bearer ${oauthToken}`,
                 'anthropic-beta': 'oauth-2025-04-20' + (client.options.promptCaching ? ',prompt-caching-2024-07-31' : ''),
@@ -45,6 +47,7 @@ export async function convertToBamlClientOptions(client: LLMClient): Promise<Rec
             api_key: client.options.apiKey,
             model: client.options.model,
             temperature: temp,
+            max_tokens: client.options.maxTokens,
             ...(client.options.promptCaching ? {
                 allowed_role_metadata: "all",
                 headers: { 'anthropic-beta': 'prompt-caching-2024-07-31' }
@@ -87,6 +90,18 @@ export async function convertToBamlClientOptions(client: LLMClient): Promise<Rec
             temperature: client.options.temperature,
             reasoning_effort: client.options.reasoningEffort,
             max_completion_tokens: client.options.maxCompletionTokens,
+        };
+    } else if (client.provider === 'baseten') {
+        validateBasetenOptions(client.options);
+        const apiKey = client.options.apiKey ?? process.env.BASETEN_API_KEY;
+        if (!apiKey) throw new Error('Set BASETEN_API_KEY or provide llm.options.apiKey for the Baseten provider.');
+        options = {
+            base_url: client.options.baseUrl ?? DEFAULT_BASETEN_BASE_URL,
+            api_key: apiKey,
+            model: client.options.model,
+            temperature: client.options.temperature,
+            reasoning_effort: client.options.reasoningEffort,
+            max_tokens: client.options.maxTokens,
         };
     } else if (client.provider === 'openai-generic') {
         options = {
@@ -133,6 +148,11 @@ export function tryDeriveUIGroundedClient(): LLMClient | null {
             provider: 'openai',
             options: { model: 'gpt-5.6-luna', apiKey: process.env.OPENAI_API_KEY }
         };
+    } else if (process.env.BASETEN_API_KEY) {
+        return {
+            provider: 'baseten',
+            options: { model: DEFAULT_BASETEN_MODEL, apiKey: process.env.BASETEN_API_KEY }
+        };
     } else {
         return null;
     }
@@ -162,14 +182,14 @@ export function buildDefaultBrowserAgentOptions(
     let llms: LLMClient[] = agentOptions.llm ? (Array.isArray(agentOptions.llm) ? agentOptions.llm : [agentOptions.llm]) : (envLlm ? [envLlm] : []);
 
     if (llms.length == 0) {
-        throw new Error("No LLM configured or available from environment. Set ANTHROPIC_API_KEY or OPENAI_API_KEY, or configure llm explicitly. See https://docs.magnitude.run/customizing/llm-configuration for details");
+        throw new Error("No LLM configured or available from environment. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or BASETEN_API_KEY, or configure llm explicitly. See https://docs.magnitude.run/customizing/llm-configuration for details");
     }
 
     // Set reasonable temp if not provided
     let virtualScreenDimensions = null;
     for (const llm of llms) {
         let llmOptions: LLMClient['options'] = {
-            ...(llm.provider === 'openai' ? {} : { temperature: DEFAULT_BROWSER_AGENT_TEMP }),
+            ...(llm.provider === 'openai' || llm.provider === 'baseten' ? {} : { temperature: DEFAULT_BROWSER_AGENT_TEMP }),
             ...llm.options
         };
         //let modifiedLlm = {...llm, options: llmOptions as any }
