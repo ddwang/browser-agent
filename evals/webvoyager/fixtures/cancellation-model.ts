@@ -9,11 +9,6 @@ import type { OperationOptions } from '../../../packages/magnitude-core/src/comm
 import { ModelHarness } from '../../../packages/magnitude-core/src/ai/modelHarness';
 import { ClientRegistry } from '@boundaryml/baml';
 
-function deferred() {
-    let resolve!: () => void;
-    const promise = new Promise<void>(yes => { resolve = yes; });
-    return { promise, resolve };
-}
 const image = new Image(sharp({ create: { width: 2, height: 2, channels: 3, background: '#123456' } }).png());
 class FixtureAgent extends Agent {
     extractModel(options: OperationOptions) {
@@ -22,7 +17,7 @@ class FixtureAgent extends Agent {
 }
 
 for (const provider of ['anthropic', 'openai', 'baseten'] as const) {
-    let received = deferred(), release = deferred(), requests = 0;
+    let received = Promise.withResolvers<void>(), release = Promise.withResolvers<void>(), requests = 0;
     let mode: 'delayed' | 'retry' = 'delayed';
     const server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request) {
         await request.json(); requests++; received.resolve();
@@ -58,7 +53,7 @@ for (const provider of ['anthropic', 'openai', 'baseten'] as const) {
     agent.events.on('actionStarted', () => { actions++; });
     try {
         for (const operation of ['act', 'query', 'extract', 'retry', 'deadline'] as const) {
-            received = deferred(); release = deferred(); requests = 0;
+            received = Promise.withResolvers<void>(); release = Promise.withResolvers<void>(); requests = 0;
             mode = operation === 'retry' ? 'retry' : 'delayed';
             const controller = new AbortController();
             const options: OperationOptions = operation === 'deadline' ? { deadline: Date.now() + 200 } : { signal: controller.signal };

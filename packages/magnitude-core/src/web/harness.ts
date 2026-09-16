@@ -368,7 +368,6 @@ export class WebHarness { // implements StateComponent
         //console.log(`Pre transform: ${x}, ${y}`);
         if (options?.transform ?? true) ({ x, y } = await this.transformCoordinates({ x, y }));
         //console.log(`Post transform: ${x}, ${y}`);
-        await this.visualizer.moveVirtualCursor(x, y);
         await this._click(x, y);
         await this._type(content);
         await this.waitForStability();

@@ -14,12 +14,6 @@ import { Observation } from '../../../packages/magnitude-core/src/memory/observa
 
 const llm = { provider: 'anthropic' as const, options: { model: 'fixture', apiKey: 'unused' } };
 const plan = { reasoning: 'Finish', memory_updates: [], actions: [{ variant: 'task:done', evidence: 'Complete' }] };
-function deferred<T = void>() {
-    let resolve!: (value: T | PromiseLike<T>) => void;
-    let reject!: (reason?: unknown) => void;
-    const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
-    return { promise, resolve, reject };
-}
 function agentWithAction(resolver: Parameters<typeof createAction>[0]['resolver']) {
     return new Agent({ llm, telemetry: false, actions: [createAction({ name: 'work', resolver })] });
 }
@@ -44,8 +38,8 @@ const tick = () => new Promise<void>(resolve => setTimeout(resolve, 5));
 
 // Late model success or failure cannot write thoughts/notes or dispatch actions.
 for (const failure of [false, true]) {
-    const entered = deferred();
-    const model = deferred<typeof plan>();
+    const entered = Promise.withResolvers<void>();
+    const model = Promise.withResolvers<typeof plan>();
     const controller = new AbortController();
     const agent = new Agent({ llm, telemetry: false });
     agent.models.partialAct = async () => { entered.resolve(); return model.promise; };
@@ -88,7 +82,7 @@ console.log('PASS: event callbacks cannot bypass cancellation gates');
 
 // whenIdle() called synchronously from an action must refer to that operation.
 {
-    const release = deferred();
+    const release = Promise.withResolvers<void>();
     let idle = false;
     const agent = agentWithAction(async ({ agent }) => {
         void agent.whenIdle().then(() => { idle = true; });
@@ -101,7 +95,7 @@ console.log('PASS: event callbacks cannot bypass cancellation gates');
 
 // A hook already running holds the lock; the action after it must not begin.
 {
-    const hook = deferred(), entered = deferred();
+    const hook = Promise.withResolvers<void>(), entered = Promise.withResolvers<void>();
     const controller = new AbortController();
     const agent = new Agent({ llm, telemetry: false, connectors: [{ id: 'delayed', beforeAction: async (_action, options) => {
         assert.ok(options?.signal);
@@ -119,7 +113,7 @@ console.log('PASS: event callbacks cannot bypass cancellation gates');
 
 // An already-dispatched side effect is not rolled back. Subsequent actions are suppressed.
 {
-    const entered = deferred(), release = deferred();
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
     const controller = new AbortController();
     let effects = 0;
     const agent = agentWithAction(async ({ signal, deadline }) => {
@@ -139,7 +133,7 @@ console.log('PASS: event callbacks cannot bypass cancellation gates');
 
 // Detached callbacks retain the old operation identity even after the agent is reused.
 {
-    const release = deferred();
+    const release = Promise.withResolvers<void>();
     let late!: Promise<void>;
     const agent = agentWithAction(async ({ agent }) => {
         late = release.promise.then(async () => {
@@ -154,7 +148,7 @@ console.log('PASS: event callbacks cannot bypass cancellation gates');
 
 // Pause and stop must wake without requiring an explicit resume.
 for (const stop of [false, true]) {
-    const controller = new AbortController(), paused = deferred();
+    const controller = new AbortController(), paused = Promise.withResolvers<void>();
     const agent = new Agent({ llm, telemetry: false });
     agent.models.partialAct = async () => plan;
     agent.pause(); agent.events.on('pause', () => paused.resolve());
@@ -182,7 +176,7 @@ for (const retryFn of [
     (fn: () => Promise<void>) => retryOnErrorIsSuccess(fn, { mode: 'retry_all', delayMs: 10_000 }),
 ]) {
     let attempts = 0;
-    const entered = deferred(), controller = new AbortController();
+    const entered = Promise.withResolvers<void>(), controller = new AbortController();
     const agent = agentWithAction(async () => { await retryFn(async () => { attempts++; entered.resolve(); throw new Error('retry'); }); });
     const result = agent.exec(work, undefined, { signal: controller.signal });
     await entered.promise; await tick(); controller.abort();
@@ -205,7 +199,7 @@ console.log('PASS: retries and backoff respect cancellation');
 // Cooldown cancellation and unaffordable Retry-After use the real browser connector.
 {
     const connector = new BrowserConnector();
-    const entered = deferred();
+    const entered = Promise.withResolvers<void>();
     const agent = agentWithAction(async () => { entered.resolve(); await connector.wait(10_000); });
     const controller = new AbortController();
     const result = agent.exec(work, undefined, { signal: controller.signal });
@@ -237,7 +231,7 @@ console.log('PASS: retries and backoff respect cancellation');
 
 // Pending parallel work must drain even after a sibling rejects.
 {
-    const entered = deferred(), release = deferred();
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
     const agent = agentWithAction(async () => { entered.resolve(); await drainAll([Promise.reject(new Error('first')), release.promise]); });
     const result = agent.exec(work);
     await entered.promise; await tick(); assert.equal(agent.busy, true);
@@ -246,7 +240,7 @@ console.log('PASS: retries and backoff respect cancellation');
 
 // Built-in click preparation cannot issue a click after cancellation.
 {
-    const entered = deferred(), release = deferred();
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
     let clicks = 0;
     const fakePage = { mouse: { move: async () => {}, click: async () => { clicks++; } } };
     const harness = new WebHarness({ on() {} } as any);
@@ -265,7 +259,7 @@ console.log('PASS: retries and backoff respect cancellation');
 
 // Composite input stops between commands while releasing held input state.
 for (const action of ['type', 'drag', 'selectAll', 'clickAndType'] as const) {
-    const entered = deferred(), release = deferred(), controller = new AbortController();
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>(), controller = new AbortController();
     const events: string[] = [];
     const blocked = async (name: string) => { events.push(name); entered.resolve(); await release.promise; };
     const page = {
@@ -310,7 +304,7 @@ console.log('PASS: composite input stops and releases held buttons/keys');
 
 // Query also discards a delayed model result and respects memory rendering options.
 {
-    const entered = deferred(), model = deferred<string>(), controller = new AbortController();
+    const entered = Promise.withResolvers<void>(), model = Promise.withResolvers<string>(), controller = new AbortController();
     const agent = new Agent({ llm, telemetry: false, connectors: [{ id: 'fixture', collectObservations: async () => [Observation.fromConnector('fixture', 'value')] }] });
     agent.models.query = async () => { entered.resolve(); return model.promise; };
     const result = agent.query('query', z.string(), { signal: controller.signal, history: 'full' });

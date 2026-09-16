@@ -216,14 +216,11 @@ export class Agent {
         let markIdle!: () => void;
         this.idle = new Promise<void>(resolve => { markIdle = resolve; });
         const worker = operation.run(async () => {
+            operation.check();
             try {
-                operation.check();
-                const result = await fn();
-                operation.check();
-                return result;
-            } catch (error) {
+                return await fn();
+            } finally {
                 operation.check(); // Preserve the cancellation/deadline cause through downstream errors.
-                throw error;
             }
         });
         const settled = worker.finally(() => {
