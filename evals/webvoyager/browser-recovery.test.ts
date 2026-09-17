@@ -10,6 +10,6 @@ test('real browser recovery fixtures (isolated from Bun test native-runtime hook
     try {
         const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
         expect({ code, stderr }).toEqual({ code: 0, stderr: '' });
-        expect(stdout.match(/^PASS:/gm)).toHaveLength(19);
+        expect(stdout.match(/^PASS:/gm)).toHaveLength(20);
     } finally { clearTimeout(deadline); }
 }, 185_000);

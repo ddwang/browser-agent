@@ -1,4 +1,5 @@
 import type { Action } from '@/actions/types';
+import type { OperationDiagnostics } from '@/common/operation';
 
 export type BlockReason = 'rate_limit' | 'subscription' | 'authentication' | 'no_progress';
 export interface BrowserBlock {
@@ -8,6 +9,7 @@ export interface BrowserBlock {
 }
 
 export class BrowserBlockedError extends Error {
+    declare readonly operation?: OperationDiagnostics;
     constructor(public readonly block: BrowserBlock) {
         super(`Browser blocked (${block.reason}): ${block.evidence}`);
         this.name = 'BrowserBlockedError';

@@ -1,7 +1,7 @@
 import { retryOnError, retryOnErrorIsSuccess } from "@/common";
 import logger from "@/logger";
 import { Page } from "playwright";
-import { operationSleep } from '@/common/operation';
+import { measureOperation, operationSleep } from '@/common/operation';
 
 export class CursorVisual {
     /**
@@ -11,9 +11,7 @@ export class CursorVisual {
     private visualElementId: string = 'action-visual-indicator';
     private lastPosition: { x: number; y: number } | null = null;
 
-    constructor() {
-        //this.page = page;
-    }
+    constructor(private animate = true) {}
 
     async setActivePage(page: Page) {
         this.page = page;
@@ -32,13 +30,11 @@ export class CursorVisual {
     }
 
     async move(x: number, y: number): Promise<void> {
-        // Store the position
-        this.lastPosition = { x, y };
-        // Create or update the mouse pointer visual, showing the click effect
-        await this._drawVisual(x, y, false);
-        // The pointer visual takes 0.3s on the transition, but awaiting script evaluation does not wait for this to complete.
-        // So we wait 300ms manually.
-        await operationSleep(300);
+        await measureOperation('cursor', async () => {
+            this.lastPosition = { x, y };
+            await this._drawVisual(x, y, false);
+            if (this.animate) await operationSleep(300);
+        });
     }
 
     async setupOnPage(): Promise<void> {
@@ -52,7 +48,7 @@ export class CursorVisual {
     private async _drawVisual(x: number, y: number, showClickEffect: boolean): Promise<void> {
         try {
             await this.page.evaluate(
-                ({ x, y, id, showClickEffect }) => {
+                ({ x, y, id, showClickEffect, animate }) => {
                     // Use viewport coordinates directly (no scroll adjustment for fixed positioning)
                     const viewportX = x;
                     const viewportY = y;
@@ -105,8 +101,6 @@ export class CursorVisual {
                         pointerElement.style.height = '32px';
                         pointerElement.style.zIndex = '2147483647';  // Max z-index
                         pointerElement.style.pointerEvents = 'none'; // Don't interfere with actual clicks
-                        // Notice that transition is 300ms
-                        pointerElement.style.transition = 'left 0.3s cubic-bezier(0.25, 0.1, 0.25, 1), top 0.3s cubic-bezier(0.25, 0.1, 0.25, 1)';
 
                         // Create SVG using DOM methods to avoid Trusted Types issues
                         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -139,6 +133,9 @@ export class CursorVisual {
                     }
                     
                     //pointerElement.style.display = 'none';
+                    pointerElement.style.transition = animate
+                        ? 'left 0.3s cubic-bezier(0.25, 0.1, 0.25, 1), top 0.3s cubic-bezier(0.25, 0.1, 0.25, 1)'
+                        : 'none';
 
                     // Update position - use viewport coordinates for fixed positioning
                     // Set the top-left corner to (viewportX, viewportY) and then translate by (-1px, -3px)
@@ -147,7 +144,7 @@ export class CursorVisual {
                     pointerElement.style.top = `${viewportY}px`;
                     pointerElement.style.transform = 'translate(-1px, -3px)';
                 },
-                { x, y, id: this.visualElementId, showClickEffect }
+                { x, y, id: this.visualElementId, showClickEffect, animate: this.animate }
             );
         } catch (error: unknown) {
             // For example when:

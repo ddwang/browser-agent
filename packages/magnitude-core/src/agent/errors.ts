@@ -1,3 +1,4 @@
+import type { OperationDiagnostics } from '@/common/operation';
 
 export interface AgentErrorOptions {
     variant?: string,
@@ -21,6 +22,7 @@ export interface AgentErrorOptions {
 // }
 
 export class AgentError extends Error {
+    declare readonly operation?: OperationDiagnostics;
     //public readonly failure: FailureDescriptor;
     public readonly options: Required<AgentErrorOptions>;
 
@@ -68,7 +70,7 @@ export class OperationDeadlineError extends AgentError {
 
 export class AgentBusyError extends AgentError {
     constructor() {
-        super('Agent has an active operation; await whenIdle() before reusing it', { variant: 'busy' });
+        super('Agent has pending work; await whenIdle() before reusing it', { variant: 'busy' });
         this.name = 'AgentBusyError';
     }
 }

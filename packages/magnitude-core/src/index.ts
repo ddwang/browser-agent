@@ -22,7 +22,7 @@ export { BrowserBlockedError } from '@/web/recovery';
 export type { BrowserBlock, BlockReason, RecoveryOptions, HttpDiagnostic } from '@/web/recovery';
 export * from "@/actions/types";
 export * from '@/common';
-export type { OperationOptions } from '@/common/operation';
+export type { OperationOptions, OperationDiagnostics, OperationKind, OperationPhase, OperationTiming } from '@/common/operation';
 export * from "@/telemetry";
 export { buildDefaultBrowserAgentOptions } from "@/ai/util";
 export { logger } from './logger';
