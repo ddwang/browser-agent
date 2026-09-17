@@ -1,7 +1,7 @@
 import { RenderableContent } from "@/memory/observation";
 import { MultiMediaContentPart } from "@/memory/rendering";
 import { Image } from "@/memory/image";
-import { Image as BamlImage } from '@boundaryml/baml';
+import baml, { type Image as BamlImage } from '@boundaryml/baml';
 
 
 async function buildJsonPartsRecursive(
@@ -18,7 +18,7 @@ async function buildJsonPartsRecursive(
         }
         return;
     }
-    if (data instanceof BamlImage) {
+    if (data instanceof baml.Image) {
         partsList.push(data);
         return;
     }

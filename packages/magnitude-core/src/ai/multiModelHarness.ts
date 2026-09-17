@@ -21,7 +21,7 @@ export class MultiModelHarness {
 
     constructor(clients: LLMClient[]) {
         // Sort by specificity (from least specific to most specific)
-        const sortedClients = clients.toSorted((a, b) => (b.roles ? b.roles.length : 9999) - (a.roles ? a.roles.length : 9999));
+        const sortedClients = [...clients].sort((a, b) => (b.roles ? b.roles.length : 9999) - (a.roles ? a.roles.length : 9999));
         for (const client of sortedClients) {
             const harness = new ModelHarness({ llm: client });
             this.uniqueModels.push(harness);
