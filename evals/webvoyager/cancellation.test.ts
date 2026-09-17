@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { join } from 'node:path';
 
 // Isolate the native BAML client from unit tests that mock generated modules.
-for (const fixture of ['cancellation-agent', 'cancellation-model', 'lifecycle-diagnostics']) {
+for (const fixture of ['cancellation-agent', 'cancellation-model', 'lifecycle-diagnostics', 'runner-lifecycle']) {
     test(fixture, async () => {
         const child = Bun.spawn([process.execPath, join(import.meta.dir, `fixtures/${fixture}.ts`)], {
             stdout: 'pipe', stderr: 'pipe', env: { ...process.env, BAML_LOG: 'off' },

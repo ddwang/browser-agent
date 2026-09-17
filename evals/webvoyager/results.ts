@@ -2,6 +2,8 @@ import type { ModelUsage, OpenAIClient } from '../../packages/magnitude-core/src
 import type { SerializedAgentMemory } from '../../packages/magnitude-core/src/memory/agentMemory';
 import { renameSync, writeFileSync } from 'node:fs';
 import type { BrowserBlock, HttpDiagnostic } from '../../packages/magnitude-core/src/web/recovery';
+import type { OperationDiagnostics, OperationPhase } from '../../packages/magnitude-core/src/common/operation';
+import type { Agent } from '../../packages/magnitude-core/src/agent';
 
 export const JUDGE_VERSION = 3;
 
@@ -79,13 +81,16 @@ export function addUsage(totals: ReturnType<typeof emptyUsage>, usage: ModelUsag
 }
 
 export interface TaskResult extends ReturnType<typeof emptyUsage> {
-    status: 'running' | 'completed' | 'error' | 'timeout' | 'blocked' | 'failed';
+    status: 'running' | 'completed' | 'error' | 'timeout' | 'blocked' | 'failed' | 'cancelled';
     time: number;
     actionCount: number;
     memory: SerializedAgentMemory | null;
     error?: string;
     timedOut?: boolean;
     progress?: TaskProgress;
+    operation?: OperationDiagnostics;
+    failureOperation?: OperationDiagnostics;
+    cleanup?: { status: 'pending' | 'settled' | 'timed_out'; elapsedMs: number };
     block?: BrowserBlock;
     budget?: BudgetFailure;
     worker?: { exitCode: number | null; signal: string | null; savedStatus: TaskResult['status'] };
@@ -100,6 +105,9 @@ export interface TaskProgress {
     waitUntil?: number;
     block?: BrowserBlock;
     network: HttpDiagnostic[];
+    operation?: OperationDiagnostics;
+    lifecycle?: Agent['lifecycle'];
+    busy?: boolean;
 }
 
 export interface Evaluation {
@@ -119,6 +127,7 @@ export interface TaskRecord {
 
 export function outcome({ run, evaluation }: Pick<TaskRecord, 'run' | 'evaluation'>) {
     if (!run) return 'pending';
+    if (run.status === 'cancelled') return 'interrupted';
     if (run.status === 'blocked') return 'blocked';
     if (run.status === 'failed') return 'failure';
     if (run.timedOut || run.status === 'timeout') return 'timeout';
@@ -177,5 +186,29 @@ export function summarize(records: TaskRecord[]) {
         cachedInputTokens,
         estimatedActorCost: actorCost,
         estimatedJudgeCost: judgeCost,
+        operations: summarizeOperations(records),
+    };
+}
+
+function summarizeOperations(records: TaskRecord[]) {
+    const operations = records.flatMap(({ run }) => {
+        const operation = run?.operation ?? run?.progress?.operation;
+        return operation ? [operation] : [];
+    });
+    const distribution = (values: number[]) => ({
+        samples: values.length, totalMs: values.reduce((total, value) => total + value, 0),
+        medianMs: percentile(values, 0.5), p95Ms: percentile(values, 0.95),
+    });
+    const phases = [...new Set(operations.flatMap(operation => Object.keys(operation.timings)))] as OperationPhase[];
+    return {
+        measuredTasks: operations.length,
+        finishedTasks: operations.filter(operation => operation.status === 'finished').length,
+        // Inclusive per-task totals, including unsuccessful and partially drained operations.
+        timings: Object.fromEntries(phases.map(phase => {
+            const timings = operations.flatMap(operation => operation.timings[phase] ? [operation.timings[phase]!] : []);
+            return [phase, { ...distribution(timings.map(timing => timing.totalMs)), count: timings.reduce((total, timing) => total + timing.count, 0) }];
+        })),
+        cancellationToDrain: distribution(operations.flatMap(operation => operation.cancellationToDrainMs === undefined ? [] : [operation.cancellationToDrainMs])),
+        cancellationToIdle: distribution(operations.flatMap(operation => operation.cancellationToIdleMs === undefined ? [] : [operation.cancellationToIdleMs])),
     };
 }

@@ -385,13 +385,30 @@
             let html = `<div class="task-question"><h3>Execution status</h3><p>${escapeText(progress.phase)}${progress.action ? `: ${escapeText(progress.action)}` : ''}</p>`;
             if (progress.waitUntil) html += `<p>Wait until ${escapeText(new Date(progress.waitUntil).toLocaleString())}</p>`;
             html += `<p>Last heartbeat: ${escapeText(new Date(progress.updatedAt).toLocaleString())}</p>`;
+            if (progress.lifecycle) html += `<p>Agent: ${escapeText(progress.lifecycle)}; ${progress.busy ? 'busy' : 'idle'}</p>`;
+            const operation = progress.operation;
+            if (operation) {
+                html += `<h3>Operation diagnostics</h3><p>${escapeText(operation.id)}: ${escapeText(operation.kind)} / ${escapeText(operation.status)} / ${escapeText(operation.phase)}${operation.outcome ? ` / ${escapeText(operation.outcome)}` : ''}</p>`;
+                html += `<p>Elapsed: ${escapeText(Math.round(operation.elapsedMs))} ms</p>`;
+                if (operation.lastAction) html += `<p>Last dispatch #${escapeText(operation.lastAction.index)}: ${escapeText(operation.lastAction.name)} — ${escapeText(operation.lastAction.state)}</p>`;
+                for (const [key, label] of [['cancellationToDrainMs', 'Cancellation to drain'], ['cancellationToIdleMs', 'Cancellation to idle']]) {
+                    if (operation[key] !== undefined) html += `<p>${label}: ${escapeText(Math.round(operation[key]))} ms</p>`;
+                }
+                html += '<p>Inclusive phase timings overlap; do not sum them as wall-clock time.</p><table><thead><tr><th>Phase</th><th>Count</th><th>Total ms</th></tr></thead><tbody>';
+                for (const [phase, timing] of Object.entries(operation.timings || {})) {
+                    html += `<tr><td>${escapeText(phase)}</td><td>${escapeText(timing.count)}</td><td>${escapeText(Math.round(timing.totalMs))}</td></tr>`;
+                }
+                html += '</tbody></table>';
+            }
             if (barrier) html += `<p>Barrier: ${escapeText(barrier.reason)} — ${escapeText(barrier.evidence)}</p>`;
             html += `<details><summary>Recent HTTP diagnostics</summary><pre>${escapeText(JSON.stringify(progress.network, null, 2))}</pre></details></div>`;
             return html;
         }
 
         setInterval(async () => {
-            if (refreshingStatus || currentData?.status !== 'running' || !selectedTask) return;
+            const awaitingCleanup = currentData?.cleanup?.status === 'pending'
+                && Date.now() - (currentData.progress?.updatedAt || 0) < 15000;
+            if (refreshingStatus || (currentData?.status !== 'running' && !awaitingCleanup) || !selectedTask) return;
             const taskId = selectedTask;
             refreshingStatus = true;
             try {
@@ -553,6 +570,8 @@
             const observations = currentData.memory?.observations || [];
             let html = '';
             html += `<div id="executionStatus">${renderProgress(currentData.progress, currentData.block)}</div>`;
+            if (currentData.failureOperation) html += `<details><summary>Operation snapshot at failure or cancellation</summary><pre>${escapeText(JSON.stringify(currentData.failureOperation, null, 2))}</pre></details>`;
+            if (currentData.cleanup) html += `<p>Cleanup: ${escapeText(currentData.cleanup.status)} (${escapeText(Math.round(currentData.cleanup.elapsedMs))} ms)</p>`;
             const budget = currentData.budget || currentData.evaluation?.budget;
             if (budget) html += `<div class="error">Budget failure: ${budget.kind === 'actions' ? 'action count' : 'saved payload bytes'} ${Number(budget.actual).toLocaleString()}, limit ${Number(budget.limit).toLocaleString()}.</div>`;
 

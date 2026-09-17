@@ -221,6 +221,7 @@ async function loadProgress(taskId: string, run: any) {
   if (run.status !== 'running') return;
   try {
     run.progress = JSON.parse(await readFile(join(resultsDir, `${taskId}.status.json`), 'utf8'));
+    run.operation = run.progress.operation ?? run.operation;
     run.time = run.progress.updatedAt - run.progress.startedAt;
   } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
 }
