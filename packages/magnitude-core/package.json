@@ -1,6 +1,6 @@
 {
   "name": "@ddwang/magnitude-core",
-  "version": "0.3.1-ddwang.1",
+  "version": "0.3.1-ddwang.2",
   "description": "Magnitude e2e testing agent",
   "publishConfig": {
     "access": "public"
