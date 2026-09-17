@@ -174,7 +174,6 @@ export class Agent {
     async start(): Promise<void> {
         return this.scheduleLifecycle('start', async () => {
             if (this.lifecycleState === 'ready') return;
-            if (this.activeOperation) throw new AgentBusyError();
             this.lifecycleState = 'starting';
             if (this.options.telemetry && !this.telemetryStarted) {
                 telemetrifyAgent(this);
@@ -251,7 +250,7 @@ export class Agent {
 
     /** A payload-free snapshot of the active or most recent operation. */
     get operation(): OperationDiagnostics | undefined {
-        return (this.activeOperation ?? this.latestOperation)?.snapshot();
+        return this.latestOperation?.snapshot();
     }
 
     protected async runOperation<T>(options: OperationOptions, fn: () => Promise<T>, kind: OperationKind = 'exec'): Promise<T> {

@@ -35,7 +35,6 @@ export async function runTaskWorker(runDir: string, taskId: string) {
     let error: string | undefined;
     let block: BrowserBlock | undefined;
     let budget: TaskResult['budget'];
-    let operation: OperationDiagnostics | undefined;
     let failureOperation: OperationDiagnostics | undefined;
     let saved: TaskResult | undefined;
     let progress: TaskProgress = { startedAt: started, updatedAt: started, phase: 'starting', phaseStartedAt: started, network: [] };
@@ -55,7 +54,7 @@ export async function runTaskWorker(runDir: string, taskId: string) {
             waitUntil,
             block: block ?? connector?.recovery.block,
             network: [...(connector?.network ?? [])],
-            operation: agent?.operation ?? operation,
+            operation: agent?.operation,
             lifecycle: agent?.lifecycle,
             busy: agent?.busy,
         };
@@ -74,7 +73,7 @@ export async function runTaskWorker(runDir: string, taskId: string) {
             actionCount,
             memory,
             progress: saveProgress(),
-            operation: agent?.operation ?? operation,
+            operation: agent?.operation,
             ...(failureOperation ? { failureOperation } : {}),
             ...(status !== 'running' ? { cleanup: { status: 'pending' as const, elapsedMs: 0 } } : {}),
             ...(block ? { block } : {}),
@@ -119,8 +118,6 @@ export async function runTaskWorker(runDir: string, taskId: string) {
         // Retain the agent before awaiting startup so cancellation can queue its cleanup.
         agent = new BrowserAgent(buildDefaultBrowserAgentOptions({ agentOptions: options, browserOptions: options }));
         narrateBrowserAgent(agent);
-        // Keep only the latest snapshot. Heartbeats refresh active durations; no per-event history or image save.
-        agent.events.on('operation', snapshot => { operation = snapshot; });
         agent.events.on('tokensUsed', (event) => addUsage(usage, event));
         agent.events.on('planningStarted', () => setPhase('planning'));
         agent.events.on('actionStarted', action => setPhase('acting', action.variant));
