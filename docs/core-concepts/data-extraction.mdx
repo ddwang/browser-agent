@@ -57,6 +57,10 @@ if (urgentTasks.length > 10) {
 2. A simplified version of the DOM content
 3. The instructions and schema you provide
 
+Extraction reads a detached snapshot. It does not replace live frames or change form state.
+The snapshot includes visible content from nested and cross-origin frames, in document order.
+It excludes hidden content, but keeps visible content outside the current viewport.
+
 As long as its clear enough how that data should be converted to the provdided zod schema, the agent will return data conforming to the schema based on what it sees in the browser.
 
 Magnitude supports any schema that can be defined with `zod` - including arrays, composite objects, numbers, strings, etc.

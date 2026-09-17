@@ -11,6 +11,7 @@ import { PartitionOptions, partitionHtml, MarkdownSerializerOptions, serializeTo
 import EventEmitter from "eventemitter3";
 import { retry } from "@/common/retry";
 import { checkOperation, type OperationOptions } from '@/common/operation';
+import { getVisiblePageContent } from '@/web/pageContent';
 
 // export interface StartAgentWithWebOptions {
 //     agentBaseOptions?: Partial<AgentOptions>;
@@ -60,56 +61,6 @@ export interface BrowserAgentEvents {
     'extractDone': (instructions: string, data: ExtractedOutput) => void;
 }
 
-async function getFullPageContent(page: Page): Promise<string> {
-    checkOperation();
-    // 1. Get all iframe element handles
-    const iframeHandles = await page.locator('iframe').elementHandles();
-
-    // 2. Iterate through each iframe handle
-    for (const iframeHandle of iframeHandles) {
-        checkOperation();
-        // 3. Get the Frame object for the iframe
-        const frame = await iframeHandle.contentFrame();
-        checkOperation();
-        if (frame) {
-            // 4. Get the HTML content of the iframe
-            const iframeContent = await frame.content();
-            checkOperation();
-
-            // 5. Use evaluate to replace the iframe element with its content.
-            // We pass the content as an argument to avoid issues with string escaping.
-            await iframeHandle.evaluate((iframeNode, { content }) => {
-                // Create a new div element to hold the iframe's content
-                const div = document.createElement('div');
-
-                // Use DOMParser to handle Trusted Types restrictions
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(content, 'text/html');
-
-                // Move all body children to the div
-                while (doc.body.firstChild) {
-                    div.appendChild(doc.body.firstChild);
-                }
-
-                // Also preserve any head elements that might be important (styles, etc)
-                const headElements = doc.head.querySelectorAll('style, link[rel="stylesheet"]');
-                headElements.forEach(el => div.appendChild(el.cloneNode(true)));
-
-                // Add a data-attribute to mark that this was an expanded iframe
-                div.dataset.expandedFromIframe = 'true';
-                div.dataset.iframeSrc = (iframeNode as HTMLIFrameElement).getAttribute('src') || '';
-
-                // Replace the iframeNode with the new div
-                iframeNode.parentNode?.replaceChild(div, iframeNode);
-            }, { content: iframeContent });
-        }
-    }
-
-    // 6. Return the final, modified page content
-    checkOperation();
-    return page.content();
-}
-
 export class BrowserAgent extends Agent {
     public readonly browserAgentEvents: EventEmitter<BrowserAgentEvents> = new EventEmitter();
 
@@ -144,9 +95,8 @@ export class BrowserAgent extends Agent {
 
     private async _extract<T extends Schema>(instructions: string, schema: T): Promise<z.infer<T>> {
         this.browserAgentEvents.emit('extractStarted', instructions, schema);
-        //const htmlContent = await this.page.content();
         const htmlContent = await retry(
-            async () => await getFullPageContent(this.page),
+            () => getVisiblePageContent(this.page),
             { retries: 5, delay: 200, exponential: true }
         );
         // const accessibilityTree = await this.page.accessibility.snapshot({ interestingOnly: true });
