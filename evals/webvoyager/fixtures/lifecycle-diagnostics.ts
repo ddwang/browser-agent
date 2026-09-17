@@ -54,6 +54,28 @@ const action = (resolver: Parameters<typeof createAction>[0]['resolver']) => cre
     await agent.start(); assert.equal(agent.lifecycle, 'ready'); await agent.stop();
 }
 
+// One failed model must not release startup or allow cleanup before sibling initialization drains.
+{
+    const entered = deferred(), release = deferred();
+    const failure = new Error('one model failed');
+    let cleanups = 0;
+    const agent = new Agent({ llm, telemetry: false, connectors: [{ id: 'fixture',
+        onStop: async () => { cleanups++; },
+    }] });
+    // Keep the real MultiModelHarness.setup(), with deterministic per-model initialization.
+    (agent.models as any).uniqueModels = [
+        { setup: async () => { throw failure; } },
+        { setup: async () => { entered.resolve(); await release.promise; } },
+    ];
+    const start = assert.rejects(agent.start(), error => error === failure);
+    await entered.promise;
+    const stop = agent.stop();
+    await tick();
+    assert.equal(agent.lifecycle, 'starting'); assert.equal(agent.busy, true); assert.equal(cleanups, 0);
+    release.resolve(); await start; await stop; await agent.whenIdle();
+    assert.equal(agent.lifecycle, 'stopped'); assert.equal(agent.busy, false); assert.equal(cleanups, 1);
+}
+
 // Stop returns after cleanup, but restart cannot race an uncooperative cancelled resolver.
 {
     const entered = deferred(), release = deferred();
