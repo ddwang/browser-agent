@@ -16,7 +16,7 @@ import { createHash } from 'node:crypto';
 import z from 'zod';
 import { BrowserBlockedError, BrowserRecovery, detectBlock, diagnosticUrl, retryAt, type HttpDiagnostic, type RecoveryOptions } from '@/web/recovery';
 import { retry } from '@/common/retry';
-import { checkOperation, currentOperation, drainAll, operationSleep } from '@/common/operation';
+import { checkOperation, currentOperation, drainAll, measureOperation, operationSleep } from '@/common/operation';
 import { OperationCancelledError } from '@/agent/errors';
 
 // export type BrowserOptions = ({ instance: Browser } | { launchOptions?: LaunchOptions }) & {
@@ -196,7 +196,7 @@ export class BrowserConnector implements AgentConnector {
         this.cancelWait = () => controller.abort(new OperationCancelledError('Browser stopped'));
         this.recovery.waitUntil = Date.now() + duration;
         try {
-            await operationSleep(duration, controller.signal);
+            await measureOperation('cooldown', () => operationSleep(duration, controller.signal));
         } finally {
             operation?.signal.removeEventListener('abort', abort);
             this.cancelWait = undefined;

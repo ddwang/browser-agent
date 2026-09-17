@@ -90,6 +90,22 @@ For information on how to run tests and integrate into CI/CD see [here](https://
 
 ## Additional info
 
+### Offline verification
+
+PR CI runs builds, lint, typechecks, offline tests, and Node 18/22 package smoke checks without model credentials. Run the same checks locally:
+
+```bash
+bun install --frozen-lockfile --ignore-scripts
+bun run build
+bun run lint
+bun run typecheck
+bun x --no-install patchright install chromium
+bun run test:offline
+bun run test:package
+```
+
+On Linux, add `--with-deps` to the browser installation command. Tests use local browser pages and loopback model-response fixtures, not live model APIs or benchmark sites.
+
 Please see [our docs](https://docs.magnitude.run) for more information on how to best build Magnitude automations and test cases.
 
 ## Contact

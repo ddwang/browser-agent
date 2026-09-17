@@ -1,4 +1,5 @@
-import { Image as BamlImage } from '@boundaryml/baml';
+// Default import avoids Node 18/22's incomplete CJS named-export detection for Image.
+import baml, { type Image as BamlImage } from '@boundaryml/baml';
 import { StoredMedia } from './serde';
 import { Sharp } from 'sharp';
 import sharp from 'sharp';
@@ -72,7 +73,7 @@ export class Image {
 
     async toBaml(): Promise<BamlImage> {
         const { format, base64 } = await this.toJson();
-        return BamlImage.fromBase64(`image/${format}`, base64);
+        return baml.Image.fromBase64(`image/${format}`, base64);
     }
 
     async saveToFile(filepath: string): Promise<void> {

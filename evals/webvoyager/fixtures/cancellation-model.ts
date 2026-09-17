@@ -12,7 +12,7 @@ import { ClientRegistry } from '@boundaryml/baml';
 const image = new Image(sharp({ create: { width: 2, height: 2, channels: 3, background: '#123456' } }).png());
 class FixtureAgent extends Agent {
     extractModel(options: OperationOptions) {
-        return this.runOperation(options, () => this.models.extract('Extract', z.string(), image, '<p>fixture</p>'));
+        return this.runOperation(options, () => this.models.extract('Extract', z.string(), image, '<p>fixture</p>'), 'extract');
     }
 }
 
@@ -76,6 +76,9 @@ for (const provider of ['anthropic', 'openai', 'baseten'] as const) {
                 ]);
             } finally { clearTimeout(timer); }
             assert.equal(agent.busy, false);
+            assert.ok(agent.operation?.timings.model?.count === 1);
+            assert.equal(agent.operation?.kind, operation === 'act' || operation === 'extract' ? operation : 'query');
+            assert.ok(agent.operation!.cancellationToIdleMs! >= 0);
             release.resolve();
             if (operation === 'retry') await new Promise(resolve => setTimeout(resolve, 750));
             assert.equal(requests, 1, 'no hidden transport retry after cancellation');

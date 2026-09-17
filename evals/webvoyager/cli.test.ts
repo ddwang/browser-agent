@@ -323,7 +323,7 @@ test('run --eval preserves earlier evidence for judging and the saved final answ
     expect(JSON.parse(stats.stdout).successRate).toBe(1);
 });
 
-test.each(['crash', 'timeout', 'judge', 'judge-timeout', 'blocked', 'action-limit'])('%s remains in the denominator with a distinct outcome', async failure => {
+test.each(['crash', 'timeout', 'judge', 'judge-timeout', 'blocked', 'action-limit', 'interrupted'])('%s remains in the denominator with a distinct outcome', async failure => {
     const runDir = join(directory, failure);
     const result = await cli(['run', 'Allrecipes--0', '--run-dir', runDir, '--eval', '--timeout', '1', '--judge-timeout', '1'], failure);
     expect(result.code).toBe(1);
@@ -414,3 +414,40 @@ test('exit zero without a final saved result is still an error with worker diagn
     expect(task.worker).toEqual({ exitCode: 0, signal: null, savedStatus: 'running' });
     expect(JSON.parse(readFileSync(join(runDir, 'summary.json'), 'utf8')).counts.error).toBe(1);
 });
+
+test.each(['timeout', 'cleanup-delay'])('SIGTERM forwards cancellation, stops queued work, and preserves %s outcomes', async failure => {
+    const runDir = join(directory, `interrupt-${failure}`);
+    const suite = join(directory, `interrupt-${failure}.json`);
+    writeJson(suite, { tasks: [0, 1].map(index => ({ id: `Interrupt--${index}`, web_name: 'Synthetic', web: 'https://example.com', ques: 'Read fixture.' })) });
+    const child = Bun.spawn([process.execPath, '--preload', join(import.meta.dir, 'fixtures/mock-runtime.ts'), join(import.meta.dir, 'wv.ts'),
+        'run', '--suite', suite, '--run-dir', runDir, '--timeout', '10', '--eval'], {
+        cwd: directory, env: { ...process.env, ANTHROPIC_API_KEY: 'fixture', EVAL_TEST_FAILURE: failure }, stdout: 'pipe', stderr: 'pipe',
+    });
+    const output = Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+    const watchdog = setTimeout(() => child.kill('SIGKILL'), 12_000);
+    try {
+        const progressPath = join(runDir, 'Interrupt--0.status.json');
+        let ready = false;
+        for (const end = Date.now() + 5000; Date.now() < end && !ready;) {
+            if (existsSync(progressPath)) ready = JSON.parse(readFileSync(progressPath, 'utf8')).phase === (failure === 'timeout' ? 'planning' : 'finished');
+            if (!ready) await Bun.sleep(10);
+        }
+        expect(ready).toBe(true);
+        child.kill('SIGTERM');
+        const [stdout, stderr, code] = await output;
+        expect({ code, detail: code === 130 ? '' : stdout + stderr }).toEqual({ code: 130, detail: '' });
+        const result = JSON.parse(readFileSync(join(runDir, 'Interrupt--0.json'), 'utf8'));
+        expect(result.status).toBe(failure === 'timeout' ? 'cancelled' : 'completed');
+        expect(result.cleanup.status).toBe('settled');
+        expect(result.operation.status).toBe('finished');
+        expect(existsSync(join(runDir, 'Interrupt--1.json'))).toBe(false);
+        const summary = JSON.parse(readFileSync(join(runDir, 'summary.json'), 'utf8'));
+        expect(summary.counts.pending).toBe(1);
+        expect(summary.counts[failure === 'timeout' ? 'interrupted' : 'unscored']).toBe(1);
+        expect(summary.operations.measuredTasks).toBe(1);
+        expect(summary.operations.finishedTasks).toBe(1);
+    } finally {
+        clearTimeout(watchdog);
+        if (child.exitCode === null) { child.kill('SIGKILL'); await output; }
+    }
+}, 15_000);

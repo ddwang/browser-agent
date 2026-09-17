@@ -6,13 +6,23 @@ import { BrowserBlockedError } from '../../../packages/magnitude-core/src/web/re
 import { ActionLimitError } from '../../../packages/magnitude-core/src/agent/errors';
 import hardSuite from '../baseline.json';
 import assert from 'node:assert/strict';
+import { Operation, operationSleep, type OperationDiagnostics, type OperationOptions } from '../../../packages/magnitude-core/src/common/operation';
 const spawnProcess = spawn;
 const executeFile = execFileSync;
 
 const usage = { llm: { provider: 'anthropic', model: 'fixture' }, inputTokens: 100, outputTokens: 10, inputCost: 0.01, outputCost: 0.07 };
 class FakeAgent {
-    constructor(private options?: any) {}
+    private options: any;
+    constructor(options?: any) {
+        this.options = options?.agentOptions ? { ...options.agentOptions, ...options.browserOptions } : options;
+        if (Array.isArray(this.options?.llm)) this.options.llm = this.options.llm[0];
+    }
     events = new EventEmitter();
+    browserAgentEvents = new EventEmitter();
+    operation?: OperationDiagnostics;
+    lifecycle = 'ready';
+    busy = false;
+    async whenIdle() {}
     observations: any[] = [];
     saves = 0;
     memory = {
@@ -32,12 +42,26 @@ class FakeAgent {
     async start() {}
     getConnector() { return undefined; }
     async stop() {
+        if (process.env.EVAL_TEST_FAILURE === 'cleanup-delay') await Bun.sleep(250);
         if (this.options?.browser && process.env.EVAL_TEST_FAILURE?.startsWith('cleanup-')) {
             console.error('Synthetic agent cleanup attempted');
             if (process.env.EVAL_TEST_FAILURE === 'cleanup-agent') throw new Error('Synthetic agent cleanup failure');
         }
     }
-    async act(prompt: string) {
+    async act(prompt: string, options: OperationOptions) {
+        assert.ok(options.signal instanceof AbortSignal, 'runner forwards cancellation');
+        assert.ok(Number.isFinite(options.deadline), 'runner forwards an absolute deadline');
+        const operation = new Operation(this, options, 'act', snapshot => {
+            this.operation = snapshot;
+            this.events.emit('operation', snapshot);
+        });
+        this.busy = true;
+        operation.announce();
+        try { await operation.run(() => this.performAct(prompt)); }
+        catch (error) { operation.fail(error); throw error; }
+        finally { operation.finish(); this.busy = false; operation.markIdle(); }
+    }
+    private async performAct(prompt: string) {
         assert.deepEqual(this.options.recovery, { noProgress: true }, 'Eval runner explicitly opts in to heuristic loop termination');
         if (process.env.EVAL_TEST_FAILURE === 'prompt-date') assert.ok(this.options.prompt.includes('Today is 2001-02-03.'));
         if (process.env.EVAL_TEST_FAILURE === 'mixed-providers-openai') assert.deepEqual(this.options.llm, {
@@ -48,7 +72,8 @@ class FakeAgent {
         });
         checkCriteria(prompt);
         this.events.emit('planningStarted');
-        if (process.env.EVAL_TEST_FAILURE === 'timeout') return new Promise<void>(() => {});
+        if (process.env.EVAL_TEST_FAILURE === 'interrupted') { process.emit('SIGTERM'); return operationSleep(60_000); }
+        if (process.env.EVAL_TEST_FAILURE === 'timeout') return operationSleep(60_000);
         if (process.env.EVAL_TEST_FAILURE === 'crash') throw new Error('Synthetic browser crash');
         if (process.env.EVAL_TEST_FAILURE === 'unfinished') process.exit(0);
         if (process.env.EVAL_TEST_FAILURE === 'blocked') throw new BrowserBlockedError({ reason: 'rate_limit', evidence: 'HTTP 429 fixture' });
@@ -98,8 +123,9 @@ function checkCriteria(prompt: string) {
     }
 }
 
-mock.module('../../../packages/magnitude-core/src/agent/browserAgent', () => ({ startBrowserAgent: async (options: any) => new FakeAgent(options) }));
+mock.module('../../../packages/magnitude-core/src/agent/browserAgent', () => ({ BrowserAgent: FakeAgent, startBrowserAgent: async (options: any) => new FakeAgent(options) }));
 mock.module('../../../packages/magnitude-core/src/agent', () => ({ Agent: FakeAgent }));
+mock.module('../../../packages/magnitude-core/src/agent/narrator', () => ({ narrateAgent() {}, narrateBrowserAgent() {} }));
 mock.module('patchright', () => ({ chromium: { launchPersistentContext: async () => ({ close: async () => {
     if (process.env.EVAL_TEST_FAILURE?.startsWith('cleanup-')) {
         console.error('Synthetic browser cleanup attempted');

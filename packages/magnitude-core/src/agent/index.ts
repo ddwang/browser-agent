@@ -9,7 +9,11 @@ import { AgentConnector } from '@/connectors';
 import { Observation, RenderableContent } from '@/memory/observation';
 import { LLMClient } from "@/ai/types";
 import { ActionLimitError, AgentBusyError, AgentError } from "@/agent/errors";
-import { Operation, checkOperation, currentOperation, operationOptions, untilAborted, type OperationOptions } from '@/common/operation';
+import {
+    Operation, attachOperationDiagnostics, checkOperation, currentOperation, measureOperation,
+    operationOptions, untilAborted, withoutOperation,
+    type OperationDiagnostics, type OperationKind, type OperationOptions,
+} from '@/common/operation';
 import { AgentMemory, AgentMemoryOptions, MemoryRenderOptions } from "@/memory";
 import { ActionDefinition } from "@/actions";
 import { taskActions } from "@/actions/taskActions";
@@ -79,8 +83,14 @@ export class Agent {
     private _paused: boolean = false;
     private _pauseResolve: (() => void) | null = null;
     private activeOperation?: Operation;
+    private latestOperation?: Operation;
     private idle: Promise<void> = Promise.resolve();
-    private stopped = false;
+    private resolveIdle?: () => void;
+    private pendingWork = 0;
+    private lifecycleTail: Promise<void> = Promise.resolve();
+    private lifecycleRequest?: { kind: 'start' | 'stop'; promise: Promise<void> };
+    private lifecycleState: 'new' | 'starting' | 'ready' | 'stopping' | 'stopped' = 'new';
+    private telemetryStarted = false;
 
     protected latestTaskMemory: AgentMemory;// | null = null;
 
@@ -161,28 +171,60 @@ export class Agent {
         return connector;
     }
 
-    async start(): Promise<void> { 
-        checkOperation();
-        if (this.busy) throw new AgentBusyError();
-        // Register telemetry if enabled - do on start instead of cons to prevent weird subclass event issues
-        if (this.options.telemetry) telemetrifyAgent(this);
+    async start(): Promise<void> {
+        return this.scheduleLifecycle('start', async () => {
+            if (this.lifecycleState === 'ready') return;
+            this.lifecycleState = 'starting';
+            if (this.options.telemetry && !this.telemetryStarted) {
+                telemetrifyAgent(this);
+                this.telemetryStarted = true;
+            }
+            try {
+                await this.models.setup();
+                for (const connector of this.connectors) await connector.onStart?.();
+            } catch (error) {
+                await this.stopConnectors();
+                this.lifecycleState = 'stopped';
+                throw error;
+            }
+            this.lifecycleState = 'ready';
+            this.events.emit('start');
+        });
+    }
 
-        //console.log('setting up model')
-        await this.models.setup();
-        //console.log('done setting up model')
+    get lifecycle(): 'new' | 'starting' | 'ready' | 'stopping' | 'stopped' {
+        return this.lifecycleState;
+    }
 
-        logger.info("Agent: Starting connectors...");
-        for (const connector of this.connectors) {
-            if (connector.onStart) await connector.onStart(); 
+    private beginWork(): void {
+        if (this.pendingWork++ === 0) this.idle = new Promise(resolve => { this.resolveIdle = resolve; });
+    }
+
+    private endWork(): void {
+        if (--this.pendingWork === 0) {
+            const resolve = this.resolveIdle;
+            this.resolveIdle = undefined;
+            withoutOperation(() => this.latestOperation?.markIdle());
+            resolve?.();
         }
-        this.events.emit('start');
-        this.stopped = false;
-        logger.info("Agent: All connectors started.");
+    }
 
-        // logger.info("Making initial observations...");
-        // await this._recordConnectorObservations();
-        // logger.info("Initial observations recorded");
-        // Initial observations are handled by the first getObservations call in exec
+    private scheduleLifecycle(kind: 'start' | 'stop', fn: () => Promise<void>): Promise<void> {
+        checkOperation();
+        if (kind === 'start' && this.activeOperation) throw new AgentBusyError();
+        if (this.lifecycleRequest?.kind === kind) return this.lifecycleRequest.promise;
+        this.beginWork();
+        // Cleanup belongs to the agent, not the operation that requested stop().
+        return withoutOperation(() => {
+            const promise = this.lifecycleTail.then(fn).finally(() => {
+                if (this.lifecycleRequest?.promise === promise) this.lifecycleRequest = undefined;
+                this.endWork();
+            });
+            this.lifecycleRequest = { kind, promise };
+            this.lifecycleTail = promise.catch(() => {});
+            if (kind === 'stop') this.activeOperation?.cancel('Agent stopped');
+            return promise;
+        });
     }
 
     identifyAction(action: Action) {
@@ -199,22 +241,34 @@ export class Agent {
     
     /** True until underlying work settles, including after a cancelled caller returns. */
     get busy(): boolean {
-        return this.activeOperation !== undefined;
+        return this.pendingWork > 0;
     }
 
     whenIdle(): Promise<void> {
         return this.idle;
     }
 
-    protected async runOperation<T>(options: OperationOptions, fn: () => Promise<T>): Promise<T> {
+    /** A payload-free snapshot of the active or most recent operation. */
+    get operation(): OperationDiagnostics | undefined {
+        return this.latestOperation?.snapshot();
+    }
+
+    protected async runOperation<T>(options: OperationOptions, fn: () => Promise<T>, kind: OperationKind = 'exec'): Promise<T> {
         const inherited = currentOperation();
         if (inherited?.owner === this) inherited.check();
-        if (this.busy) throw new AgentBusyError();
-        if (this.stopped) throw new AgentError('Agent is stopped; call start() before using it');
-        const operation = new Operation(this, options);
+        if (this.busy) {
+            const error = new AgentBusyError();
+            if (this.activeOperation) attachOperationDiagnostics(error, this.activeOperation.snapshot());
+            throw error;
+        }
+        if (this.lifecycleState === 'stopped') throw new AgentError('Agent is stopped; call start() before using it');
+        const operation = new Operation(this, options, kind, snapshot => {
+            this.events.emit('operation', snapshot);
+        });
         this.activeOperation = operation;
-        let markIdle!: () => void;
-        this.idle = new Promise<void>(resolve => { markIdle = resolve; });
+        this.latestOperation = operation;
+        this.beginWork();
+        operation.announce();
         const worker = operation.run(async () => {
             operation.check();
             try {
@@ -223,10 +277,13 @@ export class Agent {
                 operation.check(); // Preserve the cancellation/deadline cause through downstream errors.
             }
         });
-        const settled = worker.finally(() => {
-            operation.dispose();
+        const settled = worker.catch(error => {
+            operation.fail(error);
+            throw error;
+        }).finally(() => {
+            operation.finish();
             this.activeOperation = undefined;
-            markIdle();
+            this.endWork();
         });
         return untilAborted(settled, operation.signal);
     }
@@ -257,6 +314,9 @@ export class Agent {
             throw new AgentError(`Generated action '${action.variant}' violates input schema: ${parsed.error.message}`, { adaptable: true });
         }
 
+        const operation = currentOperation();
+        operation?.prepareAction(actionDefinition.name);
+        checkOperation();
         const memoryOnly = memoryActions.includes(actionDefinition);
         if (!memoryOnly) for (const connector of this.connectors) {
             await connector.beforeAction?.(action, operationOptions());
@@ -265,9 +325,18 @@ export class Agent {
         this.events.emit('actionStarted', action);
         checkOperation();
         
-        const data = await actionDefinition.resolver(
-            { input: parsed.data, agent: this, memory, ...operationOptions() }
-        );
+        const data = await measureOperation('action', async () => {
+            const options = operationOptions();
+            operation?.actionState('started');
+            try {
+                const result = await actionDefinition.resolver({ input: parsed.data, agent: this, memory, ...options });
+                operation?.actionState('completed');
+                return result;
+            } catch (error) {
+                operation?.actionState('failed');
+                throw error;
+            }
+        });
 
         checkOperation();
         this.events.emit('actionDone', action);
@@ -292,17 +361,16 @@ export class Agent {
     }
 
     protected async _recordConnectorObservations(memory: AgentMemory) {
-        checkOperation();
-        for (const connector of this.connectors) {
-            // could do Promise.all if matters
-            const connObservations = connector.collectObservations ? await connector.collectObservations(operationOptions()) : [];
-            checkOperation();
-            //observations.push(...connObservations);
-            for (const obs of connObservations) {
-                memory.recordObservation(obs);
+        return measureOperation('observations', async () => {
+            for (const connector of this.connectors) {
+                const connObservations = connector.collectObservations ? await connector.collectObservations(operationOptions()) : [];
+                checkOperation();
+                for (const obs of connObservations) {
+                    memory.recordObservation(obs);
+                }
             }
-        }
-        this.events.emit('observationsRecorded');
+            this.events.emit('observationsRecorded');
+        });
     }
 
     get memory(): AgentMemory {
@@ -311,7 +379,7 @@ export class Agent {
     }
 
     async act(taskOrSteps: string | string[], options: ActOptions = {}): Promise<void> {
-        return this.runOperation(options, () => this._runAct(taskOrSteps, options));
+        return this.runOperation(options, () => this._runAct(taskOrSteps, options), 'act');
     }
 
     private async _runAct(taskOrSteps: string | string[], options: ActOptions): Promise<void> {
@@ -357,32 +425,27 @@ export class Agent {
     }
 
     private async _buildContext(memory: AgentMemory, options?: MemoryRenderOptions): Promise<AgentContext> {
-        checkOperation();
-        const messages = await memory.render(options);
-        checkOperation();
+        return measureOperation('context', async () => {
+            const messages = await memory.render(options);
+            checkOperation();
 
-        const connectorInstructions: ConnectorInstructions[] = [];
-
-        for (const connector of this.connectors) {
-            if (connector.getInstructions) {
-                const instructions = await connector.getInstructions(operationOptions());
-                checkOperation();
-
-                if (instructions) {
-                    connectorInstructions.push({
-                        connectorId: connector.id,
-                        instructions: instructions
-                    });
+            const connectorInstructions: ConnectorInstructions[] = [];
+            for (const connector of this.connectors) {
+                if (connector.getInstructions) {
+                    const instructions = await connector.getInstructions(operationOptions());
+                    checkOperation();
+                    if (instructions) {
+                        connectorInstructions.push({ connectorId: connector.id, instructions });
+                    }
                 }
             }
-        }
 
-        return {
-            instructions: memory.instructions,
-            observationContent: messages,
-            //observationContent: content,
-            connectorInstructions: connectorInstructions
-        };
+            return {
+                instructions: memory.instructions,
+                observationContent: messages,
+                connectorInstructions,
+            };
+        });
     }
 
     private async _act(description: string, memory: AgentMemory, options: ActOptions = {}): Promise<void> {
@@ -528,7 +591,7 @@ export class Agent {
             await this._recordConnectorObservations(this.latestTaskMemory);
             const memoryContext = await this._buildContext(this.memory, options);
             return await this.models.query(memoryContext, query, schema);
-        });
+        }, 'query');
     }
 
     async queueDone() {
@@ -544,9 +607,12 @@ export class Agent {
         if (!this._paused) return; // A pause listener may have resumed synchronously.
         logger.info("Agent: Paused");
         try {
-            await untilAborted(new Promise<void>((resolve) => {
-                this._pauseResolve = resolve;
-            }), currentOperation()?.signal);
+            await measureOperation('paused', async () => {
+                if (!this._paused) return; // A diagnostic listener may have resumed.
+                await untilAborted(new Promise<void>((resolve) => {
+                    this._pauseResolve = resolve;
+                }), currentOperation()?.signal);
+            });
         } finally {
             this._pauseResolve = null;
         }
@@ -573,19 +639,20 @@ export class Agent {
     }
 
     async stop() {
-        checkOperation();
-        /**
-         * Stop the agent and close the browser context.
-         * May be called asynchronously and interrupt an agent in the middle of a action sequence.
-         */
-        this.stopped = true;
-        this.activeOperation?.cancel('Agent stopped');
-        this.doneActing = true;
-        if (this._paused) {
+        return this.scheduleLifecycle('stop', async () => {
+            if (this.lifecycleState === 'stopped') return;
+            this.lifecycleState = 'stopping';
+            this.doneActing = true;
             this._paused = false;
             this._pauseResolve?.();
             this._pauseResolve = null;
-        }
+            await this.stopConnectors();
+            this.lifecycleState = 'stopped';
+            this.events.emit('stop');
+        });
+    }
+
+    private async stopConnectors(): Promise<void> {
         logger.info("Agent: Stopping connectors...");
         for (const connector of this.connectors) {
             try {
@@ -594,7 +661,6 @@ export class Agent {
                 logger.warn(`Agent: Error stopping connector ${connector.id}: ${error instanceof Error ? error.message : String(error)}`);
             }
         }
-        this.events.emit('stop');
         logger.info("Agent: All connectors stopped.");
         logger.info("Agent: Stopped successfully.");
     }

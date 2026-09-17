@@ -47,6 +47,57 @@ Only one operation can run on an agent at a time. Nested calls to `act`, `query`
 
 `stop()` cancels the current operation and closes the browser context. Per-operation cancellation leaves the context open. `stop()` does not wait indefinitely for uncooperative custom work, and it does not make that work safe to reuse.
 
+### Lifecycle coordination
+
+`start()` and `stop()` are serialized in call order. Repeated calls for the same pending transition share its work. Starting an already-ready agent or stopping an already-stopped agent does not rerun connector hooks. If startup fails, Magnitude attempts connector cleanup before rejecting; a later `start()` can retry.
+
+`agent.busy` includes startup, shutdown, queued lifecycle transitions, and draining operations. `whenIdle()` waits for all of that tracked work. `agent.lifecycle` is `new`, `starting`, `ready`, `stopping`, or `stopped`. Lifecycle hooks must not await another lifecycle call on the same agent.
+
+A `start()` during shutdown waits for cleanup. If an operation is still draining, `start()` rejects with `AgentBusyError`. Wait for idle before restarting. Neither `stop()` nor `whenIdle()` proves that a remote submission failed or succeeded. Connector cleanup errors are logged, as before; applications remain responsible for retiring sessions they cannot verify.
+
+## Operation diagnostics
+
+Read `agent.operation` for the active or most recent operation. Subscribe to `operation` events for snapshots at phase transitions, cancellation, completion, and idle:
+
+```typescript
+agent.events.on('operation', snapshot => {
+  // Forward to your application metrics sink. Do not block this synchronous listener.
+  console.log(snapshot.id, snapshot.status, snapshot.phase, snapshot.timings);
+});
+```
+
+Snapshots include an operation ID, method kind, status (`running`, `draining`, or `finished`), outcome, elapsed time, and the last registered action's name, index, and dispatch state. They contain no prompts, URLs, action arguments, page contents, or raw errors. Use static, nonsensitive custom action names. Existing logging, memory, and action/thought events retain their original payloads; this is not a global redaction setting.
+
+| Last action state | Meaning |
+| --- | --- |
+| `pending` | The action was validated, but its resolver has not been called. |
+| `started` | The resolver was called and has not settled. Side effects might already have happened. |
+| `completed` | The resolver returned. This does not verify the application's business outcome. |
+| `failed` | The resolver threw. Side effects might still have happened. |
+
+Errors from accepted operations carry an `operation` snapshot when the error object is extensible. Built-in errors expose this field in their types. The original error identity and type are preserved. Frozen or custom errors may not accept metadata; use the getter or event in that case. `AgentBusyError.operation` identifies the conflicting active operation, when present.
+
+A cancellation error retains the snapshot from cancellation, even if the worker later finishes. Later events and the getter show draining progress. `cancellationToDrainMs` measures time until the worker settles; `cancellationToIdleMs` also includes pending lifecycle cleanup. A finished snapshot can precede idle, so use `busy` and `whenIdle()` for reuse decisions. Keep listeners synchronous; catch failures in any asynchronous work you start from them. Synchronous diagnostic listener exceptions are logged without failing the operation.
+
+### Latency measurements
+
+`timings` contains counts and total milliseconds for context construction, observations, model calls, action resolvers, screenshots, stability waits, cooldowns, retry waits, pauses, and cursor movement. A snapshot's phase is the most recently started active span, or `preparing` when none is active.
+
+Totals are inclusive: action time can contain cursor and stability time, and observations can contain screenshot time. Concurrent spans also overlap. Do not sum these totals to calculate wall-clock duration; use `elapsedMs`. Native provider retries are included in model time; the separate retry category measures Magnitude's own retry sleeps. Durations use a monotonic clock. `startedAt` is Unix time in milliseconds for correlation.
+
+Aggregate final snapshots by operation ID in your application to compare latency distributions. Magnitude retains only the current or most recent operation, not a persistent history.
+
+To remove the cursor's 300 ms animation delay while keeping its visual position:
+
+```typescript
+const agent = await startBrowserAgent({
+  // ...your model and browser settings
+  visuals: { animateCursor: false },
+});
+```
+
+`showCursor: false` disables the cursor drawing and its delay. Both cursor visibility and animation default to `true`. These options do not shorten browser stability waits.
+
 ## Typed outcomes
 
 Import these errors from `@ddwang/magnitude-core`:
@@ -55,7 +106,7 @@ Import these errors from `@ddwang/magnitude-core`:
 | --- | --- |
 | `OperationCancelledError` | The caller cancelled, or `stop()` cancelled the operation. `cause` contains the supplied reason. |
 | `OperationDeadlineError` | The operation reached its `deadline`. |
-| `AgentBusyError` | Another operation is active or draining. |
+| `AgentBusyError` | Another operation is active or draining, or a lifecycle transition is pending. |
 | `ActionLimitError` | The existing action budget was exhausted. |
 | `BrowserBlockedError` | Browser recovery stopped execution. Inspect `block.reason`, `block.evidence`, and optional `block.retryAt`. |
 

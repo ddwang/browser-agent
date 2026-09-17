@@ -5,8 +5,16 @@ import { Image } from '../../../packages/magnitude-core/src/memory/image';
 
 const screenshot = await new Image(sharp({ create: { width: 2, height: 3, channels: 3, background: '#123456' } }).png()).toJson();
 const injection = '<img src=x onerror="window.injected=true">';
+const operation = {
+    id: 'operation<&>', kind: 'act', status: 'finished', outcome: 'cancelled', phase: 'preparing', startedAt: 0, elapsedMs: 2000,
+    cancellationToDrainMs: 12, cancellationToIdleMs: 23,
+    lastAction: { index: 1, name: injection, state: 'completed' }, timings: { model: { count: 2, totalMs: 1234 } },
+};
 const run = {
     status: 'completed', outcome: 'success', evaluation: { reasoning: injection },
+    operation, failureOperation: { ...operation, status: 'draining', lastAction: { ...operation.lastAction, state: 'started' } },
+    progress: { phase: 'finished', startedAt: 0, updatedAt: 1, phaseStartedAt: 0, lifecycle: 'stopped', busy: false, network: [], operation },
+    cleanup: { status: 'settled', elapsedMs: 30 },
     memory: { observations: [
         { source: 'connector:web', timestamp: 0, data: screenshot },
         { source: 'connector:web', timestamp: 1, data: { url: { type: 'primitive', content: 'https://fixture.invalid/?q=<record>&a=1' }, screenshot } },
@@ -36,6 +44,11 @@ try {
     assert.ok(!content.includes(screenshot.base64));
     assert.ok(content.includes('https://fixture.invalid/?q=<record>&a=1'));
     assert.ok(content.includes(injection));
+    assert.ok(content.includes('Operation diagnostics'));
+    assert.ok(content.includes('operation<&>'));
+    assert.ok(content.includes('Cancellation to idle: 23 ms'));
+    assert.ok(content.includes('1234'));
+    assert.ok(content.includes('Cleanup: settled'));
     assert.equal(await page.locator('#content img').count(), 2, 'observation and model text cannot inject HTML');
     assert.equal(await page.evaluate(() => (window as any).injected), undefined);
     console.log('PASS: legacy and structured screenshots render as images, with URLs and escaped model/observation text');

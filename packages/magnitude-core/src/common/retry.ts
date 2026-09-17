@@ -1,4 +1,4 @@
-import { checkOperation, operationSleep } from './operation';
+import { checkOperation, measureOperation, operationSleep } from './operation';
 
 type RetryOptions = {
     retries?: number;
@@ -64,7 +64,7 @@ export async function retry<T>(
                     delay * Math.pow(multiplier, attempt),
                     maxDelay
                 );
-                await operationSleep(currentDelay);
+                await measureOperation('retry', () => operationSleep(currentDelay));
             }
         }
     }

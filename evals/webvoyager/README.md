@@ -170,22 +170,34 @@ before any browser or model starts.
 The CLI prints a new timestamped run directory under `evals/webvoyager/results/`.
 Use `--run-dir <path>` to name it explicitly. Each task gets one attempt; there are
 no hidden browser-crash retries. `--timeout` sets the per-task limit in seconds
-(default: 1200, including browser/model setup). A worker that exceeds the deadline
-plus its cleanup allowance is killed and recorded as a timeout.
+(default: 1200, including browser/model setup). The runner passes that same absolute
+deadline and an abort signal into `act()`, so model calls, retries, and cooldowns
+share the remaining time. A setup watchdog covers browser/model startup before
+`act()` begins. After execution ends, the worker allows five seconds for cleanup
+and in-flight work to settle. A final process watchdog kills workers that exceed
+the task timeout plus 15 seconds and records a timeout.
 Judges run in separate processes with a 300-second limit, configurable with
 `--judge-timeout`. A judge timeout is recorded as `judge_error`.
 The judge's output-token budget is separate from actor action limits, saved-trace
 size limits, and both process deadlines. Raising it permits longer reasoning but
 does not force the model to use the full allowance; actual usage is still counted.
 
+To stop a run, press Ctrl+C or send SIGTERM to the coordinator. It stops taking
+queued tasks and forwards SIGTERM to active workers, with a ten-second grace
+period before a forced kill. Actor workers cancel their active operation and save
+`cancelled` status, reported as `interrupted` in summaries. Already-saved completed
+tasks and judge verdicts remain intact. Unstarted tasks remain `pending`.
+Cancellation cannot undo a browser action already dispatched to a site.
+
 Each run saves:
 
 - `manifest.json`: selected task text and criteria, providers, models, sampling/reasoning options, timeouts, worker count,
   Git revision, dirty-worktree status, source/dependency hash, and judge version.
 - `<task-id>.json`: observations, elapsed milliseconds, action count, model usage,
-  and execution status or error.
+  execution status or error, operation diagnostics, and cleanup status/timing.
 - `<task-id>.status.json`: a lightweight two-second heartbeat showing planning,
-  actions, timed waits, detected barriers, and recent HTTP diagnostics.
+  actions, timed waits, detected barriers, recent HTTP diagnostics, agent lifecycle,
+  busy state, and the latest operation snapshot.
 - `<task-id>.eval.json`: judge verdict/reasoning, or a judge error, plus judge usage.
 - `summary.json`: overall and per-site metrics, including all selected tasks.
 
@@ -205,6 +217,35 @@ do not silently change old runs. To compare a different judge configuration,
 preserve the original artifacts and evaluate every completed trace into a separate
 result set, not only traces with failed judgments. Rescoring saved traces is not
 a new browser attempt or a complete benchmark when some tasks were never run.
+
+### Operation diagnostics
+
+New actor results save `operation`: the operation ID, outcome, current phase,
+last action's dispatch state, phase counts/timings, and cancellation-to-drain/idle
+timings when available. These snapshots contain no prompts, action inputs, page
+content, or screenshots. Existing task memory and errors still contain task data.
+The viewer displays these diagnostics alongside the execution status.
+
+On failure or cancellation, `failureOperation` preserves the snapshot captured
+at that point. The final `operation` snapshot is refreshed after bounded cleanup;
+it can still be `draining` if underlying work did not settle. A resolver that
+finishes after cancellation can change the final dispatch state without changing
+the failure snapshot. Neither snapshot proves that a remote side effect succeeded.
+
+`cleanup.status` is `pending` until cleanup ends, then `settled` or `timed_out`.
+`settled` means cleanup attempts and tracked execution settled, not that every
+cleanup call succeeded; cleanup errors are logged without replacing a saved task
+outcome. `cleanup.elapsedMs` measures the runner's cleanup interval separately
+from the library's cancellation-to-idle timing. No operation snapshot exists when
+startup fails before `act()`.
+
+`summary.json` and `stats` include `operations` overall and per site/capability:
+measured/finished task counts, phase counts and total milliseconds, and per-task
+median/p95 phase durations. They also summarize cancellation-to-drain/idle timings.
+Timings are inclusive: nested or concurrent phases overlap, so do not sum them as
+wall-clock time. Failed and partially drained operations contribute their observed
+timings. Each distribution reports its sample count; missing metadata in older
+runs is not treated as zero. These metrics cover actor operations, not judging.
 
 ## Compare results
 

@@ -35,7 +35,7 @@ function loadRecords(runDir: string, manifest: RunManifest): TaskRecord[] {
     return manifest.tasks.map(task => {
         const run = readOptional<TaskResult>(join(runDir, `${task.id}.json`));
         const progress = run?.status === 'running' ? readOptional<TaskProgress>(join(runDir, `${task.id}.status.json`)) : undefined;
-        if (run && progress) { run.progress = progress; run.time = progress.updatedAt - progress.startedAt; }
+        if (run && progress) { run.progress = progress; run.operation = progress.operation ?? run.operation; run.time = progress.updatedAt - progress.startedAt; }
         return { task, run, evaluation: readOptional<Evaluation>(join(runDir, `${task.id}.eval.json`)) };
     });
 }
@@ -49,7 +49,9 @@ function report(runDir: string, manifest: RunManifest) {
         categories: Object.fromEntries(categories.map(category => [category, summarize(records.filter(record => record.task.web_name === category))])),
         capabilities: Object.fromEntries([...new Set(manifest.tasks.flatMap(task => task.capabilities ?? []))]
             .map(capability => [capability, summarize(records.filter(record => record.task.capabilities?.includes(capability)))])),
-        tasks: records.map(record => ({ id: record.task.id, outcome: outcome(record), timeMs: record.run?.time ?? null, progress: record.run?.progress, block: record.run?.block, budget: record.run?.budget ?? record.evaluation?.budget })),
+        tasks: records.map(record => ({ id: record.task.id, outcome: outcome(record), timeMs: record.run?.time ?? null,
+            progress: record.run?.progress, operation: record.run?.operation, failureOperation: record.run?.failureOperation,
+            cleanup: record.run?.cleanup, block: record.run?.block, budget: record.run?.budget ?? record.evaluation?.budget })),
     };
 }
 
@@ -67,11 +69,21 @@ async function checkCredentials(provider: ModelConfig['provider']) {
     }
 }
 
-async function parallel<T>(items: T[], workers: number, work: (item: T) => Promise<void>) {
+async function parallel<T>(items: T[], workers: number, work: (item: T) => Promise<void>, signal?: AbortSignal) {
     let index = 0;
     await Promise.all(Array.from({ length: Math.min(workers, items.length) }, async () => {
-        while (index < items.length) await work(items[index++]);
+        while (index < items.length && !signal?.aborted) await work(items[index++]);
     }));
+}
+
+async function withInterrupt(work: (signal: AbortSignal) => Promise<void>): Promise<boolean> {
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    process.on('SIGINT', cancel);
+    process.on('SIGTERM', cancel);
+    try { await work(controller.signal); }
+    finally { process.off('SIGINT', cancel); process.off('SIGTERM', cancel); }
+    return controller.signal.aborted;
 }
 
 function positiveInteger(value: string) {
@@ -119,50 +131,64 @@ async function selectTasks(input: string | undefined, suite?: string, holdout = 
     return candidates.filter(task => selected.includes(task.id));
 }
 
-async function runWorker(script: string, runDir: string, taskId: string, timeoutMs: number) {
-    return new Promise<{ error?: string; timedOut: boolean; exitCode: number | null; signal: string | null }>((resolveWorker) => {
+async function runWorker(script: string, runDir: string, taskId: string, timeoutMs: number, signal?: AbortSignal) {
+    return new Promise<{ error?: string; timedOut: boolean; cancelled: boolean; exitCode: number | null; signal: string | null }>((resolveWorker) => {
+        if (signal?.aborted) { resolveWorker({ error: 'Worker interrupted', timedOut: false, cancelled: true, exitCode: null, signal: null }); return; }
         const child = spawn(process.execPath, [join(import.meta.dir, script), runDir, taskId], { stdio: 'inherit', env: process.env });
         let killed = false;
+        let cancelled = false;
+        let cancellationDeadline: ReturnType<typeof setTimeout> | undefined;
         let processError: string | undefined;
         const timer = setTimeout(() => {
             killed = true;
             child.kill('SIGKILL');
         }, timeoutMs);
-        child.once('error', error => { processError = error.message; });
-        child.once('close', (code, signal) => {
+        const cancel = () => {
+            cancelled = true;
             clearTimeout(timer);
-            resolveWorker({ timedOut: killed, exitCode: code, signal, error: killed ? 'Worker exceeded process deadline' : processError ?? (code === 0 ? undefined : `Worker exited with code ${code}${signal ? ` (${signal})` : ''}`) });
+            child.kill('SIGTERM');
+            cancellationDeadline = setTimeout(() => child.kill('SIGKILL'), 10_000);
+        };
+        signal?.addEventListener('abort', cancel, { once: true });
+        child.once('error', error => { processError = error.message; });
+        child.once('close', (code, exitSignal) => {
+            clearTimeout(timer);
+            clearTimeout(cancellationDeadline);
+            signal?.removeEventListener('abort', cancel);
+            resolveWorker({ timedOut: killed, cancelled, exitCode: code, signal: exitSignal, error: cancelled ? 'Worker interrupted' : killed ? 'Worker exceeded process deadline' : processError ?? (code === 0 ? undefined : `Worker exited with code ${code}${exitSignal ? ` (${exitSignal})` : ''}`) });
         });
     });
 }
 
-async function runTask(task: Task, runDir: string, manifest: RunManifest) {
+async function runTask(task: Task, runDir: string, manifest: RunManifest, signal?: AbortSignal) {
     const started = Date.now();
     const resultPath = join(runDir, `${task.id}.json`);
     writeJson(resultPath, { ...emptyUsage(), status: 'running', time: 0, actionCount: 0, memory: null } satisfies TaskResult);
-    const worker = await runWorker('wv-runner.ts', runDir, task.id, manifest.timeoutMs + 15_000);
+    const worker = await runWorker('wv-runner.ts', runDir, task.id, manifest.timeoutMs + 15_000, signal);
     const previous = readJson<TaskResult>(resultPath);
-    if (worker.timedOut || previous.status === 'running' || (worker.error && previous.status === 'completed')) {
+    if (worker.timedOut || previous.status === 'running' || (worker.error && !worker.cancelled && previous.status === 'completed')) {
+        const progress = readOptional<TaskProgress>(join(runDir, `${task.id}.status.json`));
         writeJson(resultPath, {
             ...previous,
-            status: worker.timedOut ? 'timeout' : 'error',
+            status: worker.cancelled ? 'cancelled' : worker.timedOut ? 'timeout' : 'error',
             timedOut: worker.timedOut,
             time: Date.now() - started,
             error: worker.error ?? 'Worker exited without a final result',
+            ...(progress ? { progress, operation: progress.operation ?? previous.operation } : {}),
             worker: { exitCode: worker.exitCode, signal: worker.signal, savedStatus: previous.status },
         } satisfies TaskResult);
     }
 }
 
-async function scoreTask(task: Task, runDir: string, manifest: RunManifest) {
+async function scoreTask(task: Task, runDir: string, manifest: RunManifest, signal?: AbortSignal) {
     const run = readOptional<TaskResult>(join(runDir, `${task.id}.json`));
     if (!run || run.status !== 'completed') return;
     const started = Date.now();
     const evalPath = join(runDir, `${task.id}.eval.json`);
     writeJson(evalPath, { time: 0, usage: emptyUsage() });
-    const worker = await runWorker('judge.ts', runDir, task.id, manifest.judgeTimeoutMs);
+    const worker = await runWorker('judge.ts', runDir, task.id, manifest.judgeTimeoutMs, signal);
     let evaluation = readJson<Evaluation>(evalPath);
-    if (worker.error || (!evaluation.result && !evaluation.error)) {
+    if ((worker.error && !(worker.cancelled && evaluation.result)) || (!evaluation.result && !evaluation.error)) {
         evaluation = { time: Date.now() - started, usage: emptyUsage(), error: worker.error ?? 'Judge exited without a verdict' };
         writeJson(evalPath, evaluation);
     }
@@ -273,16 +299,17 @@ program.command('run [input]')
         mkdirSync(runDir, { recursive: true });
         if (!previous) writeJson(manifestPath, manifest);
         console.log(`Run directory: ${runDir}\nRunning ${pending.length} tasks with ${options.workers} workers`);
-        await parallel(pending, options.workers, async ({ task }) => {
+        const interrupted = await withInterrupt(signal => parallel(pending, options.workers, async ({ task }) => {
             // An explicit rerun must not retain the previous verdict.
             writeJson(join(runDir, `${task.id}.eval.json`), { time: 0, usage: emptyUsage() });
-            await runTask(task, runDir, manifest);
-            if (options.eval) await scoreTask(task, runDir, manifest);
+            await runTask(task, runDir, manifest, signal);
+            if (options.eval && !signal.aborted) await scoreTask(task, runDir, manifest, signal);
             writeJson(join(runDir, 'summary.json'), report(runDir, manifest));
-        });
+        }, signal));
         const summary = report(runDir, manifest);
         console.log(JSON.stringify(summary, null, 2));
-        if (summary.counts.error || summary.counts.timeout || summary.counts.blocked || summary.counts.judge_error || summary.counts.failure) process.exitCode = 1;
+        if (interrupted) process.exitCode = 130;
+        else if (summary.counts.error || summary.counts.timeout || summary.counts.blocked || summary.counts.judge_error || summary.counts.failure || summary.counts.interrupted) process.exitCode = 1;
     });
 
 program.command('eval [input]')
@@ -301,11 +328,12 @@ program.command('eval [input]')
             && (options.replace || !record.evaluation?.result));
         if (!records.length) { console.log('No tasks to evaluate'); return; }
         await checkCredentials(manifest.judge.provider);
-        await parallel(records, options.workers, async ({ task }) => { await scoreTask(task, runDir, manifest); });
+        const interrupted = await withInterrupt(signal => parallel(records, options.workers, async ({ task }) => { await scoreTask(task, runDir, manifest, signal); }, signal));
         const summary = report(runDir, manifest);
         writeJson(join(runDir, 'summary.json'), summary);
         console.log(JSON.stringify(summary, null, 2));
-        if (summary.counts.judge_error) process.exitCode = 1;
+        if (interrupted) process.exitCode = 130;
+        else if (summary.counts.judge_error) process.exitCode = 1;
     });
 
 program.command('stats')

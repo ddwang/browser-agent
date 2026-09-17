@@ -20,7 +20,7 @@ import { parsePlannerResponse, PlannerResponseError, memoryUpdatesSchema, type P
 import { anthropicOutputFormat, plannerSchema, usesStructuredOutput } from './structuredOutput';
 import { ModelResponseError } from './modelResponseError';
 import { DEFAULT_BASETEN_MODEL } from './baseten';
-import { checkOperation, operationOptions } from '@/common/operation';
+import { beginOperationPhase, checkOperation, operationOptions } from '@/common/operation';
 
 interface ModelHarnessOptions {
     llm: LLMClient;
@@ -109,7 +109,9 @@ export class ModelHarness {
         // Scope usage to this invocation, including failed parses and provider
         // retries. A shared cumulative collector can double-count concurrent calls.
         const collector = new Collector('model-call');
+        const finish = beginOperationPhase('model');
         try {
+            checkOperation();
             try {
                 return await invoke(collector);
             } finally {
@@ -130,6 +132,7 @@ export class ModelHarness {
                 }
             }
         } finally {
+            finish();
             for (const log of collector.logs) {
                 for (const call of log.calls) {
                     try { this._reportCallUsage(call); }

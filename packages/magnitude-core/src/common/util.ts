@@ -1,5 +1,5 @@
 import logger from "@/logger";
-import { checkOperation, operationSleep } from './operation';
+import { checkOperation, measureOperation, operationSleep } from './operation';
 
 // export interface RetryOptions {
 //     errorSubstrings: string[],
@@ -95,7 +95,7 @@ export async function retryOnError<T>(
                 }
             }
         }
-        if (attempt < options.retryLimit) await operationSleep(options.delayMs);
+        if (attempt < options.retryLimit) await measureOperation('retry', () => operationSleep(options.delayMs));
     }
 
     throw lastError;

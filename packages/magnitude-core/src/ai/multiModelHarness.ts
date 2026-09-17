@@ -7,6 +7,7 @@ import { Image } from '@/memory/image';
 import EventEmitter from "eventemitter3";
 import z from "zod";
 import type { PlannerResponse } from './plannerResponse';
+import { drainAll } from '@/common/operation';
 
 
 export class MultiModelHarness {
@@ -21,7 +22,7 @@ export class MultiModelHarness {
 
     constructor(clients: LLMClient[]) {
         // Sort by specificity (from least specific to most specific)
-        const sortedClients = clients.toSorted((a, b) => (b.roles ? b.roles.length : 9999) - (a.roles ? a.roles.length : 9999));
+        const sortedClients = [...clients].sort((a, b) => (b.roles ? b.roles.length : 9999) - (a.roles ? a.roles.length : 9999));
         for (const client of sortedClients) {
             const harness = new ModelHarness({ llm: client });
             this.uniqueModels.push(harness);
@@ -41,7 +42,8 @@ export class MultiModelHarness {
     }
 
     async setup() {
-        await Promise.all(this.uniqueModels.map(model => model.setup()));
+        // A failed model must not release startup while another is still initializing.
+        await drainAll(this.uniqueModels.map(model => model.setup()));
     }
 
     describe(): string {

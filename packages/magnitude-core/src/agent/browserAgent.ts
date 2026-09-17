@@ -135,11 +135,11 @@ export class BrowserAgent extends Agent {
             this.browserAgentEvents.emit('nav', url);
             checkOperation();
             await this.require(BrowserConnector).getHarness().navigate(url);
-        });
+        }, 'nav');
     }
 
     async extract<T extends Schema>(instructions: string, schema: T, options: OperationOptions = {}): Promise<z.infer<T>> {
-        return this.runOperation(options, () => this._extract(instructions, schema));
+        return this.runOperation(options, () => this._extract(instructions, schema), 'extract');
     }
 
     private async _extract<T extends Schema>(instructions: string, schema: T): Promise<z.infer<T>> {

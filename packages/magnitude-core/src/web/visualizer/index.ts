@@ -5,6 +5,8 @@ import { TypeEffectVisual } from "./typeEffects";
 
 export interface ActionVisualizerOptions {
     showCursor?: boolean,
+    /** Set false to skip the 300 ms movement animation. Defaults to true. */
+    animateCursor?: boolean;
     showHoverCircle?: boolean; // mouse effect option
     showClickRipple?: boolean; // mouse effect option
     showDragLine?: boolean; // mouse effect option
@@ -25,13 +27,14 @@ export class ActionVisualizer {
         this.context = context;
         this.options = {
             showCursor: options.showCursor ?? true,
+            animateCursor: options.animateCursor ?? true,
             showHoverCircle: options.showHoverCircle ?? false,
             showClickRipple: options.showClickRipple ?? true,
             showDragLine: options.showDragLine ?? false,
             showTypeEffects: options.showTypeEffects ?? true
         };
 
-        this.cursor = new CursorVisual();
+        this.cursor = new CursorVisual(this.options.animateCursor);
         this.mouseEffects = new MouseEffectVisual(this.options);
         this.typeEffects = new TypeEffectVisual();
     }
@@ -46,21 +49,20 @@ export class ActionVisualizer {
 
     async setActivePage(page: Page) {
         this.page = page;
-        await this.cursor.setActivePage(page);
+        if (this.options.showCursor) await this.cursor.setActivePage(page);
         await this.mouseEffects.setActivePage(page);
         await this.typeEffects.setActivePage(page);
     }
 
     async moveVirtualCursor(x: number, y: number) {
-        // Takes like 300ms for smooth anim
-        await this.cursor.move(x, y);
+        if (this.options.showCursor) await this.cursor.move(x, y);
     }
 
     async hideAll() {
-        await this.cursor.hide();
+        if (this.options.showCursor) await this.cursor.hide();
     }
 
     async showAll() {
-        await this.cursor.show();
+        if (this.options.showCursor) await this.cursor.show();
     }
 }

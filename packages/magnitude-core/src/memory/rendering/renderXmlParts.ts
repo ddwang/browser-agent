@@ -1,7 +1,7 @@
 /**
  * Convert observations to form that can be passed as BAML context, rendered as a custom XML-like structure.
  */
-import { Image as BamlImage } from '@boundaryml/baml';
+import baml, { type Image as BamlImage } from '@boundaryml/baml';
 import { RenderableContent, ObservableDataObject, ObservableDataArray, ObservableDataPrimitive } from '@/memory/observation';
 import { Image } from '@/memory/image';
 
@@ -29,7 +29,7 @@ async function buildXmlPartsRecursive(
         }
         return;
     }
-    if (data instanceof BamlImage) {
+    if (data instanceof baml.Image) {
         partsList.push(data);
         return;
     }
@@ -81,7 +81,7 @@ async function buildXmlPartsRecursive(
             if (currentStr) mergedValueParts.push(currentStr);
 
             // Apply styling rules
-            if (mergedValueParts.length === 1 && mergedValueParts[0] instanceof BamlImage) {
+            if (mergedValueParts.length === 1 && mergedValueParts[0] instanceof baml.Image) {
                 partsList.push(`${indent}<${tagName}>`);
                 partsList.push(mergedValueParts[0]); // The BamlImage
                 partsList.push(`</${tagName}>`);

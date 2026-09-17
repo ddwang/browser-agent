@@ -5,6 +5,7 @@ import { BrowserConnector } from '../../../packages/magnitude-core/src/connector
 import { BrowserBlockedError } from '../../../packages/magnitude-core/src/web/recovery';
 import { ActionLimitError } from '../../../packages/magnitude-core/src/agent/errors';
 import { createAction } from '../../../packages/magnitude-core/src/actions';
+import { ActionVisualizer } from '../../../packages/magnitude-core/src/web/visualizer';
 
 // Real browser interactions against loopback fixtures; no websites or model calls.
 let browser: Browser;
@@ -83,7 +84,41 @@ test('cooldown exposes its deadline and a successful retry clears the site barri
         assert.equal(connector.recovery.block, undefined);
         assert.equal(connector.network.at(-1)?.status, 200);
         assert.equal(connector.recovery.waitUntil, undefined);
+        for (const phase of ['cooldown', 'action', 'observations', 'screenshot', 'stability'] as const) {
+            assert.ok(agent.operation?.timings[phase]?.count! > 0, `${phase} timing must be recorded`);
+            assert.ok(agent.operation?.timings[phase]?.totalMs! >= 0);
+        }
     } finally { await connector.onStop(); }
+});
+
+test('cursor configuration controls its real DOM transition and visibility', async () => {
+    const context = await browser.newContext();
+    try {
+        for (const options of [{}, { animateCursor: false }, { showCursor: false }]) {
+            const page = await context.newPage();
+            await page.setContent('<html><body>Cursor fixture</body></html>');
+            const visualizer = new ActionVisualizer(context, options);
+            await visualizer.setActivePage(page);
+            await visualizer.moveVirtualCursor(40, 50);
+            const cursor = page.locator('#action-visual-indicator');
+            if (options.showCursor === false) {
+                assert.equal(await cursor.count(), 0);
+            } else {
+                assert.equal(await cursor.isVisible(), true);
+                const style = await cursor.evaluate(element => ({
+                    left: (element as HTMLElement).style.left,
+                    top: (element as HTMLElement).style.top,
+                    transition: (element as HTMLElement).style.transition,
+                }));
+                assert.equal(style.left, '40px'); assert.equal(style.top, '50px');
+                if (options.animateCursor === false) assert.equal(style.transition, 'none');
+                else assert.ok(style.transition.includes('0.3s'));
+                await visualizer.hideAll(); assert.equal(await cursor.isVisible(), false);
+                await visualizer.showAll(); assert.equal(await cursor.isVisible(), true);
+            }
+            await page.close();
+        }
+    } finally { await context.close(); }
 });
 
 test('Escape dismisses a native dialog through the exposed agent action', async () => {

@@ -1,9 +1,41 @@
 import { describe, expect, test } from 'bun:test';
 import { addUsage, emptyUsage, isTaskResultFile, outcome, summarize, type Evaluation, type TaskRecord, type TaskResult } from './results';
+import type { OperationDiagnostics } from '../../packages/magnitude-core/src/common/operation';
 
 const task = { id: 'test--0', web_name: 'test', ques: 'Read the page', web: 'https://example.com' };
 const run = (overrides: Partial<TaskResult> = {}): TaskResult => ({
     ...emptyUsage(), status: 'completed', time: 1000, actionCount: 2, memory: null, ...overrides,
+});
+
+test('operation summaries retain failures and report missing instrumentation as missing samples', () => {
+    const operation: OperationDiagnostics = {
+        id: 'fixture', kind: 'act', status: 'finished', outcome: 'succeeded', phase: 'preparing', startedAt: 0, elapsedMs: 100,
+        timings: { model: { count: 2, totalMs: 30 }, action: { count: 1, totalMs: 20 }, screenshot: { count: 1, totalMs: 10 } },
+    };
+    const summary = summarize([
+        { task, run: run({ operation }) },
+        { task, run: run({ status: 'timeout', operation: { ...operation, id: 'deadline', outcome: 'deadline',
+            timings: { model: { count: 1, totalMs: 50 } }, cancellationToDrainMs: 20, cancellationToIdleMs: 30 } }) },
+        { task, run: run() }, // Legacy run: no invented zero-duration phases.
+        { task },
+    ]);
+    expect(summary.operations).toEqual({
+        measuredTasks: 2, finishedTasks: 2,
+        timings: {
+            model: { samples: 2, count: 3, totalMs: 80, medianMs: 30, p95Ms: 50 },
+            action: { samples: 1, count: 1, totalMs: 20, medianMs: 20, p95Ms: 20 },
+            screenshot: { samples: 1, count: 1, totalMs: 10, medianMs: 10, p95Ms: 10 },
+        },
+        cancellationToDrain: { samples: 1, totalMs: 20, medianMs: 20, p95Ms: 20 },
+        cancellationToIdle: { samples: 1, totalMs: 30, medianMs: 30, p95Ms: 30 },
+    });
+    expect(summary.counts.timeout).toBe(1);
+    expect(summarize([{ task, run: run() }]).operations).toMatchObject({ measuredTasks: 0, timings: {}, cancellationToIdle: { samples: 0, medianMs: null } });
+});
+
+test('cancelled tasks stay interrupted even with a stale successful verdict', () => {
+    expect(outcome({ run: run({ status: 'cancelled' }), evaluation: evaluation('SUCCESS') })).toBe('interrupted');
+    expect(summarize([{ task, run: run({ status: 'cancelled' }) }])).toMatchObject({ selected: 1, successRate: 0, counts: { interrupted: 1 } });
 });
 const evaluation = (result: Evaluation['result']): Evaluation => ({ result, time: 500, usage: emptyUsage() });
 
