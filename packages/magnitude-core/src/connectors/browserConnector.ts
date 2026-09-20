@@ -329,7 +329,7 @@ export class BrowserConnector implements AgentConnector {
         observations.push(Observation.fromConnector(this.id, this.downloads?.snapshot()
             ?? { operationId: null, downloads: [], truncated: false }, { type: 'browser-downloads', limit: 1 }));
         observations.push(Observation.fromConnector(this.id,
-            JSON.stringify({ lastClick: currentOperation()?.snapshot().lastClick ?? null }), { type: 'browser-click', limit: 1 }));
+            JSON.stringify({ lastClick: currentOperation()?.snapshot().lastClick ?? null }), { type: 'browser-click', current: true }));
         return observations;
     }
 

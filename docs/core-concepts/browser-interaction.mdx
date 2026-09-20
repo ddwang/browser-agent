@@ -99,7 +99,7 @@ Immediately before submitting the mouse command, Magnitude inspects the hit elem
 
 Hit evidence is not proof that the intended control was activated. The page can change between inspection and dispatch. Magnitude does not retarget clicks, enforce a tag or role, or finish a task based on a hit. The planner uses the next screenshot and feedback to choose its next action. Cancellation during inspection prevents dispatch; cancellation after command submission cannot undo the click.
 
-Only the latest click observation appears in normal planner context. A new operation replaces it with `null`, even with reused memory. The full memory audit can retain earlier observations. Click evidence does not reset no-progress counters; only the existing page and download progress signals do. No new browser listeners or recovery counters are added.
+Only the latest click observation appears in normal planner context, as an uncached current-state suffix after retained history. A new operation replaces it with `null`, even with prompt caching and reused memory. The full memory audit can retain earlier observations. Click evidence does not reset no-progress counters; only the existing page and download progress signals do. No new browser listeners or recovery counters are added.
 
 ## Download evidence
 

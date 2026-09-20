@@ -26,6 +26,8 @@ export interface ObservationRetentionOptions {
     type: string; // unique type identifier used for dedupe and limit logic
     limit?: number; // max number of this type of observation that is allowed to remain in memory
     dedupe?: boolean; // dedupe adjacent identical observations of the same type
+    /** Render only the latest of this type after cached history; overrides limit and dedupe. Full audit retains every entry. */
+    current?: boolean;
 }
 
 // consider limiting media based on source - e.g. thought is only text

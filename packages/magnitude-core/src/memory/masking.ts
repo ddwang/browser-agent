@@ -1,7 +1,8 @@
 import { Observation } from './observation';
 
 export async function maskObservations(observations: Observation[], freezeMask?: boolean[]): Promise<boolean[]> {
-    // If freezeMask provided, will guarantee that first freezeMask.length observations return the same mask provided in freezeMask
+    // If freezeMask provided, historical observations keep their frozen mask values.
+    // Current-state observations are excluded here and rendered separately after cached history.
     // - for dedupe: adjacent types in frozen section should survive if unfrozen contains that type with an equivalent value, instead of keeping most recent 
     // - for limit: limit should only apply to unfrozen section and should ignore (not count) anything in frozen section
     /**
@@ -17,7 +18,7 @@ export async function maskObservations(observations: Observation[], freezeMask?:
      * Untyped observations (no `obs.retention.type`) are always marked as true.
      * 
      * If freezeMask is provided:
-     * - The first freezeMask.length observations will have their mask values frozen
+     * - Historical observations within the frozen prefix keep their mask values
      * - Dedupe will preserve frozen observations if equivalent values exist in unfrozen section
      * - Limit only applies to unfrozen observations
      * 
@@ -46,6 +47,10 @@ export async function maskObservations(observations: Observation[], freezeMask?:
     }>();
 
     observations.forEach((obs, index) => {
+        if (obs.retention?.current) {
+            mask[index] = false;
+            return;
+        }
         if (obs.retention && obs.retention.type) {
             const type = obs.retention.type;
             if (!observationsByType.has(type)) {

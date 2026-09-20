@@ -47,7 +47,7 @@ async function fixture(path = '/', contextOptions: BrowserContextOptions = {}) {
         visuals: { animateCursor: false }, recovery: { noProgress: true } });
     await connector.onStart();
     const agent = new Agent({ connectors: [connector], telemetry: false, maxActions: 30,
-        llm: { provider: 'anthropic', options: { model: 'fixture', apiKey: 'unused-no-model-calls' } } });
+        llm: { provider: 'anthropic', options: { model: 'claude-fixture', apiKey: 'unused-no-model-calls' } } });
     return { agent, connector, context, page: connector.getHarness().page };
 }
 
@@ -70,6 +70,7 @@ function evidence(context: AgentContext) {
 }
 
 function clickEvidence(context: AgentContext) {
+    assert.ok(context.observationContent.some(message => message.cacheControl), 'exercise Claude prompt caching');
     const parts = context.observationContent.flatMap(message => message.content)
         .filter(part => typeof part === 'string' && part.includes('"lastClick"'));
     assert.equal(parts.length, 1, 'only the latest click observation belongs in planner context');
@@ -106,7 +107,7 @@ test('right-click reaches Chromium as button 2 and preserves left-click, double-
         assert.equal(recorded.filter(event => event.type === 'click' && event.button === 0).length, 3);
         assert.equal(recorded.filter(event => event.type === 'dblclick' && event.button === 0).length, 1);
         const agent = new Agent({ connectors: [connector], telemetry: false,
-            llm: { provider: 'anthropic', options: { model: 'fixture', apiKey: 'unused' } } });
+            llm: { provider: 'anthropic', options: { model: 'claude-fixture', apiKey: 'unused' } } });
         const variants = ['mouse:right_click', 'mouse:double_click', 'mouse:click'];
         let calls = 0;
         agent.models.partialAct = async context => {
