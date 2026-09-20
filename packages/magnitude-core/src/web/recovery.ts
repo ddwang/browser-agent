@@ -99,14 +99,16 @@ export class BrowserRecovery {
         this.warning = undefined;
     }
 
-    observe(fingerprint: string, action: Action | undefined, block: BrowserBlock | undefined, now = Date.now()) {
+    observe(fingerprint: string | null, action: Action | undefined, block: BrowserBlock | undefined, now = Date.now()) {
         const previousFingerprint = this.lastFingerprint ?? fingerprint;
         if (block?.reason !== this.block?.reason || fingerprint !== this.lastFingerprint) this.blockedActions = 0;
-        const fresh = !this.recentStates.has(fingerprint) && this.recentStates.size < 4096;
+        const fresh = fingerprint !== null && !this.recentStates.has(fingerprint) && this.recentStates.size < 4096;
         const initial = this.lastFingerprint === undefined;
-        if (fresh || block) this.recordProgress();
+        // An incomplete observation cannot establish a stall or a known-state
+        // cycle. Break the sequence; deadlines and action limits still apply.
+        if (fingerprint === null || fresh || block) this.recordProgress();
         else if (fingerprint !== previousFingerprint) this.repetitions = 0;
-        this.lastFingerprint = fingerprint;
+        this.lastFingerprint = fingerprint ?? undefined;
         // Do not evict states: a cycle longer than an LRU must not look new forever.
         // At capacity, conservatively treat further states as previously seen.
         if (fresh) this.recentStates.add(fingerprint);
@@ -117,7 +119,7 @@ export class BrowserRecovery {
         // Waiting is deliberate inactivity, not evidence of a navigation loop.
         if (!action || action.variant === 'wait' || action.variant === 'mouse:hover') return;
         if (block) { this.blockedActions++; return; }
-        if (!this.noProgress) return;
+        if (!this.noProgress || fingerprint === null) return;
         // Count outcomes, not action variants or coordinates. Familiar return
         // paths get extra room, but cycling without new evidence remains bounded.
         if (!fresh || initial) this.knownStateAttempts++;

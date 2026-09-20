@@ -52,6 +52,31 @@ test('no-progress termination is opt-in for library consumers', () => {
     expect(() => recovery.check()).not.toThrow();
 });
 
+test('unavailable fingerprints clear a stall and do not count as repeated evidence', () => {
+    const recovery = new BrowserRecovery({ noProgress: true });
+    for (let i = 0; i < 6; i++) recovery.observe('same', click, undefined);
+    expect(() => recovery.check()).toThrow(BrowserBlockedError);
+    for (let i = 0; i < 20; i++) {
+        recovery.observe(null, click, undefined);
+        expect(recovery.warning).toBeUndefined();
+        expect(() => recovery.check()).not.toThrow();
+    }
+    for (let i = 0; i < 6; i++) {
+        expect(() => recovery.check()).not.toThrow();
+        recovery.observe('same', click, undefined);
+    }
+    expect(() => recovery.check()).toThrow(BrowserBlockedError);
+});
+
+test('unavailable fingerprints preserve rate-limit cooldowns and deadline checks', () => {
+    const recovery = new BrowserRecovery({ noProgress: true });
+    const block = { reason: 'rate_limit' as const, evidence: 'Too many requests' };
+    recovery.observe(null, click, { ...block }, 0);
+    recovery.observe(null, { variant: 'wait' }, { ...block }, 10_000);
+    expect(recovery.waitDuration(0, 10_000)).toBe(50_000);
+    expect(() => recovery.waitDuration(0, 10_000, 30_000)).toThrow(BrowserBlockedError);
+});
+
 test('new page states and deliberate waits do not count as repeated outcomes', () => {
     const recovery = new BrowserRecovery({ noProgress: true });
     for (let i = 0; i < 20; i++) recovery.observe(`page-${i}`, click, undefined);

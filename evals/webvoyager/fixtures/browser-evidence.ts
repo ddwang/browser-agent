@@ -5,6 +5,7 @@ import { BrowserConnector } from '../../../packages/magnitude-core/src/connector
 import { BrowserBlockedError } from '../../../packages/magnitude-core/src/web/recovery';
 import { OperationCancelledError, OperationDeadlineError } from '../../../packages/magnitude-core/src/agent/errors';
 import type { AgentContext } from '../../../packages/magnitude-core/src/ai/baml_client';
+import { collectRecoveryState } from '../../../packages/magnitude-core/src/web/recoveryState';
 
 // Browser events and deterministic plans only: no portal, filesystem polling, or model API.
 const cases: { name: string; check: () => Promise<void> }[] = [];
@@ -252,6 +253,106 @@ test('pagination beyond a long text prefix remains progress and a removed contro
         }
         assert.equal(await page.locator('#more').count(), 0);
         assert.match(await page.locator('#records').innerText(), /new record 8/);
+    } finally { await connector.onStop(); }
+});
+
+test('oversized text and headings return bounded evidence without copying the full text', async () => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+        for (const size of [16, 64]) {
+            await page.evaluate(size => {
+                const heading = document.createElement('h1');
+                // Keep layout cost separate from the collector's work budget.
+                heading.style.cssText = 'content-visibility:hidden;width:100px;height:30px';
+                heading.append('Too many requests ' + 'x'.repeat(size * 1024 * 1024));
+                document.body.replaceChildren(heading);
+                const original = Text.prototype.substringData;
+                Text.prototype.substringData = function (offset, count) {
+                    if (count > 4096) throw new Error('Unbounded text read');
+                    return original.call(this, offset, count);
+                };
+            }, size);
+            const state = await page.evaluate(collectRecoveryState, true);
+            assert.equal(state.fingerprint, null);
+            assert.equal(state.headings.length, 1);
+            assert.equal(state.headings[0].length, 500);
+            assert.ok(JSON.stringify(state).length < 600);
+            const lightweight = await page.evaluate(collectRecoveryState, false);
+            assert.notEqual(lightweight.fingerprint, null, 'disabled loop detection must skip body text');
+        }
+    } finally { await context.close(); }
+});
+
+test('the recovery walk bounds rejected nodes and active form values', async () => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+        await page.evaluate(() => {
+            for (let i = 0; i < 12_000; i++) {
+                const element = document.createElement('div');
+                element.style.display = 'none';
+                document.body.append(element);
+            }
+            const original = getComputedStyle;
+            let reads = 0;
+            window.getComputedStyle = (...args) => {
+                if (++reads > 10_000) throw new Error('Unbounded node traversal');
+                return original(...args);
+            };
+        });
+        assert.equal((await page.evaluate(collectRecoveryState, true)).fingerprint, null);
+        await page.goto('about:blank');
+        await page.evaluate(() => {
+            const input = document.createElement('textarea');
+            input.value = 'x'.repeat(1024 * 1024);
+            document.body.append(input);
+            input.focus();
+        });
+        const state = await page.evaluate(collectRecoveryState, true);
+        assert.equal(state.fingerprint, null);
+        assert.ok(JSON.stringify(state).length < 100);
+    } finally { await context.close(); }
+});
+
+test('disabled recovery skips the collector while default recovery still detects barriers', async () => {
+    for (const recovery of [false, {}] as const) {
+        const context = await browser.newContext();
+        const connector = new BrowserConnector({ browser: { context }, recovery });
+        try {
+            await connector.onStart();
+            const page = connector.getHarness().page;
+            await page.setContent('<h1>Too many requests</h1>');
+            const evaluate = page.evaluate.bind(page);
+            let calls = 0;
+            page.evaluate = (async (fn: any, arg: any) => {
+                if (fn === collectRecoveryState) { calls++; assert.equal(arg, false); }
+                return evaluate(fn, arg);
+            }) as typeof page.evaluate;
+            await connector.collectObservations();
+            assert.equal(calls, recovery === false ? 0 : 1);
+            assert.equal(connector.recovery.block?.reason, recovery === false ? undefined : 'rate_limit');
+        } finally { await connector.onStop(); }
+    }
+});
+
+test('unavailable browser fingerprints leave deadlines and session drainage intact', async () => {
+    const { agent, connector, page } = await fixture();
+    try {
+        await page.evaluate(() => {
+            const text = document.createElement('p');
+            text.style.contentVisibility = 'hidden';
+            text.append('x'.repeat(300_000));
+            document.body.append(text);
+        });
+        agent.models.partialAct = async () => plan({ variant: 'wait', seconds: 60 });
+        await assert.rejects(agent.act('Wait with unavailable progress evidence', { deadline: Date.now() + 1500 }), OperationDeadlineError);
+        await agent.whenIdle();
+        assert.equal(agent.busy, false);
+        assert.equal(connector.recovery.warning, undefined);
+        agent.models.partialAct = async () => done();
+        await agent.act('Finish the next operation', { deadline: Date.now() + 5000 });
+        assert.equal(agent.operation?.outcome, 'succeeded');
     } finally { await connector.onStop(); }
 });
 

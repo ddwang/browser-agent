@@ -19,6 +19,7 @@ import { retry } from '@/common/retry';
 import { checkOperation, currentOperation, drainAll, measureOperation, operationSleep } from '@/common/operation';
 import { OperationCancelledError } from '@/agent/errors';
 import { BrowserDownloads } from '@/web/downloads';
+import { collectRecoveryState } from '@/web/recoveryState';
 
 // export type BrowserOptions = ({ instance: Browser } | { launchOptions?: LaunchOptions }) & {
 //     contextOptions?: BrowserContextOptions;
@@ -300,67 +301,31 @@ export class BrowserConnector implements AgentConnector {
                 { type: 'tabinfo', limit: 1 }
             )
         );
-        const state = await page.evaluate(() => {
-            const visible = (element: Element) => {
-                const rect = element.getBoundingClientRect();
-                return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight
-                    && rect.right > 0 && rect.left < innerWidth && getComputedStyle(element).visibility === 'visible';
-            };
-            const visual = '[data-magnitude-visual]';
-            const elements = Array.from(document.querySelectorAll('*')).filter(element => !element.closest(visual));
-            // Our keyboard badges, scroll arrows, and cursor are feedback about
-            // an action, not evidence that the page changed. Read rendered text
-            // without mutating the live DOM or including those overlays.
-            const text: string[] = [];
-            if (document.body) {
-                const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
-                    acceptNode(node) {
-                        if (node instanceof Element) return node.matches(visual) || getComputedStyle(node).display === 'none'
-                            ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
-                        return node.parentElement && getComputedStyle(node.parentElement).visibility === 'visible'
-                            ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-                    },
-                });
-                while (walker.nextNode()) text.push(walker.currentNode.textContent ?? '');
-            }
-            // Check offsets first so layout/visibility work is limited to scrolled elements.
-            const scrollers = elements.flatMap((element, index) =>
-                (element.scrollLeft || element.scrollTop) && visible(element)
-                    ? [[index, element.scrollLeft, element.scrollTop]] : []);
-            const active = document.activeElement;
-            const input = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement
-                ? [elements.indexOf(active), active instanceof HTMLSelectElement ? Array.from(active.selectedOptions, option => option.value) : active.value,
-                    active instanceof HTMLInputElement ? active.checked : null] : [];
-            return {
-                headings: [document.title, ...Array.from(document.querySelectorAll('h1, h2, [role="dialog"]'))
-                    .filter(visible).map(element => (element as HTMLElement).innerText.slice(0, 500))],
-                // Used only for a hash, not exposed as an additional source of answers.
-                text: text.join(' ').replace(/\s+/g, ' ').trim(),
-                scroll: [scrollX, scrollY], scrollers, input,
-            };
-        });
+        const state = this.options.recovery === false ? undefined
+            : await page.evaluate(collectRecoveryState, this.recovery.noProgress);
         checkOperation();
         if (page !== this.harness.page || page.url() !== capturedUrl
             || currentTabs.tabs[currentTabs.activeTab]?.url !== capturedUrl) {
             throw new Error('Page navigated while capturing observations');
         }
-        const url = new URL(capturedUrl);
-        for (const key of [...url.searchParams.keys()]) {
-            if (/auth|token|^utm_|fbclid/i.test(key)) url.searchParams.delete(key);
-        }
-        url.hash = '';
-        url.searchParams.sort();
-        const fingerprint = createHash('sha256').update(JSON.stringify([url.href, state.text, state.scroll, state.scrollers, state.input])).digest('hex');
-        const responses = [...(this.responses.get(page)?.values() ?? [])];
-        const response = responses.find(record => record.status === 429 && record.navigation)
-            ?? responses.find(record => record.status === 429) ?? responses.at(-1);
-        this.recovery.observe(fingerprint, this.pendingAction, detectBlock(state.headings, response));
-        this.pendingAction = undefined;
-        if (this.options.recovery !== false) {
+        if (state) {
+            const url = new URL(capturedUrl);
+            for (const key of [...url.searchParams.keys()]) {
+                if (/auth|token|^utm_|fbclid/i.test(key)) url.searchParams.delete(key);
+            }
+            url.hash = '';
+            url.searchParams.sort();
+            const fingerprint = state.fingerprint === null ? null
+                : createHash('sha256').update(JSON.stringify([url.href, state.fingerprint])).digest('hex');
+            const responses = [...(this.responses.get(page)?.values() ?? [])];
+            const response = responses.find(record => record.status === 429 && record.navigation)
+                ?? responses.find(record => record.status === 429) ?? responses.at(-1);
+            this.recovery.observe(fingerprint, this.pendingAction, detectBlock(state.headings, response));
             observations.push(Observation.fromConnector(this.id,
                 JSON.stringify({ block: this.recovery.block ?? null, recovery: this.recovery.warning ?? null }),
                 { type: 'browser-recovery', limit: 1 }));
         }
+        this.pendingAction = undefined;
         observations.push(Observation.fromConnector(this.id, this.downloads?.snapshot()
             ?? { operationId: null, downloads: [], truncated: false }, { type: 'browser-downloads', limit: 1 }));
         return observations;
