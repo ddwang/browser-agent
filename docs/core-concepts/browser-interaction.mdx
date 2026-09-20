@@ -87,3 +87,50 @@ The agent knows about and sees:
 - History of its own actions from the same `act()`
 - All currently open tabs
 - Which tab is active
+- Browser download start, completion, and failure evidence for the current operation
+
+## Download evidence
+
+Magnitude observes downloads on existing pages and new tabs before dispatching browser actions. The planner receives a `browser-downloads` observation containing an `operationId`, a `downloads` array, and a `truncated` flag. Each download has an opaque `id`, the initiating `actionIndex` where known, and one status:
+
+| Status | Meaning |
+| --- | --- |
+| `started` | Chromium emitted a download event. The transfer is still pending. |
+| `completed` | Playwright's `Download.failure()` resolved to `null`, confirming that the browser finished the transfer. |
+| `failed` | The browser reported a failed transfer, or its terminal state could not be read. This is never treated as completion. |
+
+These records contain no filenames, filesystem paths, URLs, error text, or downloaded contents. They do not save files or introduce a download manager. Completion confirms a transfer, not its contents or your application's business outcome. The planner decides whether the evidence satisfies the task; Magnitude does not automatically finish an operation when a download completes.
+
+Magnitude retains at most 20 download records and completion observers per operation. Additional downloads set `truncated: true`. Only the latest download observation appears in the normal planner context. The existing full memory audit can still contain earlier snapshots. A new task replaces the evidence with an empty observation, including when you reuse memory. Completed, cancelled, and earlier task scopes cannot add evidence to the active task.
+
+### Browser integration contract
+
+Use a Playwright-compatible context with `acceptDownloads: true` and keep it open until the browser reports completion. With `acceptDownloads: false`, the local Chromium regression produces `failed`, not `completed`. Remote browser services must forward page and download events and support `Download.failure()`; a missing event provides no evidence of success or failure.
+
+Keep the context exclusive to the agent during an operation. Magnitude attributes a download event to the last dispatched built-in browser action on that page, or the captured opener action for a popup. Playwright does not expose causal action IDs. Downloads triggered by unrelated automation, background timers, or external user input during a later action cannot always be distinguished. Downloads without a known initiating operation are omitted. Direct calls through `agent.page`, caller-defined actions, and downloads started before the connector attaches are outside this attribution contract.
+
+Download events do not bypass screenshot collection. In local Chromium testing, an empty popup that immediately redirected to an attachment stalled screenshot capture after the download completed. A popup with a rendered document and a download link passed. Keep an operation deadline for browser observation stalls; this change does not replace the screenshot lifecycle.
+
+Cancellation prevents late download completion from changing the operation's evidence or outcome. It does not undo the initiating click or cancel an already-started browser transfer. A pending transfer can continue after `whenIdle()`; use a fresh context if your application requires all browser-side activity to stop before reuse. Magnitude removes its download listeners when pages close or the connector stops.
+
+## Attempts without progress
+
+Enable the existing opt-in guard with `recovery: { noProgress: true }`. `repeatedActionLimit` defaults to `6` and must be an integer of at least `3`:
+
+```ts
+const agent = await startBrowserAgent({
+    // ...your model and browser settings
+    recovery: { noProgress: true, repeatedActionLimit: 6 },
+});
+```
+
+The guard stops the next mutating browser action after either:
+
+- Six attempts on an unchanged state, regardless of click variant or coordinate jitter.
+- Twelve attempts through previously observed states without new evidence. This extra allowance permits familiar return paths after visiting a new record.
+
+For another `repeatedActionLimit`, these bounds are the configured value and twice that value. New page evidence or a tracked download lifecycle transition resets both counters. Meaningful page evidence includes canonical URL, rendered document text, visible scroll offsets, and active form-control values. Magnitude's visual overlays, screenshot pixel changes, mouse coordinates, reasoning, and notebook writes do not establish progress. Text beyond the first 20,000 characters participates, so pagination on long pages remains observable.
+
+The guard remembers up to 4,096 state hashes per task without eviction; a long cycle cannot become new evidence by outgrowing a rolling window. At capacity, it conservatively treats additional page states as known. Task start resets this history. This remains a heuristic: canvas-only changes, iframe content, or repeated values can require disabling the guard or choosing a larger attempt allowance. Changing page text such as a clock can also appear to be progress.
+
+On reaching a bound, the next mutating action throws `BrowserBlockedError` with `block.reason === 'no_progress'`. Observation collection, hover inspection, notebook actions, caller-defined actions, and task completion remain available. A `wait` does not consume or reset the no-progress allowance; fresh evidence observed after the wait can reset it. Pending downloads do not grant unlimited click attempts. Use `maxActions` and an operation `deadline` to bound planning and waits; there is no new global timeout. Rate-limit cooldowns retain their separate wait budget and typed outcome. See [Cancellation and deadlines](/advanced/cancellation).

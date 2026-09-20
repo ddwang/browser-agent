@@ -53,6 +53,7 @@ export function detectBlock(headings: string[], response?: HttpDiagnostic): Brow
 
 export interface RecoveryOptions {
     maxRateLimitWaitMs?: number;
+    /** Unchanged attempts before stopping; known-state cycles allow twice this many attempts. Default: 6. */
     repeatedActionLimit?: number;
     /** Opt in to heuristic loop warnings and automatic no-progress termination. */
     noProgress?: boolean;
@@ -64,9 +65,9 @@ export class BrowserRecovery {
     waitUntil?: number;
     private rateWaitMs = 0;
     private blockedActions = 0;
-    private recent: string[] = [];
     private recentStates = new Set<string>();
     private repetitions = 0;
+    private knownStateAttempts = 0;
     private lastFingerprint?: string;
     readonly maxRateLimitWaitMs: number;
     readonly repeatedActionLimit: number;
@@ -84,29 +85,31 @@ export class BrowserRecovery {
 
     reset() {
         this.block = undefined;
-        this.warning = undefined;
         this.rateWaitMs = 0;
         this.blockedActions = 0;
-        this.recent = [];
         this.recentStates.clear();
-        this.repetitions = 0;
+        this.recordProgress();
         this.lastFingerprint = undefined;
+    }
+
+    /** New non-page evidence, such as a browser download lifecycle transition. */
+    recordProgress() {
+        this.repetitions = 0;
+        this.knownStateAttempts = 0;
+        this.warning = undefined;
     }
 
     observe(fingerprint: string, action: Action | undefined, block: BrowserBlock | undefined, now = Date.now()) {
         const previousFingerprint = this.lastFingerprint ?? fingerprint;
         if (block?.reason !== this.block?.reason || fingerprint !== this.lastFingerprint) this.blockedActions = 0;
-        if (fingerprint !== this.lastFingerprint || block) {
-            this.warning = undefined;
-            this.repetitions = 0;
-        }
+        const fresh = !this.recentStates.has(fingerprint) && this.recentStates.size < 4096;
+        const initial = this.lastFingerprint === undefined;
+        if (fresh || block) this.recordProgress();
+        else if (fingerprint !== previousFingerprint) this.repetitions = 0;
         this.lastFingerprint = fingerprint;
-        // New evidence breaks a loop, even when reaching it requires familiar paths.
-        // Keep a bounded LRU of states separate from the repetition history.
-        if (!this.recentStates.has(fingerprint) || block) this.recent = [];
-        this.recentStates.delete(fingerprint);
-        this.recentStates.add(fingerprint);
-        if (this.recentStates.size > 30) this.recentStates.delete(this.recentStates.values().next().value!);
+        // Do not evict states: a cycle longer than an LRU must not look new forever.
+        // At capacity, conservatively treat further states as previously seen.
+        if (fresh) this.recentStates.add(fingerprint);
         if (block?.reason === 'rate_limit') {
             block.retryAt ??= this.block?.reason === 'rate_limit' ? this.block.retryAt : now + 60_000;
         }
@@ -115,14 +118,12 @@ export class BrowserRecovery {
         if (!action || action.variant === 'wait' || action.variant === 'mouse:hover') return;
         if (block) { this.blockedActions++; return; }
         if (!this.noProgress) return;
-        // Returning from different pages is not repeating the same transition.
-        // Ignore coordinates so jitter cannot disguise genuinely unchanged clicks.
-        const key = JSON.stringify([previousFingerprint, action.variant, fingerprint]);
-        this.recent.push(key);
-        if (this.recent.length > 30) this.recent.shift();
-        this.repetitions = this.recent.filter(value => value === key).length;
-        this.warning = this.repetitions >= 3
-            ? 'This action has repeatedly produced a previously seen page state. Review tried searches and visited pages; use a materially different approach, or report browser:blocked with reason no_progress. Do not repeat the same search or click without new evidence.'
+        // Count outcomes, not action variants or coordinates. Familiar return
+        // paths get extra room, but cycling without new evidence remains bounded.
+        if (!fresh || initial) this.knownStateAttempts++;
+        if (fingerprint === previousFingerprint) this.repetitions++;
+        this.warning = this.repetitions >= 3 || this.knownStateAttempts >= this.repeatedActionLimit
+            ? 'Browser actions have repeatedly produced previously seen states without new evidence. Use a materially different approach, wait for pending work, finish if the goal is verified, or report browser:blocked with reason no_progress.'
             : undefined;
     }
 
@@ -130,7 +131,8 @@ export class BrowserRecovery {
         if (this.block && this.block.reason !== 'rate_limit' && this.blockedActions >= 3) {
             throw new BrowserBlockedError(this.block);
         }
-        if (this.noProgress && !this.block && this.repetitions >= this.repeatedActionLimit) {
+        if (this.noProgress && !this.block && (this.repetitions >= this.repeatedActionLimit
+            || this.knownStateAttempts >= 2 * this.repeatedActionLimit)) {
             throw new BrowserBlockedError({ reason: 'no_progress', evidence: this.warning! });
         }
     }

@@ -223,7 +223,8 @@ test('real navigation cycles still warn and stop with a no-progress outcome', as
     const { connector, agent, page } = await fixture(cycle[0]);
     try {
         await assert.rejects(async () => {
-            for (let step = 1; step <= cycle.length * connector.recovery.repeatedActionLimit + 1; step++) {
+            // First discover each state, then exhaust the known-state allowance.
+            for (let step = 1; step <= cycle.length + 2 * connector.recovery.repeatedActionLimit + 1; step++) {
                 await followLink(agent, page, cycle[step % cycle.length]);
             }
         }, (error: unknown) => error instanceof BrowserBlockedError && error.block.reason === 'no_progress');

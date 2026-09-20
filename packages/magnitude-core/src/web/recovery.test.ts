@@ -114,13 +114,15 @@ test('productive graph walks can revisit hubs and shared return paths without wa
     }
 });
 
-test('cycles through known states still warn and stop within the unchanged history window', () => {
-    for (const length of [2, 3, 5]) {
+test('cycles stop after twice the configured bound without new evidence, including long cycles', () => {
+    for (const length of [2, 3, 5, 40, 100]) {
         const recovery = new BrowserRecovery({ noProgress: true });
-        recovery.observe('state-0', undefined, undefined);
+        for (let i = 0; i < length; i++) recovery.observe(`state-${i}`, click, undefined);
         let warned = false;
-        for (let step = 1; step <= length * recovery.repeatedActionLimit; step++) {
-            recovery.observe(`state-${step % length}`, { ...click, x: step }, undefined);
+        for (let step = 0; step < 2 * recovery.repeatedActionLimit; step++) {
+            expect(() => recovery.check()).not.toThrow();
+            recovery.observe(`state-${step % length}`, { ...click, x: step,
+                variant: step % 2 ? 'mouse:right_click' : 'keyboard:enter' }, undefined);
             warned ||= Boolean(recovery.warning);
         }
         expect(warned).toBe(true);
@@ -128,16 +130,16 @@ test('cycles through known states still warn and stop within the unchanged histo
     }
 });
 
-test('different incoming transitions to a known hub are not one repeated outcome', () => {
+test('different routes through already known records do not count as new evidence', () => {
     const recovery = new BrowserRecovery({ noProgress: true });
     for (let i = 0; i < 9; i++) recovery.observe(`known-${i}`, undefined, undefined);
     recovery.observe('hub', undefined, undefined);
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < recovery.repeatedActionLimit; i++) {
+        expect(() => recovery.check()).not.toThrow();
         recovery.observe(`known-${i}`, click, undefined);
         recovery.observe('hub', click, undefined);
-        expect(recovery.warning).toBeUndefined();
-        expect(() => recovery.check()).not.toThrow();
     }
+    expect(() => recovery.check()).toThrow(BrowserBlockedError);
 });
 
 test('new evidence clears old repetition history even when returning to a familiar page', () => {
@@ -169,9 +171,9 @@ test('passive observations neither add failures nor erase an unchanged-page stop
     }
 });
 
-test('a task reset clears both known states and transition counts', () => {
+test('a task reset clears both known states and attempt counts', () => {
     const recovery = new BrowserRecovery({ noProgress: true });
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 7; i++) {
         recovery.observe('a', click, undefined);
         recovery.observe('b', click, undefined);
     }
@@ -181,5 +183,44 @@ test('a task reset clears both known states and transition counts', () => {
     recovery.observe('b', click, undefined);
     recovery.observe('a', click, undefined);
     expect(recovery.warning).toBeUndefined();
+    expect(() => recovery.check()).not.toThrow();
+});
+
+test('alternating action types and coordinate jitter share the configured unchanged-state bound', () => {
+    for (const repeatedActionLimit of [3, 6, 9, 40]) {
+        const recovery = new BrowserRecovery({ noProgress: true, repeatedActionLimit });
+        recovery.observe('inert', undefined, undefined);
+        const variants = ['mouse:click', 'mouse:double_click', 'mouse:right_click', 'keyboard:enter'];
+        for (let i = 0; i < repeatedActionLimit; i++) {
+            recovery.check();
+            recovery.observe('inert', { variant: variants[i % variants.length], x: i, y: i + 1 }, undefined);
+            recovery.observe('inert', { variant: 'mouse:hover' }, undefined);
+        }
+        expect(() => recovery.check()).toThrow(BrowserBlockedError);
+    }
+});
+
+test('new download evidence resets attempts without treating a pending transfer as endless progress', () => {
+    const recovery = new BrowserRecovery({ noProgress: true, repeatedActionLimit: 3 });
+    recovery.observe('same', undefined, undefined);
+    for (const transition of ['started', 'completed', 'failed']) {
+        for (let i = 0; i < 3; i++) recovery.observe('same', click, undefined);
+        expect(() => recovery.check()).toThrow(BrowserBlockedError);
+        recovery.recordProgress();
+        expect(recovery.warning).toBeUndefined();
+        expect(() => recovery.check()).not.toThrow();
+    }
+});
+
+test('bounded state memory never evicts a long cycle and becomes conservative at capacity', () => {
+    const recovery = new BrowserRecovery({ noProgress: true });
+    for (let i = 0; i < 4096; i++) {
+        recovery.observe(`state-${i}`, click, undefined);
+        recovery.check();
+    }
+    for (let i = 0; i < 12; i++) recovery.observe(`overflow-${i}`, click, undefined);
+    expect(() => recovery.check()).toThrow(BrowserBlockedError);
+    recovery.reset();
+    recovery.observe('new-task', click, undefined);
     expect(() => recovery.check()).not.toThrow();
 });

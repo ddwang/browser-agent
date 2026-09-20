@@ -32,61 +32,25 @@ export class CursorVisual {
     async move(x: number, y: number): Promise<void> {
         await measureOperation('cursor', async () => {
             this.lastPosition = { x, y };
-            await this._drawVisual(x, y, false);
+            await this._drawVisual(x, y);
             if (this.animate) await operationSleep(300);
         });
     }
 
     async setupOnPage(): Promise<void> {
         if (this.lastPosition) {
-            // Redraw the visual without the click effect
-            await this._drawVisual(this.lastPosition.x, this.lastPosition.y, false);
+            await this._drawVisual(this.lastPosition.x, this.lastPosition.y);
         }
     }
 
     // Internal method to handle the actual drawing logic
-    private async _drawVisual(x: number, y: number, showClickEffect: boolean): Promise<void> {
+    private async _drawVisual(x: number, y: number): Promise<void> {
         try {
             await this.page.evaluate(
-                ({ x, y, id, showClickEffect, animate }) => {
+                ({ x, y, id, animate }) => {
                     // Use viewport coordinates directly (no scroll adjustment for fixed positioning)
                     const viewportX = x;
                     const viewportY = y;
-
-                    // Document coordinates for the click effect circle (which uses absolute positioning)
-                    const docX = x + window.scrollX;
-                    const docY = y + window.scrollY;
-
-                    // --- Create Expanding/Fading Circle (Optional) ---
-                    if (showClickEffect) {
-                        const circle = document.createElement('div');
-                        circle.style.position = 'absolute';
-                        circle.style.left = `${docX}px`;
-                        circle.style.top = `${docY}px`;
-                        circle.style.borderRadius = '50%';
-                        circle.style.backgroundColor = '#026aa1'; // Blue color
-                        circle.style.width = '0px';
-                        circle.style.height = '0px';
-                        circle.style.transform = 'translate(-50%, -50%)'; // Center on (x, y)
-                        circle.style.pointerEvents = 'none';
-                        circle.style.zIndex = '9998'; // Below the pointer
-                        circle.style.opacity = '0.7'; // Initial opacity
-                        document.body.appendChild(circle);
-
-                        // Animate the circle
-                        const animation = circle.animate([
-                            { width: '0px', height: '0px', opacity: 0.7 }, // Start state
-                            { width: '50px', height: '50px', opacity: 0 }  // End state
-                        ], {
-                            duration: 500, // 500ms duration
-                            easing: 'ease-out'
-                        });
-
-                        // Remove circle after animation
-                        animation.onfinish = () => {
-                            circle.remove();
-                        };
-                    }
 
                     // --- Pointer Logic (Always runs) ---
                     // Check if the visual indicator already exists
@@ -96,6 +60,7 @@ export class CursorVisual {
                     if (!pointerElement) {
                         pointerElement = document.createElement('div');
                         pointerElement.id = id;
+                        pointerElement.setAttribute('data-magnitude-visual', '');
                         pointerElement.style.position = 'fixed';  // Use fixed positioning for viewport-relative
                         pointerElement.style.width = '32px';
                         pointerElement.style.height = '32px';
@@ -144,7 +109,7 @@ export class CursorVisual {
                     pointerElement.style.top = `${viewportY}px`;
                     pointerElement.style.transform = 'translate(-1px, -3px)';
                 },
-                { x, y, id: this.visualElementId, showClickEffect, animate: this.animate }
+                { x, y, id: this.visualElementId, animate: this.animate }
             );
         } catch (error: unknown) {
             // For example when:

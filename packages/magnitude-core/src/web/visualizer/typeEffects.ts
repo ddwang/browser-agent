@@ -40,6 +40,7 @@ export class TypeEffectVisual {
             // Create container for key badges
             const container = document.createElement('div');
             container.id = 'type-effects-container';
+            container.setAttribute('data-magnitude-visual', '');
             container.style.cssText = `
                 position: fixed;
                 bottom: 40px;
@@ -56,6 +57,7 @@ export class TypeEffectVisual {
             // Add styles for key badges
             const style = document.createElement('style');
             style.setAttribute('data-type-effects', 'true');
+            style.setAttribute('data-magnitude-visual', '');
             style.textContent = `
                 @keyframes keyIn {
                     0% {

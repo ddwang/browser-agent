@@ -276,7 +276,7 @@ export class WebHarness { // implements StateComponent
         await this.visualizer.hideAll(); // The visualizer can block clicks.
         try {
             checkOperation();
-            await this.page.mouse.click(x, y);
+            await this.page.mouse.click(x, y, options);
         } finally {
             await this.visualizer.showAll();
         }

@@ -56,6 +56,7 @@ export class MouseEffectVisual {
             if (options.showHoverCircle) {
                 cursor = document.createElement('div');
                 cursor.id = 'custom-cursor';
+                cursor.setAttribute('data-magnitude-visual', '');
                 cursor.style.cssText = `
                     position: fixed;
                     width: 20px;
@@ -76,6 +77,7 @@ export class MouseEffectVisual {
             if (options.showDragLine) {
                 dragLine = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                 dragLine.id = 'drag-line';
+                dragLine.setAttribute('data-magnitude-visual', '');
                 dragLine.style.cssText = `
                     position: fixed;
                     top: 0;
@@ -157,6 +159,7 @@ export class MouseEffectVisual {
                     if (!document.querySelector('style[data-cursor-effects]')) {
                         const style = document.createElement('style');
                         style.setAttribute('data-cursor-effects', 'true');
+                        style.setAttribute('data-magnitude-visual', '');
                         style.textContent = `
                             @keyframes ripple {
                                 0% {
@@ -189,6 +192,7 @@ export class MouseEffectVisual {
                     // Create ripple effect
                     const ripple = document.createElement('div');
                     ripple.className = 'click-ripple';
+                    ripple.setAttribute('data-magnitude-visual', '');
                     ripple.style.left = `${e.clientX - 30}px`;
                     ripple.style.top = `${e.clientY - 30}px`;
                     
@@ -232,6 +236,7 @@ export class MouseEffectVisual {
                     // Create ripple for right click (reuse same styles)
                     const ripple = document.createElement('div');
                     ripple.className = 'click-ripple';
+                    ripple.setAttribute('data-magnitude-visual', '');
                     ripple.style.left = `${e.clientX - 30}px`;
                     ripple.style.top = `${e.clientY - 30}px`;
                     
@@ -256,6 +261,7 @@ export class MouseEffectVisual {
 
             // Create the single scroll arrow
             scrollArrow = document.createElement('div');
+            scrollArrow.setAttribute('data-magnitude-visual', '');
             scrollArrow.style.cssText = `
                 position: fixed;
                 width: 40px;
