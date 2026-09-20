@@ -336,6 +336,36 @@ test('disabled recovery skips the collector while default recovery still detects
     }
 });
 
+for (const [reason, heading] of [
+    ['subscription', 'Subscribe to Example to continue'],
+    ['authentication', 'Sign in to continue'],
+] as const) test(`oversized pages retain the ${reason} attempt limit`, async () => {
+    const { agent, connector, page } = await fixture();
+    try {
+        await page.evaluate(heading => {
+            document.querySelector('h1')!.textContent = heading;
+            const text = document.createElement('p');
+            text.style.contentVisibility = 'hidden'; // Isolate collection from layout cost.
+            text.append('x'.repeat(300_000));
+            document.body.append(text);
+        }, heading);
+        assert.equal((await page.evaluate(collectRecoveryState, true)).fingerprint, null);
+        await connector.collectObservations();
+        assert.equal(connector.recovery.block?.reason, reason);
+        const click = { variant: 'mouse:click', ...await point(page, '#target') };
+        for (let i = 0; i < 3; i++) await agent.exec(click, agent.memory);
+        await assert.rejects(agent.exec(click, agent.memory),
+            (error: unknown) => error instanceof BrowserBlockedError && error.block.reason === reason);
+        assert.equal(connector.recovery.warning, undefined);
+        const events = JSON.parse((await page.locator('#target').getAttribute('data-events'))!);
+        assert.equal(events.filter((event: { type: string }) => event.type === 'click').length, 3);
+        await page.locator('h1').evaluate(element => { element.textContent = 'Accessible content'; });
+        await connector.collectObservations();
+        assert.equal(connector.recovery.block, undefined);
+        await agent.exec(click, agent.memory);
+    } finally { await connector.onStop(); }
+});
+
 test('unavailable browser fingerprints leave deadlines and session drainage intact', async () => {
     const { agent, connector, page } = await fixture();
     try {

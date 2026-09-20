@@ -101,14 +101,15 @@ export class BrowserRecovery {
 
     observe(fingerprint: string | null, action: Action | undefined, block: BrowserBlock | undefined, now = Date.now()) {
         const previousFingerprint = this.lastFingerprint ?? fingerprint;
-        if (block?.reason !== this.block?.reason || fingerprint !== this.lastFingerprint) this.blockedActions = 0;
+        // Missing progress evidence does not establish a change to an explicit barrier.
+        if (block?.reason !== this.block?.reason || (fingerprint !== null && fingerprint !== previousFingerprint)) this.blockedActions = 0;
         const fresh = fingerprint !== null && !this.recentStates.has(fingerprint) && this.recentStates.size < 4096;
         const initial = this.lastFingerprint === undefined;
         // An incomplete observation cannot establish a stall or a known-state
         // cycle. Break the sequence; deadlines and action limits still apply.
         if (fingerprint === null || fresh || block) this.recordProgress();
         else if (fingerprint !== previousFingerprint) this.repetitions = 0;
-        this.lastFingerprint = fingerprint ?? undefined;
+        if (fingerprint !== null) this.lastFingerprint = fingerprint;
         // Do not evict states: a cycle longer than an LRU must not look new forever.
         // At capacity, conservatively treat further states as previously seen.
         if (fresh) this.recentStates.add(fingerprint);

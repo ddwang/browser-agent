@@ -133,6 +133,8 @@ For another `repeatedActionLimit`, these bounds are the configured value and twi
 
 Fingerprinting runs in the browser with fixed limits of 10,000 visited DOM nodes and 262,144 processed characters. It returns a digest, not full page text. Barrier evidence is limited to 32 headings of 500 characters each. If a fingerprint is incomplete, Magnitude clears the current no-progress sequence rather than treating partial evidence as an unchanged page. Use an explicit `deadline` and finite `maxActions` to bound these operations; neither has a default limit. These caps bound the collector's own work, not Chromium's internal layout or screenshot time.
 
+An unavailable fingerprint does not reset attempts against an explicitly detected authentication or subscription barrier. Those attempts reset when the barrier changes or two known fingerprints show a changed page. After three attempts against the same barrier, the next mutating action throws `BrowserBlockedError` with the barrier's reason.
+
 Setting `recovery: false` skips recovery collection. With no-progress detection disabled, recovery still collects bounded barrier, scroll, and active-control evidence but skips general document text.
 
 The guard remembers up to 4,096 state hashes per task without eviction; a long cycle cannot become new evidence by outgrowing a rolling window. At capacity, it conservatively treats additional page states as known. Task start resets this history. This remains a heuristic: canvas-only changes, iframe content, or repeated values can require disabling the guard or choosing a larger attempt allowance. Changing page text such as a clock can also appear to be progress.

@@ -95,6 +95,68 @@ test('subscription barrier allows a few recovery actions, then produces a distin
     expect(() => recovery.check()).not.toThrow();
 });
 
+for (const reason of ['subscription', 'authentication'] as const) {
+    const block = { reason, evidence: 'Explicit access barrier' };
+
+    test(`unavailable fingerprints preserve the ${reason} attempt limit`, () => {
+        for (const noProgress of [false, true]) for (const fingerprints of [
+            [null, null, null], ['same', null, 'same'], [null, null, 'same'], ['same', 'same', null],
+        ]) {
+            const recovery = new BrowserRecovery({ noProgress });
+            recovery.observe(fingerprints[0], undefined, block);
+            for (const fingerprint of fingerprints) {
+                expect(() => recovery.check()).not.toThrow();
+                recovery.observe(fingerprint, click, block);
+            }
+            expect(() => recovery.check()).toThrow(BrowserBlockedError);
+            expect(recovery.block?.reason).toBe(reason);
+            for (const action of [undefined, { variant: 'wait' }, { variant: 'mouse:hover' }]) {
+                recovery.observe(null, action, block);
+                expect(() => recovery.check()).toThrow(BrowserBlockedError);
+                expect(recovery.warning).toBeUndefined();
+            }
+        }
+    });
+
+    test(`a changed known fingerprint resets ${reason} attempts across unavailable observations`, () => {
+        const recovery = new BrowserRecovery();
+        for (let i = 0; i < 3; i++) recovery.observe('old', click, block);
+        expect(() => recovery.check()).toThrow(BrowserBlockedError);
+        recovery.observe(null, undefined, block);
+        recovery.observe('new', undefined, block);
+        for (let i = 0; i < 3; i++) {
+            expect(() => recovery.check()).not.toThrow();
+            recovery.observe('new', click, block);
+        }
+        expect(() => recovery.check()).toThrow(BrowserBlockedError);
+    });
+
+    test(`clearing or changing the ${reason} barrier and task reset release its attempt limit`, () => {
+        const other = { ...block, reason: reason === 'subscription' ? 'authentication' as const : 'subscription' as const };
+        for (const nextBlock of [undefined, other]) {
+            const recovery = new BrowserRecovery();
+            for (let i = 0; i < 3; i++) recovery.observe(null, click, block);
+            expect(() => recovery.check()).toThrow(BrowserBlockedError);
+            recovery.observe(null, undefined, nextBlock);
+            expect(() => recovery.check()).not.toThrow();
+            if (nextBlock) expect(recovery.block?.reason).toBe(nextBlock.reason);
+            else expect(recovery.block).toBeUndefined();
+            for (let i = 0; i < 3; i++) {
+                expect(() => recovery.check()).not.toThrow();
+                recovery.observe(null, click, nextBlock);
+            }
+            if (nextBlock) expect(() => recovery.check()).toThrow(BrowserBlockedError);
+            else expect(() => recovery.check()).not.toThrow();
+            recovery.reset();
+            for (let i = 0; i < 3; i++) {
+                expect(() => recovery.check()).not.toThrow();
+                recovery.observe(null, click, block);
+            }
+            expect(() => recovery.check()).toThrow(BrowserBlockedError);
+        }
+    });
+}
+
 test('a new task resets previous repetition and wait budgets', () => {
     const recovery = new BrowserRecovery({ maxRateLimitWaitMs: 100, noProgress: true });
     for (let i = 0; i < 6; i++) recovery.observe('same', click, undefined);
