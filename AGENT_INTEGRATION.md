@@ -1,6 +1,6 @@
 # Integrate Magnitude into another agent
 
-Read this guide when adding browser automation to a host agent such as Hermes or Ari. Setup examples use `@ddwang/magnitude-core@0.3.1-ddwang.6`. The checkpoint section distinguishes that published version from the unreleased restoration fixes in this branch.
+Read this guide when adding browser automation to a host agent such as Hermes or Ari. It tracks the current source of the `ddwang/browser-agent` fork, published as `@ddwang/magnitude-core`, not the upstream package. npm releases can lag behind source; verify that your installed package supports the features you use.
 
 Magnitude executes browser tasks. Your host agent owns user intent, permissions, authentication, session isolation, and verification of business outcomes.
 
@@ -19,12 +19,12 @@ Start with task-level delegation. Add low-level browser tools only if the host n
 Use Node.js 22 or newer for the examples. Install this scoped package, not upstream `magnitude-core`:
 
 ```sh
-npm install --save-exact @ddwang/magnitude-core@0.3.1-ddwang.6
+npm install @ddwang/magnitude-core
 npm install --save-dev tsx
 npx --no-install patchright install chromium
 ```
 
-The SDK uses Patchright through an npm dependency named `playwright`; its browser installer is named `patchright`. Use the installed binary so the browser matches the driver. On Linux, the installer may also need `--with-deps` and permission to install system packages. Commit your lockfile, because the pinned SDK still has dependency ranges.
+The SDK uses Patchright through an npm dependency named `playwright`; its browser installer is named `patchright`. Use the installed binary so the browser matches the driver. On Linux, the installer may also need `--with-deps` and permission to install system packages. Commit your lockfile for reproducible installs, and update it deliberately when adopting new releases.
 
 Provide model credentials through the worker environment or your secret manager. The SDK does not load a `.env` file for you. Import the SDK's `z` export for compatible schemas; do not assume a separately installed Zod major version is compatible.
 
@@ -111,7 +111,7 @@ const baseten: LLMClient = {
 };
 ```
 
-These identifiers are used by this fork; verify availability with your provider. Baseten defaults to `https://inference.baseten.co/v1`, not a deployment's predict endpoint, and never falls back to `OPENAI_API_KEY`. This release validates DeepSeek V4.1 Flash reasoning levels as `none`, `low`, `high`, or `max`; `medium` is rejected.
+These identifiers are used by this fork; verify availability with your provider. Baseten defaults to `https://inference.baseten.co/v1`, not a deployment's predict endpoint, and never falls back to `OPENAI_API_KEY`. The SDK validates DeepSeek V4.1 Flash reasoning levels as `none`, `low`, `high`, or `max`; `medium` is rejected.
 
 Output ceilings are `maxTokens` for Anthropic and Baseten, and `maxCompletionTokens` for OpenAI. They include reasoning where applicable. Omitted values use transport/provider defaults. Model-specific reasoning and sampling support varies; do not set a universal temperature or reasoning level across providers.
 
@@ -176,7 +176,7 @@ Cancellation, failure, and deadline are execution outcomes. If a submission migh
 
 - Give each concurrent operation an exclusive agent/context. Do not share cookies or notebook memory across users or unrelated authorization scopes.
 - Reuse one idle agent for a related workflow when useful. A new `act()` starts fresh task memory by default; browser cookies and page state are separate and persist with the context.
-- To continue task memory, pass `memory: agent.memory` explicitly to the next `act()`. Steps in one `act([...])` share memory. Follow the version-specific checkpoint instructions below when restoring saved memory. Checkpoints do not restore browser tabs, cookies, or login state, and restoring one must not imply replaying a possibly completed action.
+- To continue task memory, pass `memory: agent.memory` explicitly to the next `act()`. Steps in one `act([...])` share memory. Follow the checkpoint guidance below when restoring saved memory. Checkpoints do not restore browser tabs, cookies, or login state, and restoring one must not imply replaying a possibly completed action.
 - Saved memory can contain screenshots, URLs, page text, and model-written notes. Store it as sensitive data, bound retention, and do not return the entire audit to the host model by default. `query(..., { history: 'full' })` can be large and costly.
 - Manage login verification, 2FA, consent, and browser storage state in the host. Notebook notes are summaries with source references, not authentication evidence.
 
@@ -188,15 +188,12 @@ Browser configuration accepts `browser: { context }`, `{ instance }`, `{ cdp }`,
 
 Save `await agent.memory.toJSON()`. Restore only checkpoints trusted for the current user and workflow: saved planner instructions are executable model instructions, not merely page evidence.
 
-For the published `.6` package, reconstruct the instruction and caching options explicitly. This example assumes an Anthropic/Claude Code model with prompt caching enabled; use `false` for other providers or an explicit caching opt-out:
+With the current source, restore saved memory and pass it to `act()`:
 
 ```ts
 import { AgentMemory } from '@ddwang/magnitude-core';
 
-const memory = new AgentMemory({
-  instructions: saved.instructions,
-  promptCaching: true,
-});
+const memory = new AgentMemory();
 await memory.loadJSON(saved);
 await agent.act('Continue the same authorized workflow', {
   memory,
@@ -204,13 +201,11 @@ await agent.act('Continue the same authorized workflow', {
 });
 ```
 
-In `.6`, `loadJSON()` loads observations and notes only. Supplied memory also causes `act()` to ignore current agent/call prompts. If you need different instructions on `.6`, choose them explicitly in the memory constructor instead of passing a new `act()` prompt.
-
-The **unreleased fixes in this branch** remove those pitfalls without a new restore API:
-
 - `loadJSON()` restores serialized instructions, observations, and notes atomically. An absent instruction field clears previous instructions. Caching and thought-retention settings remain runtime configuration, not checkpoint data.
 - When `act()` receives memory, it applies the receiving agent's model-specific caching configuration. Switching caching policies discards old cache markers, not saved evidence.
 - Current agent and call prompts, when supplied, replace saved instructions as a group; they are not appended repeatedly. If both are omitted, saved instructions remain. An explicit empty call prompt clears saved instructions when there is no agent prompt. Updated instructions are saved with the next checkpoint.
+
+**Older-package compatibility:** Packages without these restoration fixes load only observations and notes and ignore current agent/call prompts when memory is supplied. For those packages, construct `AgentMemory` with `instructions: saved.instructions` and the appropriate `promptCaching` option before calling `loadJSON()`. Use `true` for Anthropic/Claude Code models with caching enabled, otherwise `false`. If you need different instructions, choose them explicitly in the constructor. Check your installed package before relying on the current-source behavior.
 
 For judging or auditing a different actor's checkpoint, do not adopt its instructions. This repository's judge clears the instruction field on a copy and exposes the original text as labeled historical data. The task and grading rules remain authoritative.
 
