@@ -40,7 +40,7 @@ test('animation can be disabled while preserving cursor position and visibility 
     expect(await Promise.race([move, nextTimer])).toBe('move');
     await visualizer.hideAll(); await visualizer.showAll(); operation.finish();
     expect(evaluations).toEqual([
-        { x: 12, y: 34, id: 'action-visual-indicator', showClickEffect: false, animate: false },
+        { x: 12, y: 34, id: 'action-visual-indicator', animate: false },
         'action-visual-indicator', 'action-visual-indicator',
     ]);
     expect(operation.snapshot().timings.cursor?.count).toBe(1);

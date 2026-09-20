@@ -203,6 +203,9 @@ export class TabManager {
     }
 
     private startActivityPolling() {
+        // Existing-page initialization and the page hook can both reach here.
+        // Keep one timer so destroy() can stop every activity poll.
+        if (this.pollInterval) return;
         // Poll for activity every 200ms
         this.pollInterval = setInterval(async () => {
             const pages = this.context.pages();

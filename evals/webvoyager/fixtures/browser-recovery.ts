@@ -6,6 +6,7 @@ import { BrowserBlockedError } from '../../../packages/magnitude-core/src/web/re
 import { ActionLimitError } from '../../../packages/magnitude-core/src/agent/errors';
 import { createAction } from '../../../packages/magnitude-core/src/actions';
 import { ActionVisualizer } from '../../../packages/magnitude-core/src/web/visualizer';
+import { collectRecoveryState } from '../../../packages/magnitude-core/src/web/recoveryState';
 
 // Real browser interactions against loopback fixtures; no websites or model calls.
 let browser: Browser;
@@ -185,7 +186,7 @@ test('late redirects retry the complete capture; permanent evaluation errors are
     let mode = 'navigation';
     let fingerprintCalls = 0;
     page.evaluate = (async (fn: any, arg: any) => {
-        if (String(fn).includes('scrollers')) {
+        if (fn === collectRecoveryState) {
             fingerprintCalls++;
             if (mode === 'navigation') {
                 mode = 'ready';
@@ -223,7 +224,8 @@ test('real navigation cycles still warn and stop with a no-progress outcome', as
     const { connector, agent, page } = await fixture(cycle[0]);
     try {
         await assert.rejects(async () => {
-            for (let step = 1; step <= cycle.length * connector.recovery.repeatedActionLimit + 1; step++) {
+            // First discover each state, then exhaust the known-state allowance.
+            for (let step = 1; step <= cycle.length + 2 * connector.recovery.repeatedActionLimit + 1; step++) {
                 await followLink(agent, page, cycle[step % cycle.length]);
             }
         }, (error: unknown) => error instanceof BrowserBlockedError && error.block.reason === 'no_progress');
