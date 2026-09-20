@@ -50,6 +50,10 @@ const tasks = await agent.extract(
 
 ## Get started
 
+### Integrating into another agent
+
+For Hermes, Ari, or another host agent, read the [agent integration guide](AGENT_INTEGRATION.md). It covers this fork's npm package, a runnable example, execution limits, session ownership, and diagnostics.
+
 ### Running your first browser automation
 ```bash
 npx create-magnitude-app
