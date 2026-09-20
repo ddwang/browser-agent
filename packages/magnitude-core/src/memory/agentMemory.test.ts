@@ -45,6 +45,36 @@ test('changing runtime caching discards frozen retention without changing the au
     expect((await memory.toJSON()).observations).toEqual(saved.observations);
 });
 
+for (const instructions of ['Current constraint', '', null, 'Original constraint', undefined]) {
+    test(`same-policy instruction update invalidates frozen retention only when changed: ${JSON.stringify(instructions)}`, async () => {
+        const memory = new AgentMemory({ instructions: 'Original constraint', promptCaching: true });
+        memory.recordObservation(Observation.fromConnector('fixture', 'Old state', { type: 'state', limit: 1 }));
+        await memory.render();
+        await memory.render();
+        memory.remember({ key: 'saved', text: 'Retained fact', sources: [0] });
+        memory.recordObservation(Observation.fromConnector('fixture', 'New state', { type: 'state', limit: 1 }));
+        const saved = await memory.toJSON();
+
+        memory.configure({ instructions, promptCaching: true });
+        const changed = instructions !== undefined && instructions !== 'Original constraint';
+        const rendered = await text(memory);
+        expect(rendered.includes('Old state')).toBe(!changed);
+        expect(rendered).toContain('New state');
+        expect(rendered).toContain('Retained fact');
+        expect(memory.instructions).toBe(instructions === undefined ? 'Original constraint' : instructions);
+        const after = await memory.toJSON();
+        expect(after.observations).toEqual(saved.observations);
+        expect(after.notes).toEqual(saved.notes!);
+
+        // Changed instructions reset the cache rotation; unchanged instructions preserve its cadence.
+        memory.recordObservation(Observation.fromConnector('fixture', 'Newest state', { type: 'state', limit: 1 }));
+        const next = await memory.render();
+        expect(JSON.stringify(next).includes('New state')).toBe(changed);
+        expect(JSON.stringify(next)).toContain('Newest state');
+        expect(next.some(message => message.cacheControl)).toBe(true);
+    });
+}
+
 for (const promptCaching of [false, true]) test(`current observations replace cached state without changing history or audit, caching ${promptCaching}`, async () => {
     const memory = new AgentMemory({ promptCaching });
     memory.recordObservation(Observation.fromConnector('fixture', 'Stable history'));

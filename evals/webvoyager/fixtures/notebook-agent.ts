@@ -67,6 +67,26 @@ const connector = {
 
 {
     const memory = new AgentMemory({ instructions: 'Saved constraint', promptCaching: true });
+    memory.recordObservation(Observation.fromConnector('fixture', 'Old state', { type: 'state', limit: 1 }));
+    await memory.render();
+    memory.recordObservation(Observation.fromConnector('fixture', 'New state', { type: 'state', limit: 1 }));
+    const agent = new Agent({ telemetry: false, prompt: 'Current constraint',
+        llm: { provider: 'anthropic', options: { model: 'claude-fixture', apiKey: 'unused' } },
+    });
+    agent.models.partialAct = async context => {
+        assert.equal(context.instructions, 'Current constraint');
+        assert.ok(!JSON.stringify(context.observationContent).includes('Old state'));
+        assert.ok(JSON.stringify(context.observationContent).includes('New state'));
+        assert.ok(context.observationContent.some(message => message.cacheControl));
+        return { reasoning: 'Read current context.', memory_updates: [], actions: [{ variant: 'task:done', evidence: 'Fixture complete' }] };
+    };
+    await agent.act('Continue', { memory });
+    await agent.stop();
+    console.log('PASS: changing the receiving agent prompt rebuilds frozen retention without disabling caching');
+}
+
+{
+    const memory = new AgentMemory({ instructions: 'Saved constraint', promptCaching: true });
     memory.recordObservation(Observation.fromConnector('fixture', 'Saved evidence'));
     await memory.render();
     const configurations: { client: LLMClient; caching: boolean }[] = [

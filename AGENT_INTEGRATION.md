@@ -202,7 +202,7 @@ await agent.act('Continue the same authorized workflow', {
 ```
 
 - `loadJSON()` restores serialized instructions, observations, and notes atomically. An absent instruction field clears previous instructions. Caching and thought-retention settings remain runtime configuration, not checkpoint data.
-- When `act()` receives memory, it applies the receiving agent's model-specific caching configuration. Switching caching policies discards old cache markers, not saved evidence.
+- When `act()` receives memory, it applies the receiving agent's model-specific caching configuration. Changing instructions or caching policy resets frozen retention and cache markers, not saved evidence. Unchanged values preserve the cached history.
 - Current agent and call prompts, when supplied, replace saved instructions as a group; they are not appended repeatedly. If both are omitted, saved instructions remain. An explicit empty call prompt clears saved instructions when there is no agent prompt. Updated instructions are saved with the next checkpoint.
 
 **Older-package compatibility:** Packages without these restoration fixes load only observations and notes and ignore current agent/call prompts when memory is supplied. For those packages, construct `AgentMemory` with `instructions: saved.instructions` and the appropriate `promptCaching` option before calling `loadJSON()`. Use `true` for Anthropic/Claude Code models with caching enabled, otherwise `false`. If you need different instructions, choose them explicitly in the constructor. Check your installed package before relying on the current-source behavior.

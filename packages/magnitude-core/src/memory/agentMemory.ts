@@ -77,12 +77,13 @@ export class AgentMemory {
 
     /** Apply current instructions and provider caching policy without replacing task evidence. */
     public configure(options: Pick<AgentMemoryOptions, 'instructions' | 'promptCaching'>): void {
-        if (options.instructions !== undefined) this.options.instructions = options.instructions;
-        if (options.promptCaching !== undefined && options.promptCaching !== this.options.promptCaching) {
-            this.options.promptCaching = options.promptCaching;
+        if ((options.instructions !== undefined && options.instructions !== this.options.instructions)
+            || (options.promptCaching !== undefined && options.promptCaching !== this.options.promptCaching)) {
             this.freezeMask = undefined;
             this.cacheControlIndices = [];
         }
+        if (options.instructions !== undefined) this.options.instructions = options.instructions;
+        if (options.promptCaching !== undefined) this.options.promptCaching = options.promptCaching;
     }
 
     public async render(options?: MemoryRenderOptions): Promise<MultiMediaMessage[]> {
