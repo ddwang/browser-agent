@@ -50,6 +50,10 @@ const tasks = await agent.extract(
 
 ## Get started
 
+### Integrating into another agent
+
+For Hermes, Ari, or another host agent, use this fork's `@ddwang/magnitude-core` package and read the [agent integration guide](AGENT_INTEGRATION.md). The guide tracks `ddwang/browser-agent` source and covers a runnable example, execution limits, session ownership, and diagnostics. Upstream packages, scaffolding, and documentation can differ from this fork.
+
 ### Running your first browser automation
 ```bash
 npx create-magnitude-app

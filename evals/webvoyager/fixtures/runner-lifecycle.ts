@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { Agent, type ActOptions } from '../../../packages/magnitude-core/src/agent';
 import { Observation } from '../../../packages/magnitude-core/src/memory/observation';
 import { measureOperation, operationSleep } from '../../../packages/magnitude-core/src/common/operation';
-import { emptyUsage, writeJson, type RunManifest, type TaskResult, type TaskProgress } from '../results';
+import { emptyUsage, writeJson, JUDGE_VERSION, type RunManifest, type TaskResult, type TaskProgress } from '../results';
 
 let mode = 'success';
 let trace: string[] = [];
@@ -69,7 +69,7 @@ try {
         const runDir = join(directory, mode);
         const timeoutMs = ['deadline', 'startup', 'launch', 'stuck'].includes(mode) ? 100 : 10_000;
         const manifest: RunManifest = {
-            createdAt: new Date().toISOString(), revision: 'fixture', dirty: false, sourceHash: 'fixture', judgeVersion: 3, workers: 1,
+            createdAt: new Date().toISOString(), revision: 'fixture', dirty: false, sourceHash: 'fixture', judgeVersion: JUDGE_VERSION, workers: 1,
             actor: { provider: 'anthropic', model: 'fixture' }, judge: { provider: 'anthropic', model: 'fixture' },
             timeoutMs, judgeTimeoutMs: 1000, tasks: [{ id: 'Fixture--0', web_name: 'Fixture', web: 'https://fixture.invalid/SECRET_URL', ques: 'SECRET_PROMPT' }],
         };

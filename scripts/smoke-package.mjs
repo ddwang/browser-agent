@@ -9,7 +9,24 @@ for (const [format, load] of [
     ['CommonJS', () => require('../packages/magnitude-core/dist/index.cjs')],
     ['ESM', () => import('../packages/magnitude-core/dist/index.mjs')],
 ]) {
-    const { Agent, createAction, AgentBusyError, OperationCancelledError } = await load();
+    const { Agent, AgentMemory, createAction, AgentBusyError, OperationCancelledError } = await load();
+    const memory = new AgentMemory({ promptCaching: true });
+    await memory.loadJSON({ instructions: 'Saved constraint', observations: [{
+        source: 'connector:fixture', role: 'user', timestamp: 0, data: { type: 'primitive', content: 'Saved evidence' },
+    }] });
+    assert.equal(memory.instructions, 'Saved constraint');
+    assert.ok((await memory.render()).some(message => message.cacheControl));
+    const resumed = new Agent({ llm, telemetry: false });
+    resumed.models.partialAct = async context => {
+        assert.equal(context.instructions, 'Current constraint');
+        assert.ok(context.observationContent.every(message => !message.cacheControl));
+        return { reasoning: 'Fixture complete', memory_updates: [], actions: [{ variant: 'task:done', evidence: 'Complete' }] };
+    };
+    await resumed.act('Continue', { memory, prompt: 'Current constraint' });
+    assert.equal((await memory.toJSON()).instructions, 'Current constraint');
+    await resumed.stop();
+    console.log(`PASS: ${format} checkpoint restoration and prompt replacement on ${process.version}`);
+
     let release, entered;
     const gate = new Promise(resolve => { release = resolve; });
     const started = new Promise(resolve => { entered = resolve; });

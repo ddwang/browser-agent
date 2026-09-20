@@ -75,6 +75,17 @@ export class AgentMemory {
         return this.options.instructions;
     }
 
+    /** Apply current instructions and provider caching policy without replacing task evidence. */
+    public configure(options: Pick<AgentMemoryOptions, 'instructions' | 'promptCaching'>): void {
+        if ((options.instructions !== undefined && options.instructions !== this.options.instructions)
+            || (options.promptCaching !== undefined && options.promptCaching !== this.options.promptCaching)) {
+            this.freezeMask = undefined;
+            this.cacheControlIndices = [];
+        }
+        if (options.instructions !== undefined) this.options.instructions = options.instructions;
+        if (options.promptCaching !== undefined) this.options.promptCaching = options.promptCaching;
+    }
+
     public async render(options?: MemoryRenderOptions): Promise<MultiMediaMessage[]> {
         if (options?.history === 'full') {
             const messages: MultiMediaMessage[] = [];
@@ -197,16 +208,17 @@ export class AgentMemory {
         }
         const notes = this.notebook.toJSON();
         return {
-            // TODO: include other options as well
-            ...(this.options.instructions ? { instructions: this.options.instructions } : {}),
+            ...(this.options.instructions !== null ? { instructions: this.options.instructions } : {}),
             ...(notes.length ? { notes } : {}),
             observations: observations
         };
     }
 
-    // TODO: turn into class static method / rework cons
+    /** Replace saved state atomically; runtime caching and thought limits stay with this instance. */
     public async loadJSON(data: SerializedAgentMemory) {
-        //jsonToObservableData(data);
+        if (data.instructions !== undefined && typeof data.instructions !== 'string') {
+            throw new Error('Checkpoint instructions must be a string');
+        }
         const observations: Observation[] = [];
         for (const observation of data.observations) {
             observations.push(new Observation(
@@ -218,21 +230,13 @@ export class AgentMemory {
             ));
             
         }
-        // nvm
-        //this.instructions = this.instructions;
-
         const notebook = new TaskNotebook();
         for (const note of data.notes ?? []) notebook.put(note, id => this.resolveNoteSource(observations, id));
+        this.options.instructions = data.instructions ?? null;
         this.observations = observations;
         this.notebook = notebook;
         this.visibleSourceIds.clear();
         this.freezeMask = undefined;
         this.cacheControlIndices = [];
-
-
-        // return {
-        //     ...(this.instructions ? { instructions: this.instructions } : {}),
-        //     observations: observations
-        // };
     }
 }
