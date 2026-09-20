@@ -387,7 +387,12 @@ export class Agent {
             ...(this.options.prompt ? [this.options.prompt] : []),
             ...(options.prompt ? [options.prompt] : []),
         ].join('\n');
-        const taskMemory = options.memory ?? new AgentMemory({ ...this.memoryOptions, instructions: instructions === '' ? undefined : instructions });
+        const taskMemory = options.memory ?? new AgentMemory();
+        taskMemory.configure({
+            ...this.memoryOptions,
+            // Current prompts replace checkpoint instructions; omitted prompts preserve them.
+            ...(this.options.prompt != null || options.prompt !== undefined ? { instructions: instructions || null } : {}),
+        });
 
         if (Array.isArray(taskOrSteps)) {
             const steps = taskOrSteps;

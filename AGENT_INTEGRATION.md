@@ -1,6 +1,6 @@
 # Integrate Magnitude into another agent
 
-Read this guide when adding browser automation to a host agent such as Hermes or Ari. It describes this fork's public TypeScript API, verified against `@ddwang/magnitude-core@0.3.1-ddwang.6`.
+Read this guide when adding browser automation to a host agent such as Hermes or Ari. Setup examples use `@ddwang/magnitude-core@0.3.1-ddwang.6`. The checkpoint section distinguishes that published version from the unreleased restoration fixes in this branch.
 
 Magnitude executes browser tasks. Your host agent owns user intent, permissions, authentication, session isolation, and verification of business outcomes.
 
@@ -176,13 +176,43 @@ Cancellation, failure, and deadline are execution outcomes. If a submission migh
 
 - Give each concurrent operation an exclusive agent/context. Do not share cookies or notebook memory across users or unrelated authorization scopes.
 - Reuse one idle agent for a related workflow when useful. A new `act()` starts fresh task memory by default; browser cookies and page state are separate and persist with the context.
-- To continue task memory, pass `memory: agent.memory` explicitly to the next `act()`. Steps in one `act([...])` share memory. For checkpoints, save `await agent.memory.toJSON()`. Restore with `const memory = new AgentMemory(); await memory.loadJSON(saved)`, then pass that instance to `act()`. Checkpoints do not restore browser tabs, cookies, or login state, and restoring one must not imply replaying a possibly completed action.
+- To continue task memory, pass `memory: agent.memory` explicitly to the next `act()`. Steps in one `act([...])` share memory. Follow the version-specific checkpoint instructions below when restoring saved memory. Checkpoints do not restore browser tabs, cookies, or login state, and restoring one must not imply replaying a possibly completed action.
 - Saved memory can contain screenshots, URLs, page text, and model-written notes. Store it as sensitive data, bound retention, and do not return the entire audit to the host model by default. `query(..., { history: 'full' })` can be large and costly.
 - Manage login verification, 2FA, consent, and browser storage state in the host. Notebook notes are summaries with source references, not authentication evidence.
 
 Browser configuration accepts `browser: { context }`, `{ instance }`, `{ cdp }`, or `{ launchOptions, contextOptions }`. Passing a context directly is the explicit choice when the host needs isolation. `instance` and `cdp` reuse the first existing context if one exists; `contextOptions` will not reconfigure it.
 
 **`agent.stop()` closes even a caller-supplied context.** Do not attach a context that another application expects to remain open. Direct Playwright calls and browser-side activity are outside the operation lock; a download can continue after `whenIdle()`. Use a fresh context when that activity makes reuse unsafe. See [browser ownership](packages/magnitude-core/src/web/browserProvider.ts) and [memory behavior](docs/advanced/memory.mdx).
+
+### Checkpoint restoration
+
+Save `await agent.memory.toJSON()`. Restore only checkpoints trusted for the current user and workflow: saved planner instructions are executable model instructions, not merely page evidence.
+
+For the published `.6` package, reconstruct the instruction and caching options explicitly. This example assumes an Anthropic/Claude Code model with prompt caching enabled; use `false` for other providers or an explicit caching opt-out:
+
+```ts
+import { AgentMemory } from '@ddwang/magnitude-core';
+
+const memory = new AgentMemory({
+  instructions: saved.instructions,
+  promptCaching: true,
+});
+await memory.loadJSON(saved);
+await agent.act('Continue the same authorized workflow', {
+  memory,
+  deadline: Date.now() + 60_000,
+});
+```
+
+In `.6`, `loadJSON()` loads observations and notes only. Supplied memory also causes `act()` to ignore current agent/call prompts. If you need different instructions on `.6`, choose them explicitly in the memory constructor instead of passing a new `act()` prompt.
+
+The **unreleased fixes in this branch** remove those pitfalls without a new restore API:
+
+- `loadJSON()` restores serialized instructions, observations, and notes atomically. An absent instruction field clears previous instructions. Caching and thought-retention settings remain runtime configuration, not checkpoint data.
+- When `act()` receives memory, it applies the receiving agent's model-specific caching configuration. Switching caching policies discards old cache markers, not saved evidence.
+- Current agent and call prompts, when supplied, replace saved instructions as a group; they are not appended repeatedly. If both are omitted, saved instructions remain. An explicit empty call prompt clears saved instructions when there is no agent prompt. Updated instructions are saved with the next checkpoint.
+
+For judging or auditing a different actor's checkpoint, do not adopt its instructions. This repository's judge clears the instruction field on a copy and exposes the original text as labeled historical data. The task and grading rules remain authoritative.
 
 ## Use diagnostics without treating them as proof
 

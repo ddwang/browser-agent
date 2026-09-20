@@ -3,7 +3,8 @@ import { Agent } from '../../../packages/magnitude-core/src/agent';
 import { AgentMemory } from '../../../packages/magnitude-core/src/memory/agentMemory';
 import { Observation } from '../../../packages/magnitude-core/src/memory/observation';
 import { createAction } from '../../../packages/magnitude-core/src/actions';
-import { ActionLimitError } from '../../../packages/magnitude-core/src/agent/errors';
+import { ActionLimitError, OperationCancelledError } from '../../../packages/magnitude-core/src/agent/errors';
+import type { LLMClient } from '../../../packages/magnitude-core/src/ai/types';
 import { BrowserRecovery } from '../../../packages/magnitude-core/src/web/recovery';
 import { taskActions } from '../../../packages/magnitude-core/src/actions/taskActions';
 import z from 'zod';
@@ -23,6 +24,84 @@ const connector = {
         return [Observation.fromConnector('fixture', { url: 'https://fixture.invalid/item?q=unique', value: 437 })];
     },
 };
+
+{
+    for (const { agentPrompt, callPrompt, expected } of [
+        { agentPrompt: undefined, callPrompt: undefined, expected: 'Saved constraint' },
+        { agentPrompt: null, callPrompt: undefined, expected: 'Saved constraint' },
+        { agentPrompt: 'Current policy', callPrompt: undefined, expected: 'Current policy' },
+        { agentPrompt: undefined, callPrompt: 'Current task constraint', expected: 'Current task constraint' },
+        { agentPrompt: 'Current policy', callPrompt: 'Current task constraint', expected: 'Current policy\nCurrent task constraint' },
+        { agentPrompt: undefined, callPrompt: '', expected: null },
+        { agentPrompt: '', callPrompt: undefined, expected: null },
+    ]) {
+        const original = new AgentMemory({ instructions: 'Saved constraint' });
+        original.recordObservation(Observation.fromConnector('fixture', 'Checkpoint evidence'));
+        await original.render();
+        original.remember({ key: 'checkpoint', text: 'A recorded fact', sources: [0] });
+        const restored = new AgentMemory();
+        await restored.loadJSON(JSON.parse(JSON.stringify(await original.toJSON())));
+        const agent = new Agent({ llm, telemetry: false, prompt: agentPrompt });
+        let plans = 0;
+        agent.models.partialAct = async context => {
+            plans++;
+            assert.equal(context.instructions, expected);
+            assert.match(JSON.stringify(context.observationContent), /Checkpoint evidence/);
+            assert.match(JSON.stringify(context.observationContent), /A recorded fact/);
+            return { reasoning: 'Read saved context.', memory_updates: [], actions: [{ variant: 'task:done', evidence: 'Fixture complete' }] };
+        };
+        await agent.act(['Resume', 'Continue'], { memory: restored, prompt: callPrompt });
+        await agent.act('Continue again', { memory: restored, prompt: callPrompt });
+        assert.equal(plans, 3);
+        assert.equal(agent.memory, restored);
+        assert.equal((await restored.toJSON()).instructions, expected ?? undefined);
+        agent.models.query = async context => {
+            assert.equal(context.instructions, expected);
+            return 'verified';
+        };
+        assert.equal(await agent.query('Inspect effective instructions', z.string()), 'verified');
+        await agent.stop();
+    }
+    console.log('PASS: restored instructions survive resume unless current prompts replace them, without repeated accumulation');
+}
+
+{
+    const memory = new AgentMemory({ instructions: 'Saved constraint', promptCaching: true });
+    memory.recordObservation(Observation.fromConnector('fixture', 'Saved evidence'));
+    await memory.render();
+    const configurations: { client: LLMClient; caching: boolean }[] = [
+        { client: { provider: 'openai', options: { model: 'fixture', apiKey: 'unused' } }, caching: false },
+        { client: { provider: 'anthropic', options: { model: 'claude-fixture', apiKey: 'unused' } }, caching: true },
+        { client: { provider: 'anthropic', options: { model: 'claude-fixture', apiKey: 'unused', promptCaching: false } }, caching: false },
+        { client: { provider: 'claude-code', options: { model: 'claude-fixture' } }, caching: true },
+        { client: { provider: 'baseten', options: { model: 'fixture', apiKey: 'unused' } }, caching: false },
+    ];
+    for (const { client, caching } of configurations) {
+        const agent = new Agent({ llm: client, telemetry: false });
+        agent.models.partialAct = async context => {
+            assert.equal(context.instructions, 'Saved constraint');
+            assert.equal(context.observationContent.some(message => message.cacheControl), caching);
+            return { reasoning: 'Read saved context.', memory_updates: [], actions: [{ variant: 'task:done', evidence: 'Fixture complete' }] };
+        };
+        await agent.act('Continue', { memory });
+        await agent.stop();
+    }
+    console.log('PASS: supplied memory adopts each receiving agent runtime caching policy, including explicit opt-out');
+}
+
+{
+    const memory = new AgentMemory({ instructions: 'Saved constraint', promptCaching: true });
+    memory.recordObservation(Observation.fromConnector('fixture', 'Saved evidence'));
+    const saved = await memory.toJSON();
+    const controller = new AbortController();
+    controller.abort();
+    const agent = new Agent({ llm, telemetry: false, prompt: 'Must not be applied' });
+    await assert.rejects(agent.act('Cancelled before adoption', { memory, signal: controller.signal }), OperationCancelledError);
+    assert.deepEqual(await memory.toJSON(), saved);
+    assert.ok((await memory.render()).some(message => message.cacheControl));
+    await agent.stop();
+    console.log('PASS: pre-cancelled operations do not reconfigure supplied memory');
+}
 
 {
     const agent = new Agent({ llm, connectors: [connector], actions: [], telemetry: false });

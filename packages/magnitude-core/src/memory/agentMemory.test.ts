@@ -11,6 +11,40 @@ const screen = (n: number) => Observation.fromConnector('fixture', {
 const text = async (memory: AgentMemory) => (await memory.render()).flatMap(message => message.content)
     .filter(part => typeof part === 'string').join('');
 
+for (const instructions of ['Saved planner constraint', '', undefined]) {
+    for (const promptCaching of [false, true]) test(`checkpoint instructions round-trip with receiving runtime configuration: ${JSON.stringify(instructions)}, caching ${promptCaching}`, async () => {
+        const original = new AgentMemory({ instructions, promptCaching: !promptCaching });
+        original.recordObservation(Observation.fromConnector('fixture', 'Saved evidence'));
+        await original.render();
+        original.remember({ key: 'saved', text: 'Saved fact', sources: [0] });
+        const saved = JSON.parse(JSON.stringify(await original.toJSON()));
+        const restored = new AgentMemory({ instructions: 'Previous task instructions', promptCaching });
+        await restored.loadJSON(saved);
+        expect(restored.instructions).toBe(instructions ?? null);
+        expect(await restored.toJSON()).toEqual(saved);
+        expect((await restored.render()).some(message => message.cacheControl)).toBe(promptCaching);
+    });
+}
+
+test('changing runtime caching discards frozen retention without changing the audit', async () => {
+    const memory = new AgentMemory({ instructions: 'Original constraint', promptCaching: true });
+    memory.recordObservation(Observation.fromConnector('fixture', 'Old state', { type: 'state', limit: 1 }));
+    await memory.render();
+    memory.recordObservation(Observation.fromConnector('fixture', 'New state', { type: 'state', limit: 1 }));
+    expect(await text(memory)).toContain('Old state');
+    const saved = await memory.toJSON();
+    memory.configure({ promptCaching: false });
+    expect(await text(memory)).not.toContain('Old state');
+    expect((await memory.render()).every(message => !message.cacheControl)).toBe(true);
+    expect(await memory.toJSON()).toEqual(saved);
+    memory.configure({ promptCaching: true, instructions: 'Current constraint' });
+    expect((await memory.render()).some(message => message.cacheControl)).toBe(true);
+    memory.configure({ instructions: undefined, promptCaching: undefined });
+    expect(memory.instructions).toBe('Current constraint');
+    expect((await memory.render()).some(message => message.cacheControl)).toBe(true);
+    expect((await memory.toJSON()).observations).toEqual(saved.observations);
+});
+
 for (const promptCaching of [false, true]) test(`current observations replace cached state without changing history or audit, caching ${promptCaching}`, async () => {
     const memory = new AgentMemory({ promptCaching });
     memory.recordObservation(Observation.fromConnector('fixture', 'Stable history'));
@@ -145,11 +179,14 @@ test('loading legacy memory clears notes and visibility/cache state', async () =
 });
 
 test('malformed checkpoint provenance does not replace current memory', async () => {
-    const memory = new AgentMemory();
+    const memory = new AgentMemory({ instructions: 'Keep these instructions', promptCaching: true });
     memory.recordObservation(screen(0));
     const saved = await memory.toJSON();
-    await expect(memory.loadJSON({ ...saved, notes: [{ key: 'bad', text: 'claim', sources: [50] }] })).rejects.toThrow();
+    await expect(memory.loadJSON({ ...saved, instructions: 42 as unknown as string })).rejects.toThrow('instructions must be a string');
     expect(await memory.toJSON()).toEqual(saved);
+    await expect(memory.loadJSON({ ...saved, instructions: 'Rejected instructions', notes: [{ key: 'bad', text: 'claim', sources: [50] }] })).rejects.toThrow();
+    expect(await memory.toJSON()).toEqual(saved);
+    expect((await memory.render()).some(message => message.cacheControl)).toBe(true);
 });
 
 for (const promptCaching of [false, true]) test(`completed checks outlive the default thought window and can be corrected, caching ${promptCaching}`, async () => {

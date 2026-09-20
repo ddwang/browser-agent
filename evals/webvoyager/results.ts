@@ -5,7 +5,7 @@ import type { BrowserBlock, HttpDiagnostic } from '../../packages/magnitude-core
 import type { OperationDiagnostics, OperationPhase } from '../../packages/magnitude-core/src/common/operation';
 import type { Agent } from '../../packages/magnitude-core/src/agent';
 
-export const JUDGE_VERSION = 3;
+export const JUDGE_VERSION = 4;
 
 export function isTaskResultFile(file: string): boolean {
     return file.endsWith('.json') && !file.endsWith('.eval.json') && !file.endsWith('.status.json')

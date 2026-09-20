@@ -79,6 +79,20 @@ Required reviews work with custom action lists and all actor providers. The plan
 
 Each `act()` call starts a fresh notebook unless you explicitly supply an existing `AgentMemory`. Steps within one `act([...])` call share it. `toJSON()` saves notes, and `loadJSON()` restores their source links from saved observations. Legacy checkpoints without notes remain supported.
 
+## Checkpoint instructions and runtime settings
+
+The following restoration fixes are in the current source and are not included in `@ddwang/magnitude-core@0.3.1-ddwang.6`.
+
+`loadJSON()` restores instructions, observations, and notes together, after validation succeeds. Missing instructions clear a previous value; an explicit empty string round-trips unchanged. Invalid instructions or notebook provenance leave the existing memory unchanged. Load only checkpoints trusted for the current user and workflow.
+
+Prompt caching and thought-retention limits are runtime settings, not serialized data. `loadJSON()` preserves the receiving memory instance's runtime settings. When you pass memory to `act()`, the agent applies its current model-specific caching policy; changing that policy clears stale cache markers without deleting observations or notes.
+
+For reused or restored memory, current agent and call prompts replace saved instructions when either is supplied. They are combined once for the call, not appended to prior prompts. If both are omitted, the saved instructions remain. An explicit empty call prompt clears the saved instructions when there is no configured agent prompt. The effective instructions persist in subsequent checkpoints and queries. This is instruction replacement, not conflict detection or a permissions boundary.
+
+For `.6`, construct `AgentMemory` with `instructions: saved.instructions` and the appropriate `promptCaching` value before calling `loadJSON()`. That release ignores current agent/call prompts when memory is supplied. See the [agent integration guide](https://github.com/ddwang/browser-agent/blob/main/AGENT_INTEGRATION.md#checkpoint-restoration) for the version-specific recipe.
+
 Queries use retained history by default and do not receive planner-only notebook commands. Use `agent.query(prompt, schema, { history: 'full' })` to inspect every observation, including repeated screenshots and superseded notebook writes. This audit view does not change the actor's retention, source visibility, or cache state. The eval runner uses it for judging.
+
+The judge loads checkpoint observations and notes without adopting the actor's saved instructions. It receives those instructions as labeled historical data, not system instructions or grading criteria. This separates instruction roles; it does not establish that a model is immune to prompt injection.
 
 `Image` owns a cloned Sharp pipeline configuration and caches the first successful encoding. Rendering, hashing, and checkpointing share that encoding, including concurrent requests. `resize()` returns an independent image. Keep caller-owned source buffers and files unchanged for the image's lifetime; Sharp reads those inputs lazily.

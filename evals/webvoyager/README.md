@@ -5,6 +5,12 @@ and GitHub. Tasks require multi-constraint searches, cross-page comparisons,
 stateful UI changes, or complete extraction. Each has acceptance criteria that
 both the actor and Sonnet 5 judge receive. Finding a relevant page alone cannot pass.
 
+Judge version 4 keeps saved actor instructions as labeled historical context, not
+judge system instructions or additional grading criteria. The canonical task and
+judge rules remain authoritative. Checkpoints are not rewritten. Earlier judge
+versions remain historical results; use their matching source revision to judge
+them again instead of changing a saved manifest's version.
+
 The original 20-task baseline is preserved in `smoke.json`; the four-task scroll
 suite is unchanged. The 590-task WebVoyager catalog is also unchanged. The new
 suite uses distinct IDs and must not be compared directly with the old score.
@@ -67,7 +73,8 @@ inputs and local schema validation. It does not yet enable OpenAI native
 Structured Outputs. Plans still undergo strict whole-response validation and at
 most one format-repair attempt. Refusals, content-filter stops, and output-token
 truncation fail without executing a partial plan. Sonnet's native structured
-output and judge prompt are unchanged.
+output is unchanged by selecting an OpenAI actor; the shared judge contract is
+described above.
 
 Usage separates uncached input, cache reads, and cache writes. Completion-token
 usage already includes reasoning tokens. Luna cost estimates use the
