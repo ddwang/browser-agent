@@ -263,6 +263,8 @@ for (const action of ['type', 'drag', 'selectAll', 'clickAndType'] as const) {
     const events: string[] = [];
     const blocked = async (name: string) => { events.push(name); entered.resolve(); await release.promise; };
     const page = {
+        viewportSize: () => null,
+        evaluate: async () => ({ viewport: { width: 1024, height: 768 }, hit: null }),
         mouse: {
             move: async () => { events.push('move'); },
             down: () => blocked('down'), up: async () => { events.push('up'); },

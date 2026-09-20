@@ -14,6 +14,31 @@ export type OperationKind = 'act' | 'query' | 'extract' | 'nav' | 'exec';
 export type OperationPhase = 'preparing' | 'context' | 'observations' | 'model' | 'action'
     | 'screenshot' | 'stability' | 'cooldown' | 'retry' | 'paused' | 'cursor';
 export interface OperationTiming { count: number; totalMs: number }
+export interface ProviderAttemptDiagnostics {
+    operationId: string;
+    attempt: number;
+    provider: string;
+    model: string;
+    startedAt: number;
+    elapsedMs: number | null;
+    httpStatus: number | null;
+    requestId: string | null;
+    /** HTTP outcome, not successful parsing or completion of the agent's task. */
+    outcome: 'succeeded' | 'failed' | 'unknown';
+}
+
+export interface BrowserClickDiagnostics {
+    operationId: string;
+    actionIndex: number | null;
+    x: number;
+    y: number;
+    button: 'left' | 'right' | 'middle';
+    clickCount: number;
+    screenshot: { width: number; height: number } | null;
+    viewport: { width: number; height: number } | null;
+    hit: { tag: string | null; role: string | null } | null;
+}
+
 export interface OperationDiagnostics {
     id: string;
     kind: OperationKind;
@@ -27,6 +52,11 @@ export interface OperationDiagnostics {
     lastAction?: { index: number; name: string; state: 'pending' | 'started' | 'completed' | 'failed' };
     /** Inclusive totals: nested and concurrent phases overlap and must not be summed. */
     timings: Partial<Record<OperationPhase, OperationTiming>>;
+    /** Latest 100 SDK attempts, available after each model invocation settles. */
+    providerAttempts?: ProviderAttemptDiagnostics[];
+    providerAttemptsTruncated?: boolean;
+    /** Pre-dispatch hit evidence for the latest submitted click, not proof of success. */
+    lastClick?: BrowserClickDiagnostics;
 }
 
 /** Preserve the original error and add only a payload-free snapshot, when extensible. */
@@ -59,6 +89,9 @@ export class Operation {
     private lastAction?: OperationDiagnostics['lastAction'];
     private timings: OperationDiagnostics['timings'] = {};
     private spans = new Set<{ phase: OperationPhase; started: number }>();
+    private providerAttempts: ProviderAttemptDiagnostics[] = [];
+    private providerAttemptCount = 0;
+    private lastClick?: BrowserClickDiagnostics;
 
     constructor(readonly owner: object, options: OperationOptions, private kind: OperationKind = 'exec',
         private onUpdate?: (diagnostics: OperationDiagnostics) => void) {
@@ -133,7 +166,30 @@ export class Operation {
             ...(this.cancelled !== undefined && this.finished !== undefined ? { cancellationToDrainMs: this.finished - this.cancelled } : {}),
             ...(this.cancelled !== undefined && this.idle !== undefined ? { cancellationToIdleMs: this.idle - this.cancelled } : {}),
             ...(this.lastAction ? { lastAction: { ...this.lastAction } } : {}), timings,
+            ...(this.providerAttemptCount ? {
+                providerAttempts: this.providerAttempts.map(attempt => ({ ...attempt })),
+                providerAttemptsTruncated: this.providerAttemptCount > this.providerAttempts.length,
+            } : {}),
+            ...(this.lastClick ? { lastClick: {
+                ...this.lastClick,
+                screenshot: this.lastClick.screenshot && { ...this.lastClick.screenshot },
+                viewport: this.lastClick.viewport && { ...this.lastClick.viewport },
+                hit: this.lastClick.hit && { ...this.lastClick.hit },
+            } } : {}),
         };
+    }
+
+    recordProviderAttempt(attempt: Omit<ProviderAttemptDiagnostics, 'operationId' | 'attempt'>): void {
+        if (this.closed) return;
+        this.providerAttempts.push({ ...attempt, operationId: this.id, attempt: ++this.providerAttemptCount });
+        if (this.providerAttempts.length > 100) this.providerAttempts.shift();
+        this.publish();
+    }
+
+    recordClick(click: Omit<BrowserClickDiagnostics, 'operationId' | 'actionIndex'>): void {
+        if (this.closed) return;
+        this.lastClick = { ...click, operationId: this.id, actionIndex: this.lastAction?.index ?? null };
+        this.publish();
     }
 
     beginPhase(phase: OperationPhase): () => void {

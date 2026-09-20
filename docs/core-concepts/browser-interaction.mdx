@@ -89,6 +89,18 @@ The agent knows about and sees:
 - Which tab is active
 - Browser download start, completion, and failure evidence for the current operation
 
+## Click feedback
+
+The next planner observation includes `browser-click` with the latest submitted click as `lastClick`, or `null` before a click in the current operation. The same record appears in operation diagnostics as `lastClick`; its exported type is `BrowserClickDiagnostics`.
+
+The record contains the operation ID, action index, button, click count, executed viewport coordinates (`x`, `y`), and screenshot and viewport dimensions. Coordinates use CSS pixels after Magnitude's existing virtual-screen transformation. Screenshot dimensions refer to the last planner screenshot captured in that operation, including virtual-screen resizing. They are `null` when no screenshot has been captured in the operation, such as a direct `exec` call.
+
+Immediately before submitting the mouse command, Magnitude inspects the hit element. `hit` contains an allowlisted standard tag and explicit ARIA role; it does not compute an accessibility role. Unknown or custom names become `null`. Inspection follows up to 16 open shadow roots. A frame target, unavailable document, or failed inspection returns unknown evidence. It does not traverse iframe documents or expose text, selectors, arbitrary attributes, values, or URLs. Custom controls and unknown targets still receive the original click.
+
+Hit evidence is not proof that the intended control was activated. The page can change between inspection and dispatch. Magnitude does not retarget clicks, enforce a tag or role, or finish a task based on a hit. The planner uses the next screenshot and feedback to choose its next action. Cancellation during inspection prevents dispatch; cancellation after command submission cannot undo the click.
+
+Only the latest click observation appears in normal planner context. A new operation replaces it with `null`, even with reused memory. The full memory audit can retain earlier observations. Click evidence does not reset no-progress counters; only the existing page and download progress signals do. No new browser listeners or recovery counters are added.
+
 ## Download evidence
 
 Magnitude observes downloads on existing pages and new tabs before dispatching browser actions. The planner receives a `browser-downloads` observation containing an `operationId`, a `downloads` array, and a `truncated` flag. Each download has an opaque `id`, the initiating `actionIndex` where known, and one status:

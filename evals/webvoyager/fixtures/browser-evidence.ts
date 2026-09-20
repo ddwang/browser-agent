@@ -6,6 +6,7 @@ import { BrowserBlockedError } from '../../../packages/magnitude-core/src/web/re
 import { OperationCancelledError, OperationDeadlineError } from '../../../packages/magnitude-core/src/agent/errors';
 import type { AgentContext } from '../../../packages/magnitude-core/src/ai/baml_client';
 import { collectRecoveryState } from '../../../packages/magnitude-core/src/web/recoveryState';
+import type { BrowserClickDiagnostics, OperationDiagnostics } from '../../../packages/magnitude-core/src/common/operation';
 
 // Browser events and deterministic plans only: no portal, filesystem polling, or model API.
 const cases: { name: string; check: () => Promise<void> }[] = [];
@@ -68,6 +69,16 @@ function evidence(context: AgentContext) {
     };
 }
 
+function clickEvidence(context: AgentContext) {
+    const parts = context.observationContent.flatMap(message => message.content)
+        .filter(part => typeof part === 'string' && part.includes('"lastClick"'));
+    assert.equal(parts.length, 1, 'only the latest click observation belongs in planner context');
+    const content = parts[0] as string;
+    return (JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1)) as {
+        lastClick: BrowserClickDiagnostics | null;
+    }).lastClick;
+}
+
 const plan = (...actions: { variant: string; [key: string]: unknown }[]) => ({ reasoning: 'Deterministic fixture plan', memory_updates: [], actions });
 const done = () => plan({ variant: 'task:done', evidence: 'Verified browser fixture evidence' });
 function finishTransfer(id: string) {
@@ -85,7 +96,7 @@ test('right-click reaches Chromium as button 2 and preserves left-click, double-
         await connector.onStart();
         const harness = connector.getHarness();
         const pos = await point(harness.page, '#target');
-        const target = { x: pos.x / 2, y: pos.y / 2 };
+        const target = { x: Math.round(pos.x / 2), y: Math.round(pos.y / 2) };
         await harness.rightClick(target);
         const events = async () => JSON.parse((await harness.page.locator('#target').getAttribute('data-events'))!) as { type: string; button: number }[];
         assert.deepEqual(await events(), [{ type: 'mousedown', button: 2 }, { type: 'contextmenu', button: 2 }]);
@@ -94,7 +105,143 @@ test('right-click reaches Chromium as button 2 and preserves left-click, double-
         const recorded = await events();
         assert.equal(recorded.filter(event => event.type === 'click' && event.button === 0).length, 3);
         assert.equal(recorded.filter(event => event.type === 'dblclick' && event.button === 0).length, 1);
+        const agent = new Agent({ connectors: [connector], telemetry: false,
+            llm: { provider: 'anthropic', options: { model: 'fixture', apiKey: 'unused' } } });
+        const variants = ['mouse:right_click', 'mouse:double_click', 'mouse:click'];
+        let calls = 0;
+        agent.models.partialAct = async context => {
+            const click = clickEvidence(context);
+            if (calls === 0) assert.equal(click, null);
+            else {
+                assert.ok(click);
+                assert.equal(click.x, target.x * 2); assert.equal(click.y, target.y * 2);
+                assert.equal(click.button, calls === 1 ? 'right' : 'left');
+                assert.equal(click.clickCount, calls === 2 ? 2 : 1);
+                assert.deepEqual(click.screenshot, { width: 512, height: 384 });
+                assert.deepEqual(click.viewport, { width: 1024, height: 768 });
+                assert.deepEqual(click.hit, { tag: 'button', role: null });
+            }
+            return calls < variants.length ? plan({ variant: variants[calls++], ...target }) : done();
+        };
+        await agent.act('Inspect all click variants', { deadline: Date.now() + 15_000 });
     } finally { await connector.onStop(); }
+});
+
+test('missed clicks report the panel and a corrected click reports the pre-dispatch button', async () => {
+    const { agent, connector, page } = await fixture();
+    try {
+        await page.setContent(`<div style="position:absolute;left:50px;top:50px;width:300px;height:200px">SECRET_PAGE_TEXT
+            <button id="SECRET_SELECTOR" aria-label="SECRET_LABEL" style="position:absolute;left:50px;top:50px;width:100px;height:50px"
+                onclick="this.outerHTML='<dialog open>Opened</dialog>'">SECRET_BUTTON</button></div>`);
+        const snapshots: OperationDiagnostics[] = [];
+        agent.events.on('operation', snapshot => { snapshots.push(snapshot); });
+        let calls = 0;
+        agent.models.partialAct = async context => {
+            const click = clickEvidence(context);
+            if (++calls === 1) {
+                assert.equal(click, null);
+                return plan({ variant: 'mouse:click', x: 75, y: 75 });
+            }
+            assert.ok(click);
+            assert.equal(click.operationId, agent.operation!.id);
+            assert.equal(click.actionIndex, calls - 1);
+            assert.deepEqual(click.screenshot, { width: 1024, height: 768 });
+            assert.deepEqual(click.viewport, { width: 1024, height: 768 });
+            assert.deepEqual(click.hit, { tag: calls === 2 ? 'div' : 'button', role: null });
+            assert.ok(!JSON.stringify(click).includes('SECRET'));
+            if (calls === 2) {
+                assert.equal(await page.locator('dialog').count(), 0, 'a miss must not be retargeted');
+                return plan({ variant: 'mouse:click', x: 150, y: 125 });
+            }
+            assert.equal(await page.locator('button').count(), 0, 'hit evidence must precede click mutation');
+            assert.equal(await page.locator('dialog').count(), 1);
+            return done();
+        };
+        await agent.act('Open the dialog', { deadline: Date.now() + 15_000 });
+        assert.equal(calls, 3);
+        assert.ok(!JSON.stringify(snapshots).includes('SECRET'));
+        assert.ok(!JSON.stringify(snapshots).includes('http://'));
+        agent.models.partialAct = async context => { assert.equal(clickEvidence(context), null); return done(); };
+        await agent.act('Inspect a new operation', { memory: agent.memory, deadline: Date.now() + 5000 });
+        assert.equal(agent.operation!.lastClick, undefined);
+    } finally { await connector.onStop(); }
+});
+
+test('custom controls, shadow roots, frames, and unavailable inspection preserve click dispatch', async () => {
+    const { agent, connector, page } = await fixture();
+    try {
+        for (const kind of ['custom', 'shadow', 'frame', 'unavailable']) {
+            await page.setContent('<div id="mount"></div><output id="count">0</output>');
+            await page.evaluate(kind => {
+                const mount = document.querySelector('#mount')!;
+                const count = document.querySelector('#count')!;
+                const target = document.createElement(kind === 'custom' ? 'secret-control' : 'button');
+                target.style.cssText = 'position:fixed;left:50px;top:50px;width:100px;height:50px;display:block';
+                target.textContent = 'SECRET_TEXT';
+                target.setAttribute('role', kind === 'custom' ? 'SECRET_ROLE' : 'button');
+                target.addEventListener('click', () => { count.textContent = '1'; });
+                if (kind === 'shadow') mount.attachShadow({ mode: 'open' }).append(target);
+                else if (kind === 'frame') {
+                    const frame = document.createElement('iframe');
+                    frame.style.cssText = 'position:fixed;inset:0;width:400px;height:300px;border:0';
+                    mount.append(frame); frame.contentDocument!.body.append(target);
+                } else mount.append(target);
+                if (kind === 'unavailable') document.elementFromPoint = () => { throw new Error('SECRET_ERROR'); };
+            }, kind);
+            await agent.exec({ variant: 'mouse:click', x: 100, y: 75 }, undefined, { deadline: Date.now() + 5000 });
+            const click = agent.operation!.lastClick!;
+            assert.deepEqual(click.hit, kind === 'custom' ? { tag: null, role: null }
+                : kind === 'shadow' ? { tag: 'button', role: 'button' } : null);
+            assert.equal(click.screenshot, null, 'no screenshot from a prior operation can be attributed to this click');
+            assert.equal(await page.locator('#count').innerText(), '1');
+            assert.ok(!JSON.stringify(click).includes('SECRET'));
+        }
+    } finally { await connector.onStop(); }
+});
+
+for (const cause of ['signal', 'deadline'] as const) test(`${cause} during click inspection prevents dispatch and stale feedback`, async () => {
+    const { agent, connector, page } = await fixture();
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+    const evaluate = page.evaluate.bind(page);
+    const controller = new AbortController();
+    try {
+        const target = await point(page, '#target');
+        page.evaluate = (async (fn: any, arg: any) => {
+            if (arg && Object.keys(arg).sort().join(',') === 'x,y') {
+                entered.resolve(); await release.promise;
+            }
+            return evaluate(fn, arg);
+        }) as typeof page.evaluate;
+        const rejected = assert.rejects(agent.exec({ variant: 'mouse:click', ...target }, undefined,
+            cause === 'signal' ? { signal: controller.signal } : { deadline: Date.now() + 1000 }),
+        cause === 'signal' ? OperationCancelledError : OperationDeadlineError);
+        await entered.promise;
+        if (cause === 'signal') controller.abort();
+        await rejected;
+        assert.equal(agent.busy, true);
+        release.resolve(); await agent.whenIdle();
+        assert.equal(agent.operation!.lastClick, undefined);
+        assert.equal(await page.locator('#target').getAttribute('data-events'), '[]');
+        page.evaluate = evaluate;
+        await agent.exec({ variant: 'mouse:click', ...target });
+        assert.deepEqual(agent.operation!.lastClick!.hit, { tag: 'button', role: null });
+    } finally { release.resolve(); await connector.onStop(); }
+});
+
+test('cancellation from a click diagnostic listener prevents subsequent actions', async () => {
+    const { agent, connector, page } = await fixture();
+    const controller = new AbortController();
+    const onOperation = (snapshot: OperationDiagnostics) => { if (snapshot.lastClick) controller.abort(); };
+    agent.events.on('operation', onOperation);
+    try {
+        const target = await point(page, '#target');
+        agent.models.partialAct = async () => plan({ variant: 'mouse:click', ...target }, { variant: 'mouse:click', ...target });
+        await assert.rejects(agent.act('Click twice', { signal: controller.signal, deadline: Date.now() + 5000 }), OperationCancelledError);
+        await agent.whenIdle();
+        const events = JSON.parse((await page.locator('#target').getAttribute('data-events'))!);
+        assert.equal(events.filter((event: { type: string }) => event.type === 'click').length, 1);
+        assert.equal(agent.operation!.lastClick!.actionIndex, 1);
+    } finally { agent.events.off('operation', onOperation); await connector.onStop(); }
 });
 
 for (const popup of [false, true]) test(`${popup ? 'popup' : 'unchanged page'} download completes a deterministic task after one click`, async () => {
