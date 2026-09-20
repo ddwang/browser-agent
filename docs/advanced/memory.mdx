@@ -54,6 +54,12 @@ Anthropic provides 4 cache control messages at a time. The Magnitude agent will 
 
 Magnitude keeps the configured number of recent screenshots, any still-cached screenshots, and the last 20 thoughts in the actor's context. The full observation history remains available in saved memory; filtering does not delete it.
 
+### Current-state observations
+
+Connector observations can opt into `current: true` in their retention options. This renders only the latest observation of that type after cached history, without a cache marker. It overrides `limit` and `dedupe`; use the same retention policy for every observation of a type. Ordinary retained observations keep their existing cache-preserving behavior.
+
+Click feedback uses this mode so frozen history cannot retain superseded click records. A new operation's `lastClick: null` replaces the prior operation's feedback even when memory is reused. Saved memory and `render({ history: 'full' })` still include every snapshot with its original observation number. Current-state rendering does not clear the audit or change notebook provenance.
+
 ## Durable task notes
 
 Every planner response must include a `memory_updates` array reviewing the current observations. The host saves these updates before executing the response's actions. An empty array is valid when there are no new facts needed later, including an immediately finishable task. Each update reuses the notebook's stable key, text, and supporting observation numbers. Browser screenshots include the captured URL, which the host attaches to cited notes. These references link a model-written summary to its source; they do not prove that the summary is correct or complete.

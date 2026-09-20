@@ -3,6 +3,14 @@ import { Observation } from './observation';
 import { maskObservations, applyMask } from './masking';
 
 describe('maskObservations with freezeMask', () => {
+    test('current state stays outside cached history and skips historical deduplication', async () => {
+        const observations = ['old', 'latest'].map(value =>
+            Observation.fromConnector('fixture', value, { type: 'state', current: true, dedupe: true }));
+        for (const observation of observations) observation.equals = async () => { throw new Error('Current state must not be deduplicated'); };
+        const history = Observation.fromConnector('fixture', 'History', { type: 'history', limit: 0 });
+        expect(await maskObservations([...observations, history], [true, true, true])).toEqual([false, false, true]);
+    });
+
     test('freezeMask preserves frozen observation mask values', async () => {
         const observations = [
             new Observation('connector:test', 'user', 'obs1'),

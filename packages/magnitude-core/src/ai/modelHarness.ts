@@ -20,7 +20,7 @@ import { parsePlannerResponse, PlannerResponseError, memoryUpdatesSchema, type P
 import { anthropicOutputFormat, plannerSchema, usesStructuredOutput } from './structuredOutput';
 import { ModelResponseError } from './modelResponseError';
 import { DEFAULT_BASETEN_MODEL } from './baseten';
-import { beginOperationPhase, checkOperation, operationOptions } from '@/common/operation';
+import { beginOperationPhase, checkOperation, currentOperation, operationOptions } from '@/common/operation';
 
 interface ModelHarnessOptions {
     llm: LLMClient;
@@ -133,11 +133,36 @@ export class ModelHarness {
             }
         } finally {
             finish();
-            for (const log of collector.logs) {
-                for (const call of log.calls) {
-                    try { this._reportCallUsage(call); }
-                    catch { this.logger.warn('Unable to report model response usage'); }
+            // SDK collector order is not necessarily request order (including retries).
+            const calls = collector.logs.flatMap(log => log.calls.map((call, index) => ({
+                call, key: call.httpRequest?.id ?? `${log.id}:${index}`,
+            }))).sort((a, b) => a.call.timing.startTimeUtcMs - b.call.timing.startTimeUtcMs);
+            const seen = new Set<string>();
+            for (const { call, key } of calls) {
+                if (seen.has(key)) continue;
+                seen.add(key);
+                try {
+                    const response = call.httpResponse;
+                    const httpStatus = response?.status ?? null;
+                    const duration = call.timing.durationMs;
+                    const headers = response?.headers as Record<string, unknown> | undefined;
+                    const requestId = Object.entries(headers ?? {}).find(([name]) =>
+                        ['request-id', 'x-request-id'].includes(name.toLowerCase()))?.[1];
+                    currentOperation()?.recordProviderAttempt({
+                        provider: this.options.llm.provider,
+                        model: ((this.options.llm.options as { model?: string }).model ?? 'unknown').slice(0, 200),
+                        startedAt: call.timing.startTimeUtcMs,
+                        // Cancelled calls can report zero despite a measurable wait.
+                        elapsedMs: duration !== null && (duration > 0 || response !== null) ? duration : null,
+                        httpStatus,
+                        requestId: typeof requestId === 'string' && /^[\w.:-]{1,200}$/.test(requestId) ? requestId : null,
+                        outcome: httpStatus === null ? 'unknown' : httpStatus >= 200 && httpStatus < 300 ? 'succeeded' : 'failed',
+                    });
+                } catch {
+                    this.logger.warn('Unable to report provider attempt metadata');
                 }
+                try { this._reportCallUsage(call); }
+                catch { this.logger.warn('Unable to report model response usage'); }
             }
         }
     }

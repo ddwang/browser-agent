@@ -79,3 +79,49 @@ test('late callbacks cannot rewrite a completed outcome after its former deadlin
     expect(operation.snapshot()).toEqual(completed);
     expect(operation.signal.aborted).toBe(false);
 });
+
+test('provider attempts are bounded, isolated, and immutable in snapshots', () => {
+    const operation = new Operation({}, {});
+    const attempt = { provider: 'fixture', model: 'fixture', startedAt: 123,
+        elapsedMs: null, httpStatus: null, requestId: null, outcome: 'unknown' as const };
+    for (let i = 0; i < 105; i++) operation.recordProviderAttempt(attempt);
+    const snapshot = operation.snapshot();
+    expect(snapshot.providerAttempts).toHaveLength(100);
+    expect(snapshot.providerAttemptsTruncated).toBe(true);
+    expect(snapshot.providerAttempts![0].attempt).toBe(6);
+    expect(snapshot.providerAttempts![99].attempt).toBe(105);
+    snapshot.providerAttempts![0].model = 'changed';
+    expect(operation.snapshot().providerAttempts![0].model).toBe('fixture');
+    operation.finish();
+    operation.recordProviderAttempt(attempt);
+    expect(operation.snapshot().providerAttempts![99].attempt).toBe(105);
+    const next = new Operation({}, {});
+    expect(next.snapshot().providerAttempts).toBeUndefined();
+    next.recordProviderAttempt(attempt);
+    expect(next.snapshot().providerAttempts![0].attempt).toBe(1);
+    next.finish();
+});
+
+test('click snapshots retain only the latest operation-owned metadata and clone nested fields', () => {
+    const operation = new Operation({}, {});
+    const click = { x: 10, y: 20, button: 'left' as const, clickCount: 1,
+        screenshot: { width: 512, height: 384 }, viewport: { width: 1024, height: 768 },
+        hit: { tag: 'button', role: null } };
+    operation.prepareAction('mouse:click');
+    operation.recordClick(click);
+    const snapshot = operation.snapshot();
+    expect(snapshot.lastClick?.operationId).toBe(snapshot.id);
+    expect(snapshot.lastClick?.actionIndex).toBe(1);
+    snapshot.lastClick!.viewport!.width = 0;
+    snapshot.lastClick!.screenshot!.height = 0;
+    snapshot.lastClick!.hit!.tag = 'changed';
+    expect(operation.snapshot().lastClick).toMatchObject(click);
+    operation.recordClick({ ...click, x: 30 });
+    expect(operation.snapshot().lastClick?.x).toBe(30);
+    operation.finish();
+    operation.recordClick(click);
+    expect(operation.snapshot().lastClick?.x).toBe(30);
+    const next = new Operation({}, {});
+    expect(next.snapshot().lastClick).toBeUndefined();
+    next.finish();
+});

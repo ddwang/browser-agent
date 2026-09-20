@@ -8,7 +8,7 @@ import { TabManager, TabState } from "./tabs";
 import { DOMTransformer } from "./transformer";
 import { Image } from '@/memory/image';
 import EventEmitter from "eventemitter3";
-import { checkOperation, drainAll, measureOperation, operationSleep } from '@/common/operation';
+import { checkOperation, currentOperation, drainAll, measureOperation, operationSleep, type Operation, type BrowserClickDiagnostics } from '@/common/operation';
 //import { StateComponent } from "@/facets";
 
 
@@ -24,6 +24,10 @@ export interface WebHarnessEvents {
     'activePageChanged': (page: Page) => Promise<void>;
 }
 
+// Only standard names cross the diagnostic boundary, never custom element names or arbitrary roles.
+const clickTags = ('a abbr address area article aside audio b base bdi bdo blockquote body br button canvas caption cite code col colgroup data datalist dd del details dfn dialog div dl dt em embed fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 head header hgroup hr html i img input ins kbd label legend li link main map mark menu meta meter nav noscript object ol optgroup option output p picture pre progress q rp rt ruby s samp script search section select slot small source span strong style sub summary sup table tbody td template textarea tfoot th thead time title tr track u ul var video wbr svg g path circle rect line polyline polygon ellipse text use symbol defs').split(' ');
+const clickRoles = ('alert alertdialog application article banner blockquote button caption cell checkbox code columnheader combobox complementary contentinfo definition deletion dialog directory document emphasis feed figure form generic grid gridcell group heading img insertion link list listbox listitem log main marquee math menu menubar menuitem menuitemcheckbox menuitemradio meter navigation none note option paragraph presentation progressbar radio radiogroup region row rowgroup rowheader scrollbar search searchbox separator slider spinbutton status strong subscript superscript switch tab table tablist tabpanel term textbox time timer toolbar tooltip tree treegrid treeitem').split(' ');
+
 export class WebHarness { // implements StateComponent
     /**
      * Executes web actions on a page
@@ -35,6 +39,7 @@ export class WebHarness { // implements StateComponent
     public readonly visualizer: ActionVisualizer;
     private transformer: DOMTransformer;
     private tabs: TabManager;
+    private lastScreenshot?: { operation: Operation; dimensions: { width: number; height: number } };
 
     public readonly events: EventEmitter<WebHarnessEvents> = new EventEmitter();
 
@@ -99,6 +104,7 @@ export class WebHarness { // implements StateComponent
     async stop() {
         // Clean up tab manager resources
         this.tabs.destroy();
+        this.lastScreenshot = undefined;
     }
 
     get page() {
@@ -132,7 +138,13 @@ export class WebHarness { // implements StateComponent
             const image = Image.fromBase64(buffer.toString('base64'));
             // Match browser coordinate space while avoiding high-DPR image tokens.
             const { width, height } = await image.getDimensions();
-            return await image.resize(width / dpr, height / dpr);
+            const resized = await image.resize(width / dpr, height / dpr);
+            checkOperation();
+            const operation = currentOperation();
+            this.lastScreenshot = operation ? { operation,
+                dimensions: this.options.virtualScreenDimensions ?? { width: width / dpr, height: height / dpr },
+            } : undefined;
+            return resized;
         });
     }
  
@@ -276,10 +288,48 @@ export class WebHarness { // implements StateComponent
         await this.visualizer.hideAll(); // The visualizer can block clicks.
         try {
             checkOperation();
-            await this.page.mouse.click(x, y, options);
+            await this.dispatchClick(x, y, options);
         } finally {
             await this.visualizer.showAll();
         }
+    }
+
+    private async dispatchClick(x: number, y: number, options: Parameters<Page['mouse']['click']>[2] = {}) {
+        const page = this.page;
+        const operation = currentOperation();
+        let viewport = page.viewportSize();
+        let hit: BrowserClickDiagnostics['hit'] = null;
+        if (operation) {
+            try {
+                const state = await page.evaluate(({ x, y }) => {
+                    let element = document.elementFromPoint(x, y);
+                    for (let depth = 0; element?.shadowRoot && depth < 16; depth++) {
+                        const child = element.shadowRoot.elementFromPoint(x, y);
+                        if (child === element) break;
+                        element = child;
+                    }
+                    // A frame element is not evidence about the target in its document.
+                    if (element?.matches('iframe, frame') || element?.shadowRoot) element = null;
+                    return {
+                        viewport: { width: innerWidth, height: innerHeight },
+                        hit: element ? { tag: element.localName.slice(0, 32), role: element.getAttribute('role')?.slice(0, 256) ?? null } : null,
+                    };
+                }, { x, y });
+                if (!viewport && Number.isFinite(state.viewport.width) && Number.isFinite(state.viewport.height)) viewport = state.viewport;
+                if (state.hit) hit = {
+                    tag: clickTags.includes(state.hit.tag) ? state.hit.tag : null,
+                    role: state.hit.role?.split(/\s+/).find(role => clickRoles.includes(role)) ?? null,
+                };
+            } catch { /* Inspection is optional; a navigation or unavailable document leaves unknown evidence. */ }
+        }
+        checkOperation();
+        const pending = options.clickCount === 2 ? page.mouse.dblclick(x, y, options) : page.mouse.click(x, y, options);
+        // Publish after submitting the command, so a diagnostic listener cannot cancel before dispatch.
+        operation?.recordClick({ x, y, button: options.button ?? 'left', clickCount: options.clickCount ?? 1,
+            screenshot: this.lastScreenshot?.operation === operation ? this.lastScreenshot.dimensions : null,
+            viewport, hit,
+        });
+        await pending;
     }
 
     async hover({ x, y }: { x: number, y: number }, options?: { transform: boolean }) {
@@ -306,7 +356,7 @@ export class WebHarness { // implements StateComponent
         await this.visualizer.hideAll();
         try {
             checkOperation();
-            await this.page.mouse.dblclick(x, y);
+            await this.dispatchClick(x, y, { clickCount: 2 });
         } finally {
             await this.visualizer.showAll();
         }

@@ -11,6 +11,50 @@ const screen = (n: number) => Observation.fromConnector('fixture', {
 const text = async (memory: AgentMemory) => (await memory.render()).flatMap(message => message.content)
     .filter(part => typeof part === 'string').join('');
 
+for (const promptCaching of [false, true]) test(`current observations replace cached state without changing history or audit, caching ${promptCaching}`, async () => {
+    const memory = new AgentMemory({ promptCaching });
+    memory.recordObservation(Observation.fromConnector('fixture', 'Stable history'));
+    const prefix = await memory.render();
+    // Cross several cache rotations, then model a new operation's empty replacement.
+    for (const value of [null, 1, 2, 3, 4, 5, 6, null]) {
+        memory.recordObservation(Observation.fromConnector('fixture', JSON.stringify({ lastClick: value }), { type: 'click', current: true }));
+        const messages = await memory.render();
+        expect(messages.slice(0, -1)).toEqual(prefix);
+        expect(messages.at(-1)?.cacheControl).toBe(false);
+        expect(messages.at(-1)?.content.at(-1)).toBe(JSON.stringify({ lastClick: value }));
+    }
+    const saved = JSON.parse(JSON.stringify(await memory.toJSON()));
+    expect(saved.observations).toHaveLength(9);
+    const retained = await memory.render();
+    const audit = await memory.render({ history: 'full' });
+    expect(audit).toHaveLength(9);
+    expect(audit.every(message => !message.cacheControl)).toBe(true);
+    expect(await memory.render()).toEqual(retained);
+    expect(() => memory.remember({ key: 'old', text: 'Superseded click', sources: [1] })).toThrow('not shown');
+    memory.remember({ key: 'current', text: 'Current empty state', sources: [8] });
+    const restored = new AgentMemory({ promptCaching });
+    await restored.loadJSON(saved);
+    expect(await restored.render()).toEqual(retained);
+    expect(await restored.toJSON()).toEqual(saved);
+    restored.recordObservation(Observation.fromConnector('fixture', '{"lastClick":9}', { type: 'click', current: true }));
+    expect((await restored.render()).at(-1)?.content.at(-1)).toBe('{"lastClick":9}');
+});
+
+for (const promptCaching of [false, true]) test(`current-only memory keeps the latest value per type without cache markers, caching ${promptCaching}`, async () => {
+    const memory = new AgentMemory({ promptCaching });
+    memory.recordObservation(Observation.fromConnector('fixture', 'Old state', { type: 'state', current: true }));
+    await memory.render();
+    memory.recordObservation(Observation.fromConnector('fixture', 'Other state', { type: 'other', current: true }));
+    await memory.render();
+    memory.recordObservation(Observation.fromConnector('fixture', 'New state', { type: 'state', current: true, limit: 0, dedupe: true }));
+    for (let i = 0; i < 5; i++) {
+        const messages = await memory.render();
+        expect(messages).toHaveLength(2);
+        expect(messages.every(message => !message.cacheControl)).toBe(true);
+        expect(messages.map(message => message.content.at(-1))).toEqual(['New state', 'Other state']);
+    }
+});
+
 for (const promptCaching of [false, true]) test(`full audit bypasses all actor filters without changing actor state, caching ${promptCaching}`, async () => {
     const memory = new AgentMemory({ promptCaching, thoughtLimit: 1 });
     memory.recordObservation(screen(0));

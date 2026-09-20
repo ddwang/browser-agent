@@ -5,7 +5,7 @@ import { Observation, ObservationRetentionOptions, ObservationRole, ObservationS
 import z from 'zod';
 import EventEmitter from 'eventemitter3';
 import { jsonToObservableData, MultiMediaJson, observableDataToJson } from './serde';
-import { applyMask, maskObservations } from './masking';
+import { applyMask, maskObservations, type MaskedObservation } from './masking';
 import { mergeMessages } from './util';
 import { Image as BamlImage} from '@boundaryml/baml';
 import { TaskNotebook, type NoteInput, type NoteSource } from './notebook';
@@ -90,14 +90,19 @@ export class AgentMemory {
             this.cacheControlIndices = [];
         }
         const mask = await maskObservations(this.observations, this.freezeMask);
+        const currentObservations = new Map<string, MaskedObservation>();
         // Preserve complete note actions in the audit, not obsolete facts in actor context.
         this.observations.forEach((observation, index) => {
             if (observation.retention?.type === 'notebook-write') mask[index] = false;
+            else if (observation.retention?.current) {
+                currentObservations.set(observation.retention.type, { observation, index });
+            }
         });
 
         const visibleObservations = applyMask(this.observations, mask);
         this.visibleSourceIds = new Set([
-            ...visibleObservations.filter(({ observation }) => observation.source.startsWith('connector:')).map(({ index }) => index),
+            ...[...visibleObservations, ...currentObservations.values()]
+                .filter(({ observation }) => observation.source.startsWith('connector:')).map(({ index }) => index),
             ...this.notebook.sourceIds(),
         ]);
 
@@ -115,6 +120,10 @@ export class AgentMemory {
         
         if (this.options.promptCaching) {
             this.freezeMask = mask;   
+        }
+        // Current state is a replaceable suffix, never part of a frozen cache prefix.
+        for (const { observation, index } of currentObservations.values()) {
+            messages.push(await observation.render({ prefix: this.observationPrefix(observation, index) }));
         }
         const notes = this.notebook.render();
         if (notes) messages.push({ role: 'user', cacheControl: false, content: [notes] });

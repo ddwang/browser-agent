@@ -66,7 +66,7 @@ agent.events.on('operation', snapshot => {
 });
 ```
 
-Snapshots include an operation ID, method kind, status (`running`, `draining`, or `finished`), outcome, elapsed time, and the last registered action's name, index, and dispatch state. They contain no prompts, URLs, action arguments, page contents, or raw errors. Use static, nonsensitive custom action names. Existing logging, memory, and action/thought events retain their original payloads; this is not a global redaction setting.
+Snapshots include an operation ID, method kind, status (`running`, `draining`, or `finished`), outcome, elapsed time, and the last registered action's name, index, and dispatch state. They exclude prompts, URLs, page text, raw errors, and full action payloads. Click metadata is limited to the fields described in [Click feedback](/core-concepts/browser-interaction#click-feedback). Use static, nonsensitive custom action names. Existing logging, memory, and action/thought events retain their original payloads; this is not a global redaction setting.
 
 | Last action state | Meaning |
 | --- | --- |
@@ -78,6 +78,24 @@ Snapshots include an operation ID, method kind, status (`running`, `draining`, o
 Errors from accepted operations carry an `operation` snapshot when the error object is extensible. Built-in errors expose this field in their types. The original error identity and type are preserved. Frozen or custom errors may not accept metadata; use the getter or event in that case. `AgentBusyError.operation` identifies the conflicting active operation, when present.
 
 A cancellation error retains the snapshot from cancellation, even if the worker later finishes. Later events and the getter show draining progress. `cancellationToDrainMs` measures time until the worker settles; `cancellationToIdleMs` also includes pending lifecycle cleanup. A finished snapshot can precede idle, so use `busy` and `whenIdle()` for reuse decisions. Keep listeners synchronous; catch failures in any asynchronous work you start from them. Synchronous diagnostic listener exceptions are logged without failing the operation.
+
+### Provider attempts
+
+Snapshots include `providerAttempts` after a model invocation settles. Each record comes from an actual BAML SDK call, including retries, rather than a planner step. The exported `ProviderAttemptDiagnostics` type contains:
+
+| Field | Meaning |
+| --- | --- |
+| `operationId`, `attempt` | Operation correlation and a one-based attempt number within that operation. |
+| `provider`, `model` | Configured provider and model, not values copied from response bodies. Model names are limited to 200 characters. |
+| `startedAt`, `elapsedMs` | SDK start time in Unix milliseconds and duration, or `null` when duration is unavailable. |
+| `httpStatus`, `requestId` | Response status and allowlisted request ID, or `null` when unavailable. |
+| `outcome` | HTTP `succeeded` for 2xx, `failed` for other statuses, or `unknown` without a status. |
+
+HTTP success does not establish successful parsing or task completion. An operation can fail or be cancelled even when an attempt reports HTTP success. Request IDs come only from `request-id` or `x-request-id` response headers and must contain at most 200 letters, digits, underscores, periods, colons, or hyphens. Other headers, URLs, prompts, response bodies, reasoning, and credentials are excluded. Use nonsensitive configured model names.
+
+Magnitude retains the latest 100 attempts. `providerAttemptsTruncated` indicates that earlier records were dropped; attempt numbers continue increasing. Repeated snapshots contain the same records, so deduplicate by `(operationId, attempt)` when exporting events. Token usage remains separate, and an attempt can be recorded without usage.
+
+The collector is not a live HTTP trace: attempts become available only after the SDK invocation settles. The installed SDK can report no response and a zero duration for a cancelled request that waited; Magnitude reports `null` duration, status, and request ID with `unknown` outcome in that case. The operation's model timing still measures the wait. Magnitude does not infer a provider timeout or rate limit from the application's cancellation or deadline. After cancellation, read later events or `agent.operation` after drainage; the error's earlier snapshot does not gain new records.
 
 ### Latency measurements
 
