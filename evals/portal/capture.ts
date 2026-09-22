@@ -12,12 +12,14 @@ import { addUsage, emptyUsage, writeJson, type ModelConfig } from '../webvoyager
 import { controlClient, loadSuite, portals, retrievalAnswerSchema, type PortalId, type Score, type SuiteName } from './portal';
 import { readOracle, stableOracle, type Oracle } from './oracle';
 import { assessWrite, routeWrite, writeAnswerSchema, writeInstructions, type WriteEvidence } from './writes';
+import { tracePlanner } from './decisions';
 
 export interface CaptureConfig {
     portal: PortalId; portalRoot: string; browserOrigin: string; controlOrigin: string;
     actor: ModelConfig; timeoutMs: number; maxActions: number; seed: number;
     groundedControls: boolean; suiteHash: string;
     suite: SuiteName;
+    traceDecisions?: boolean;
 }
 export interface EpisodeJob extends CaptureConfig { caseId: string; runId: string; loginPath: string; }
 export interface Sample { image: string; phase: 'login' | 'task'; oracle: Oracle; elapsedMs: number; }
@@ -29,6 +31,7 @@ export interface Episode {
     write?: WriteEvidence;
     writeAssessment?: ReturnType<typeof assessWrite>;
     verification?: { status: 'verified' } | { status: 'unavailable'; reason: 'work_not_settled' | 'submission_unsettled' | 'state_unavailable' };
+    decisionTraceOverheadMs?: number;
 }
 
 export async function captureEpisode(job: EpisodeJob, directory: string, token: string, configure?: (agent: BrowserAgent) => void) {
@@ -129,6 +132,8 @@ export async function captureEpisode(job: EpisodeJob, directory: string, token: 
             if (index < 0) report.operations.push(operation); else report.operations[index] = operation;
         });
         configure?.(agent);
+        if (job.traceDecisions) tracePlanner(agent, directory, () => report.samples.at(-1)?.image, () => phase,
+            ms => { report.decisionTraceOverheadMs = (report.decisionTraceOverheadMs ?? 0) + ms; });
         await agent.start();
         controller.signal.throwIfAborted();
         const controls = { signal: controller.signal, deadline };

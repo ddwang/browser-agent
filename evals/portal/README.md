@@ -59,6 +59,16 @@ The current Djev question and DOM oracle cover **retrieval states only**. The re
 
 Captures reuse the agent's actual PNG observations at 1024×768. Evaluator-only DOM checks bracket each screenshot. Changed, unsupported, obscured, and offscreen states remain unlabelled. `captureOverheadMs` measures oracle reads and image persistence, excluding report writes; this instrumented baseline is not an uninstrumented production latency measurement.
 
+### Profile planner decisions
+
+Use `capture --trace-decisions` to save `decisions.jsonl` alongside each episode. The trace records the original task, retained text context, current screenshot filename, sidecar native controls, planner output, and model-call elapsed time. Inputs are saved before inference, so interrupted attempts remain visible. `decisionTraceOverheadMs` records added tracing time separately. This is synthetic-only data: traces can include the fixture's credentials and chart contents. Never apply this recorder to real patient sessions.
+
+Sidecar controls do not enter the actor's prompt and cannot execute actions. They are observed immediately before planning, after the actor screenshot; this is not an atomic screenshot/DOM snapshot. Earlier retained images are represented by placeholders, so this trace is not an exact planner-request replay. Inspect the current screenshot before annotating an offline selection example.
+
+After capturing both suites into `<run>/retrieval` and `<run>/writes`, run `bun evals/portal/analyze-decisions.ts <run>`. The profile distinguishes one-click calls with and without notebook updates, form batches, waits, completion, and failed calls. A one-click plan is not automatically safe or replaceable: validate its target and preserve required evidence before crediting any potential saving.
+
+`selection.ts` builds an experimental offline navigation-choice request from the task, retained text, current screenshot, and sidecar controls. It excludes the subsequent actor response and evaluator outcome. Disabled or ambiguous controls are omitted; missing, truncated, or oversized inputs delegate locally. Model confidence is not an authorization rule. The request builder is not connected to browser execution and must not be used as a production safety or completion check.
+
 ## Replay with Djev
 
 Set `DJEV_ENDPOINT` to your pinned Baseten Djev deployment's HTTPS `/deployment/<id>/predict` endpoint. This is **not** the OpenAI-compatible Baseten Model API. Ensure the deployment is ready before testing. The evaluator does not wake replicas or change scaling.
