@@ -45,6 +45,103 @@ async function fixture(html = body, options: Partial<BrowserConnectorOptions> = 
 }
 const clicks = (page: Page) => page.evaluate(() => JSON.parse(document.body.dataset.clicked!) as string[]);
 
+test('CSS-hidden controls never enter model-facing controls or saved memory', async () => {
+    const { agent } = await fixture(`<section><h2>CSS_HIDDEN_CONTEXT</h2>
+        <button aria-label="CSS_HIDDEN_LABEL" style="visibility:hidden">Hidden</button></section>
+        <button aria-label="CSS_COLLAPSED_LABEL" style="visibility:collapse">Collapsed</button>
+        <button aria-label="CSS_TRANSPARENT_LABEL" style="opacity:0">Transparent</button><button>Visible</button>`);
+    try {
+        agent.models.partialAct = async context => {
+            assert.deepEqual(controls(context).controls.map(item => item.label), ['Visible']);
+            assert.ok(!JSON.stringify(context.observationContent).includes('CSS_HIDDEN'));
+            return done();
+        };
+        await agent.act('Observe visible controls only');
+        assert.ok(!JSON.stringify(await agent.memory.toJSON()).includes('CSS_HIDDEN'));
+    } finally { await agent.stop(); }
+});
+
+test('a link reference cannot activate an independently interactive descendant', async () => {
+    for (const nested of [
+        '<button type="submit" id="nested"><span id="hit">Delete record</span></button>',
+        '<input type="checkbox" id="nested">',
+        '<label for="external" id="nested"><span id="hit">Toggle other field</span></label>',
+        '<span role="button" id="nested"><span id="hit">Custom action</span></span>',
+        '<span tabindex="0" id="nested"><span id="hit">Focusable action</span></span>',
+        '<span contenteditable="true" id="nested"><span id="hit">Edit record</span></span>',
+    ]) {
+        const { agent, page } = await fixture(`<style>#target{position:relative;width:240px;height:80px}#nested{position:absolute;inset:0;width:100%;height:100%;margin:0}#hit{display:block;width:100%;height:100%}</style>
+            <form onsubmit="event.preventDefault();document.body.dataset.submitted='yes'">
+            <a id="target" href="${base}/record" aria-label="View record" onclick="if(event.target===this)event.preventDefault()">${nested}</a>
+            <input type="checkbox" id="external"></form>`);
+        try {
+            let calls = 0;
+            agent.models.partialAct = async context => {
+                const snapshot = controls(context);
+                if (++calls === 1) {
+                    assert.deepEqual(snapshot.controls.map(item => item.label), ['View record']);
+                    return plan({ variant: 'browser:click', ref: snapshot.controls[0].ref });
+                }
+                assert.deepEqual(await clicks(page), []);
+                assert.equal(await page.locator('#external').isChecked(), false);
+                assert.equal(await page.locator('body').getAttribute('data-submitted'), null);
+                assert.equal(agent.operation?.lastClick, undefined);
+                assert.ok(JSON.stringify(context.observationContent).includes('target_unavailable'));
+                return done();
+            };
+            await agent.act('Open the record, not a nested action');
+            if (nested.startsWith('<button')) {
+                await page.locator('#nested').click();
+                assert.equal(await page.locator('body').getAttribute('data-submitted'), 'yes', 'the fixture must contain an active submit control');
+            }
+        } finally { await agent.stop(); }
+    }
+});
+
+test('ordinary text and icon descendants still activate their observed control', async () => {
+    for (const inner of ['<span id="hit">Open</span>', '<svg role="img" width="120" height="40"><rect id="hit" width="120" height="40" /></svg>']) {
+        const { agent, page } = await fixture(`<button id="target" aria-label="Open record" style="padding:0;border:0">${inner}</button>`);
+        try {
+            let calls = 0;
+            agent.models.partialAct = async context => {
+                if (++calls === 1) return plan({ variant: 'browser:click', ref: controls(context).controls[0].ref });
+                assert.deepEqual(await clicks(page), ['hit']);
+                return done();
+            };
+            await agent.act('Click the text or icon belonging to the button');
+        } finally { await agent.stop(); }
+    }
+});
+
+test('grounded clicks follow preparatory actions in a new plan and can follow memory writes', async () => {
+    const { agent, connector, page } = await fixture();
+    try {
+        assert.match(connector.getActionSpace().find(action => action.name === 'browser:click')!.description!, /sole non-memory action/);
+        assert.match((await connector.getInstructions())!, /sole non-memory action/);
+        let calls = 0;
+        let previousRef = '';
+        agent.models.partialAct = async context => {
+            const ref = controls(context).controls[0].ref;
+            if (++calls === 1) {
+                previousRef = ref;
+                return plan({ variant: 'wait', seconds: 0 });
+            }
+            if (calls === 2) {
+                assert.notEqual(ref, previousRef);
+                return { ...plan({ variant: 'browser:click', ref }), memory_updates: [{
+                    operation: 'add', expected_text: null, key: 'record', text: 'Record one is visible.', sources: [0],
+                }] };
+            }
+            assert.equal(calls, 3);
+            assert.deepEqual(await clicks(page), ['target']);
+            assert.ok(JSON.stringify(await agent.memory.toJSON()).includes('Record one is visible.'));
+            assert.ok(!JSON.stringify(context.observationContent).includes('target_unavailable'));
+            return done();
+        };
+        await agent.act('Prepare, then select a fresh reference');
+    } finally { await agent.stop(); }
+});
+
 test('disabled mode adds neither controls, action, instructions, nor DOM capture', async () => {
     const { agent, connector, page } = await fixture(body, { groundedControls: false });
     try {

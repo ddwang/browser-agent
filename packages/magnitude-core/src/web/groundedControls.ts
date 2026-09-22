@@ -10,7 +10,13 @@ export const GROUNDED_CLICK_REJECTED = Object.freeze({ clicked: false, reason: '
 function captureControls() {
     const documentAtCapture = document;
     const url = location.href;
-    const visibility = { checkOpacity: true, checkVisibility: true };
+    const visibility: CheckVisibilityOptions = { checkOpacity: true, checkVisibilityCSS: true };
+    const interactive = 'a[href],area[href],button,input,select,textarea,label,summary,iframe,object,embed,'
+        + 'audio[controls],video[controls],[tabindex],[contenteditable]:not([contenteditable="false"]),'
+        + '[role~="button"],[role~="link"],[role~="checkbox"],[role~="radio"],[role~="switch"],'
+        + '[role~="menuitem"],[role~="menuitemcheckbox"],[role~="menuitemradio"],[role~="option"],'
+        + '[role~="combobox"],[role~="listbox"],[role~="textbox"],[role~="searchbox"],'
+        + '[role~="slider"],[role~="spinbutton"],[role~="scrollbar"],[role~="tab"],[role~="treeitem"]';
     function describe(node: Element) {
         if (!(node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement)
             || !node.isConnected || !node.checkVisibility(visibility) || node.closest('[hidden],[inert],[aria-hidden="true"]')) return null;
@@ -73,7 +79,8 @@ function captureControls() {
             if (!state || !state.enabled || state.container !== entry.state.container
                 || state.form !== entry.state.form || state.identity !== entry.state.identity) return null;
             const hit = document.elementFromPoint(state.x, state.y);
-            if (!hit || !(hit === entry.node || entry.node.contains(hit))) return null;
+            // Text/icon descendants belong to this control; nested controls do not.
+            if (!hit || hit.closest(interactive) !== entry.node) return null;
             return { x: state.x, y: state.y };
         },
     };
