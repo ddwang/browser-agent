@@ -31,6 +31,8 @@ await startBrowserAgent({
 
 ## Browser Options
 
+`groundedControls: true` optionally adds observed native link/button references to the existing planner. It defaults to off and requires no additional provider. See [observed-control clicks](/core-concepts/browser-interaction#observed-control-clicks-opt-in) for supported controls, reference lifetime, data exposure, and limitations.
+
 Various browser options can also be passed, such as browser launch options or context options:
 
 ```ts

@@ -272,11 +272,23 @@ export class WebHarness { // implements StateComponent
         //await this.visualizer.removeActionVisuals();
     }
 
+    /** Recheck an observed target after hover effects, before submitting any click. */
+    async clickGrounded(resolve: () => Promise<{ x: number; y: number } | null>): Promise<boolean> {
+        const point = await resolve();
+        if (!point) return false;
+        const clicked = await this._click(point.x, point.y, undefined, async () => {
+            const current = await resolve();
+            return !!current && current.x === point.x && current.y === point.y;
+        });
+        if (clicked) await this.waitForStability();
+        return clicked;
+    }
+
     private async _click(x: number, y: number, options?: {
         button?: "left" | "right" | "middle";
         clickCount?: number;
         delay?: number;
-    }) {
+    }, guard?: () => Promise<boolean>): Promise<boolean> {
         checkOperation();
         await drainAll([
             this.visualizer.moveVirtualCursor(x, y),
@@ -288,7 +300,9 @@ export class WebHarness { // implements StateComponent
         await this.visualizer.hideAll(); // The visualizer can block clicks.
         try {
             checkOperation();
+            if (guard && !await guard()) return false;
             await this.dispatchClick(x, y, options);
+            return true;
         } finally {
             await this.visualizer.showAll();
         }

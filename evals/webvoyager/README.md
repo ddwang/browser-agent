@@ -461,6 +461,8 @@ retried as formatting mistakes. Output-token limits are not automatically raised
 
 ## Local verification
 
+Observed-control targeting is opt-in and is not enabled in the existing live benchmark runner. Run its deterministic Chromium checks with `BAML_LOG=off bun test evals/webvoyager/grounded-controls.test.ts`. These verify targeting and execution invariants with stubbed plans, not model accuracy or latency gains. Any future live comparison must record `groundedControls` and give each compared decision model the same candidate descriptions and grounded actions.
+
 ```sh
 bun test evals/webvoyager/results.test.ts evals/webvoyager/cli.test.ts evals/webvoyager/budget.test.ts evals/webvoyager/tasks.test.ts
 # Requires the bundled browser: bunx patchright install chromium

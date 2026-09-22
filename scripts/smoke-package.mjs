@@ -9,7 +9,15 @@ for (const [format, load] of [
     ['CommonJS', () => require('../packages/magnitude-core/dist/index.cjs')],
     ['ESM', () => import('../packages/magnitude-core/dist/index.mjs')],
 ]) {
-    const { Agent, AgentMemory, createAction, AgentBusyError, OperationCancelledError } = await load();
+    const { Agent, AgentMemory, BrowserConnector, createAction, AgentBusyError, OperationCancelledError } = await load();
+    const disabled = new BrowserConnector();
+    const enabled = new BrowserConnector({ groundedControls: true });
+    assert.ok(!disabled.getActionSpace().some(action => action.name === 'browser:click'));
+    const grounded = enabled.getActionSpace().find(action => action.name === 'browser:click');
+    assert.ok(grounded);
+    assert.equal(grounded.schema.safeParse({ ref: 'observed-ref' }).success, true);
+    assert.equal(grounded.schema.safeParse({ ref: '' }).success, false);
+    assert.ok((await enabled.getInstructions()).includes('browser-controls'));
     const memory = new AgentMemory({ promptCaching: true });
     await memory.loadJSON({ instructions: 'Saved constraint', observations: [{
         source: 'connector:fixture', role: 'user', timestamp: 0, data: { type: 'primitive', content: 'Saved evidence' },
