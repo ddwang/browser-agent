@@ -45,6 +45,60 @@ async function fixture(html = body, options: Partial<BrowserConnectorOptions> = 
 }
 const clicks = (page: Page) => page.evaluate(() => JSON.parse(document.body.dataset.clicked!) as string[]);
 
+test('open shadow-host and custom-element hit paths reject before click', async () => {
+    for (const variant of ['open-custom', 'open-native', 'closed-custom', 'slotted', 'hover-created'] as const) {
+        const { agent, page } = await fixture(`<a id="target" href="${base}/record" aria-label="View record" style="width:240px;height:80px"><span id="container"></span></a><input id="input">`);
+        try {
+            await page.evaluate(variant => {
+                const host = document.createElement(variant === 'open-native' || variant === 'slotted' || variant === 'hover-created' ? 'div' : 'record-widget');
+                host.id = 'host';
+                host.style.cssText = 'display:block;width:240px;height:80px';
+                document.querySelector('#container')!.replaceWith(host);
+                const attach = () => {
+                    const shadow = host.attachShadow({ mode: variant === 'closed-custom' ? 'closed' : 'open' });
+                    if (variant === 'slotted') {
+                        host.innerHTML = '<span id="label" style="display:block;width:240px;height:80px">View</span>';
+                        shadow.innerHTML = '<slot></slot>';
+                    } else {
+                        shadow.innerHTML = '<form style="margin:0"><button style="width:240px;height:80px">Delete record</button></form>';
+                        shadow.querySelector('form')!.addEventListener('submit', event => {
+                            event.preventDefault();
+                            document.body.dataset.submitted = 'yes';
+                        });
+                    }
+                };
+                if (variant === 'hover-created') {
+                    host.textContent = 'View';
+                    host.addEventListener('pointerenter', attach, { once: true });
+                } else attach();
+            }, variant);
+            let calls = 0;
+            agent.models.partialAct = async context => {
+                const snapshot = controls(context);
+                if (++calls === 1) {
+                    assert.deepEqual(snapshot.controls.map(item => item.label), ['View record']);
+                    return plan({ variant: 'browser:click', ref: snapshot.controls[0].ref },
+                        { variant: 'keyboard:type', content: 'MUST_NOT_TYPE' });
+                }
+                assert.equal(calls, 2);
+                assert.deepEqual(await clicks(page), []);
+                assert.equal(await page.locator('body').getAttribute('data-submitted'), null);
+                assert.equal(await page.locator('#input').inputValue(), '');
+                assert.equal(agent.operation?.lastClick, undefined);
+                assert.ok(JSON.stringify(context.observationContent).includes('target_unavailable'));
+                if (variant === 'hover-created') assert.equal(await page.locator('#host').evaluate(node => !!node.shadowRoot), true);
+                return done();
+            };
+            await agent.act('Open the observed record without activating a shadow control');
+            if (variant === 'open-custom' || variant === 'open-native' || variant === 'closed-custom') {
+                const box = (await page.locator('#host').boundingBox())!;
+                await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+                assert.equal(await page.locator('body').getAttribute('data-submitted'), 'yes', 'native input really activates the shadow form');
+            }
+        } finally { await agent.stop(); }
+    }
+});
+
 test('CSS-hidden controls never enter model-facing controls or saved memory', async () => {
     const { agent } = await fixture(`<section><h2>CSS_HIDDEN_CONTEXT</h2>
         <button aria-label="CSS_HIDDEN_LABEL" style="visibility:hidden">Hidden</button></section>

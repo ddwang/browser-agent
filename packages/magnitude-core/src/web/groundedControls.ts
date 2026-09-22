@@ -81,6 +81,11 @@ function captureControls() {
             const hit = document.elementFromPoint(state.x, state.y);
             // Text/icon descendants belong to this control; nested controls do not.
             if (!hit || hit.closest(interactive) !== entry.node) return null;
+            // Hit-testing retargets shadow content to its host. Do not treat that
+            // host (or a slotted descendant) as ordinary content of the control.
+            for (let descendant: Element | null = hit; descendant && descendant !== entry.node; descendant = descendant.parentElement) {
+                if (descendant.shadowRoot || descendant.localName.includes('-') || descendant.hasAttribute('is')) return null;
+            }
             return { x: state.x, y: state.y };
         },
     };
