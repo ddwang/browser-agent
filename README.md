@@ -110,6 +110,8 @@ bun run test:package
 
 On Linux, add `--with-deps` to the browser installation command. Tests use local browser pages and loopback model-response fixtures, not live model APIs or benchmark sites.
 
+For synthetic healthcare portal evaluation, see [portal capture and offline Djev replay](evals/portal/README.md).
+
 Please see [our docs](https://docs.magnitude.run) for more information on how to best build Magnitude automations and test cases.
 
 ## Contact

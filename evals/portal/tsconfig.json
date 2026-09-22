@@ -1,0 +1,5 @@
+{
+    "extends": "../webvoyager/tsconfig.json",
+    "include": ["*.ts", "fixtures/*.ts"],
+    "exclude": ["results"]
+}
