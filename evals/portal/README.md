@@ -35,6 +35,8 @@ Defaults: UCSD, Baseten DeepSeek V4.1 Flash with high reasoning, 600 seconds per
 
 Each episode creates an isolated simulator run and a fresh browser context. It never resets `demo`. Browser requests are restricted to the selected web origin, excluding the control service. The actor has browser actions, not filesystem or evaluator tools. The parent deletes only the run it created, even if a worker fails. A cleanup failure is recorded separately from the task outcome.
 
+Before the final simulator snapshot, capture allows up to five seconds for actor work, intercepted requests, and browser submissions to settle. This includes unexpected writes in retrieval tasks. A cancelled or timed-out episode still fails, but its independent score includes any confirmed late commit. If drainage times out or a submission loses its transport response, `verification` is `unavailable` and no final score is published. Cleanup aborts intercepted browser requests before closing their forwarding context; it does not establish that a remote write was rolled back.
+
 ## Evaluate bounded writes
 
 Run all four UCSD write cases with the same actor settings as the retrieval baseline:

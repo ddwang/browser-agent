@@ -36,7 +36,8 @@ export async function routeWrite(route: Route, evidence: WriteEvidence, loseConf
         await route.fulfill({ response });
     } catch {
         evidence.transportErrors++;
-        await route.abort();
+        // Cleanup may already have aborted this intercepted request.
+        await route.abort('aborted').catch(() => {});
     }
 }
 

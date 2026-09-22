@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { chromium } from 'patchright';
+import { chromium, type Route } from 'patchright';
 import { BrowserAgent } from '../../packages/magnitude-core/src/agent/browserAgent';
 import { BrowserConnector } from '../../packages/magnitude-core/src/connectors/browserConnector';
 import { createAction } from '../../packages/magnitude-core/src/actions';
@@ -28,6 +28,7 @@ export interface Episode {
     score?: Score; answer?: unknown; error?: string; cleanupErrors: string[];
     write?: WriteEvidence;
     writeAssessment?: ReturnType<typeof assessWrite>;
+    verification?: { status: 'verified' } | { status: 'unavailable'; reason: 'work_not_settled' | 'submission_unsettled' | 'state_unavailable' };
 }
 
 export async function captureEpisode(job: EpisodeJob, directory: string, token: string, configure?: (agent: BrowserAgent) => void) {
@@ -46,7 +47,8 @@ export async function captureEpisode(job: EpisodeJob, directory: string, token: 
     process.on('SIGINT', cancel); process.on('SIGTERM', cancel);
     const timer = setTimeout(() => controller.abort(new Error('Capture deadline')), job.timeoutMs);
     const report: Episode = { caseId: job.caseId, status: 'running', passed: false, elapsedMs: 0, captureOverheadMs: 0,
-        actionCount: 0, plannerCalls: 0, usage: emptyUsage(), operations: [], samples: [], cleanupErrors: [] };
+        actionCount: 0, plannerCalls: 0, usage: emptyUsage(), operations: [], samples: [], cleanupErrors: [],
+        verification: { status: 'unavailable', reason: 'work_not_settled' } };
     if (job.suite === 'writes') report.write = { attempts: 0, successfulResponses: 0, lostResponses: 0, blockedVerificationReads: 0, transportErrors: 0 };
     const loseConfirmation = job.caseId.endsWith('-lost-confirmation');
     const save = () => { report.elapsedMs = performance.now() - started; writeJson(join(directory, 'episode.json'), report); };
@@ -55,15 +57,34 @@ export async function captureEpisode(job: EpisodeJob, directory: string, token: 
     let agent: BrowserAgent | undefined;
     let before: unknown;
     let phase: Sample['phase'] = 'login';
+    const pending = new Map<Promise<unknown>, Route | undefined>();
+    const track = <T>(promise: Promise<T>, route?: Route): Promise<T> => {
+        pending.set(promise, route);
+        void promise.then(() => pending.delete(promise), () => pending.delete(promise));
+        return promise;
+    };
+    let submissionUnsettled = false;
+    let retiring = false;
     try {
         before = await control(`/runs/${job.runId}/state`);
         browser = await chromium.launch({ headless: true, handleSIGINT: false, handleSIGTERM: false });
         const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, deviceScaleFactor: 1, serviceWorkers: 'block' });
+        // Observe submissions even in retrieval tasks, where a write is unauthorized.
+        context.on('request', request => {
+            if (new URL(request.url()).origin !== job.browserOrigin || ['GET', 'HEAD', 'OPTIONS'].includes(request.method())) return;
+            track((async () => {
+                try {
+                    const response = await request.response();
+                    if (!response || await response.finished()) submissionUnsettled = true;
+                } catch { submissionUnsettled = true; }
+            })());
+        });
         // Restrict browser network requests to the synthetic web service, excluding its control API.
-        await context.route('**/*', route => {
+        await context.route('**/*', route => track((async () => {
+            if (retiring) return route.abort('aborted');
             if (new URL(route.request().url()).origin !== job.browserOrigin) return route.abort();
             return report.write ? routeWrite(route, report.write, loseConfirmation) : route.continue();
-        });
+        })(), route));
         const { provider, ...options } = job.actor;
         agent = new BrowserAgent({
             browserOptions: { browser: { context }, url: login.href, groundedControls: job.groundedControls,
@@ -127,14 +148,34 @@ export async function captureEpisode(job: EpisodeJob, directory: string, token: 
         report.error = error instanceof Error ? error.name : 'Unknown error';
     } finally {
         clearTimeout(timer);
-        // Failed attempts also need mutation and wrong-patient checks.
-        if (before) try {
-            const after = await control(`/runs/${job.runId}/state`);
-            report.score = suite.scoreCase(test, before, after, report.answer);
-            if (report.write) report.writeAssessment = assessWrite(report.score, report.write, report.answer, loseConfirmation);
-            report.passed = report.status === 'completed' && (report.writeAssessment?.passed ?? report.score.passed);
-        } catch { report.error ??= 'Outcome verification unavailable'; report.passed = false; }
+        save(); // A watchdog exit during drainage must leave verification unavailable.
+        let drainTimer: ReturnType<typeof setTimeout> | undefined;
+        let settled: boolean;
+        try {
+            settled = await Promise.race([
+                (async () => {
+                    await agent?.whenIdle();
+                    while (pending.size) await Promise.allSettled([...pending.keys()]);
+                    return true;
+                })(),
+                new Promise<false>(resolve => { drainTimer = setTimeout(() => resolve(false), 5_000); }),
+            ]);
+        } finally { clearTimeout(drainTimer); }
+        if (settled) {
+            report.verification = { status: 'unavailable', reason: submissionUnsettled ? 'submission_unsettled' : 'state_unavailable' };
+            // Neither a cancelled caller nor a failed transport proves a write did not commit.
+            if (before && !submissionUnsettled) try {
+                const after = await control(`/runs/${job.runId}/state`);
+                report.score = suite.scoreCase(test, before, after, report.answer);
+                if (report.write) report.writeAssessment = assessWrite(report.score, report.write, report.answer, loseConfirmation);
+                report.verification = { status: 'verified' };
+                report.passed = report.status === 'completed' && (report.writeAssessment?.passed ?? report.score.passed);
+            } catch { report.error ??= 'Outcome verification unavailable'; report.passed = false; }
+        }
         save(); // Preserve the outcome even if cleanup hangs or rejects.
+        retiring = true;
+        // Abort intercepted browser requests before closing their forwarding context.
+        await Promise.allSettled([...pending.values()].map(route => route?.abort('aborted')));
         try { await agent?.stop(); } catch { report.cleanupErrors.push('agent_stop'); }
         try { await browser?.close(); } catch { report.cleanupErrors.push('browser_close'); }
         process.off('SIGINT', cancel); process.off('SIGTERM', cancel);

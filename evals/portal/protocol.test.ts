@@ -127,6 +127,7 @@ test('replay is sequential, preserves failed episodes, records invalid images, a
         writeFileSync(join(capture, 'latest-result', '0001.png'), image);
         writeFileSync(join(capture, 'latest-result', '0002.png'), 'not a png');
         writeFileSync(join(capture, 'latest-result', 'episode.json'), JSON.stringify({ caseId: 'latest-result', status: 'timeout', passed: false,
+            verification: { status: 'unavailable', reason: 'work_not_settled' },
             samples: [0, 1, 2].map(i => ({ image: `000${i}.png`, oracle: { label: 'results' } })) }));
         let active = 0, peak = 0, calls = 0;
         const request = fake(async () => {
@@ -138,6 +139,7 @@ test('replay is sequential, preserves failed episodes, records invalid images, a
         expect(calls).toBe(2); expect(peak).toBe(1); expect(summary.errors).toBe(1);
         const report = JSON.parse(readFileSync(join(output, 'report.json'), 'utf8'));
         expect(report.baseline.map((row: { status: string }) => row.status)).toEqual(['timeout', 'interrupted']);
+        expect(report.baseline[0].verification).toEqual({ status: 'unavailable', reason: 'work_not_settled' });
         expect(report.expectedEpisodes).toBe(2);
         expect(report.expectedScreenshots).toBe(3);
         const controller = new AbortController();

@@ -55,8 +55,8 @@ export async function replay(captureDir: string, outputDir: string, episodeIds: 
         capture: manifest, protocolHash: protocolRecord.hash, endpoint, timeoutMs, interrupted: signal.aborted,
         expectedEpisodes: episodeIds.length,
         expectedScreenshots: episodes.reduce((sum, episode) => sum + episode.samples.length, 0),
-        baseline: episodes.map(({ caseId, status, passed, elapsedMs, captureOverheadMs, actionCount, plannerCalls, usage, score, cleanupErrors }) =>
-            ({ caseId, status, passed, elapsedMs, captureOverheadMs, actionCount, plannerCalls, usage, score, cleanupErrors })),
+        baseline: episodes.map(({ caseId, status, passed, elapsedMs, captureOverheadMs, actionCount, plannerCalls, usage, score, verification, cleanupErrors }) =>
+            ({ caseId, status, passed, elapsedMs, captureOverheadMs, actionCount, plannerCalls, usage, score, verification, cleanupErrors })),
         ...summarizeReplay(predictions), predictions,
         limitations: ['Offline classification only; no task-speedup or live outcome comparison.',
             'Labels are fixture DOM oracles bracketed around the actor screenshot, not human-reviewed clinical judgments.',

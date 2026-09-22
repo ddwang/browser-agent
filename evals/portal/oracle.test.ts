@@ -5,6 +5,7 @@ for (const fixture of [
     { name: 'real Chromium oracle respects visibility and the clinical iframe', file: 'oracle.ts', message: '16 browser oracle cases' },
     { name: 'capture extraction retains scalar fields through the real BAML transport', file: 'capture-extraction.ts', message: 'extraction preserves named scalar fields', baml: true },
     { name: 'write routing preserves commits, validation failures, and duplicate attempts in Chromium', file: 'write-routing.ts', message: 'write routing preserves server truth' },
+    { name: 'capture settles interrupted submissions or marks verification unavailable', file: 'capture-settlement.ts', message: 'capture waits for submissions or preserves uncertainty', baml: true },
 ]) test(fixture.name, async () => {
     const child = Bun.spawn([process.execPath, join(import.meta.dir, 'fixtures', fixture.file)], {
         stdout: 'pipe', stderr: 'pipe', ...(fixture.baml ? { env: { ...process.env, BAML_LOG: 'off' } } : {}),
