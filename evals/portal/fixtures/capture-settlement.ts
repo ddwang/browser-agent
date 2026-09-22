@@ -56,7 +56,7 @@ try {
         const directory = join(root, mode);
         const job: EpisodeJob = { portal: 'ucsd', portalRoot: root, browserOrigin: `http://127.0.0.1:${(web.address() as AddressInfo).port}`, controlOrigin: control.url.origin,
             actor: { provider: 'anthropic', model: 'scripted-no-network' }, timeoutMs: mode === 'deadline' ? 4000 : 20_000,
-            maxActions: 10, seed: 42, groundedControls: false, suite: suiteName, suiteHash: suite.hash,
+            maxActions: 10, seed: 42, groundedControls: false, traceDecisions: true, suite: suiteName, suiteHash: suite.hash,
             caseId: suiteName === 'retrieval' ? 'latest-result' : 'send-message', runId: 'fixture', loginPath: '/' };
         try {
             const report = await captureEpisode(job, directory, 'fixture-token', agent => {
@@ -76,6 +76,13 @@ try {
             });
             assert.equal(report.status, mode === 'deadline' ? 'timeout' : 'interrupted', mode);
             assert.equal(report.passed, false, mode);
+            const trace = readFileSync(join(directory, 'decisions.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+            const inputs = trace.filter(row => row.event === 'started');
+            assert.equal(inputs.length, report.plannerCalls);
+            assert.ok(inputs.every(row => row.image && row.controls.controls.length === 1));
+            assert.ok(inputs.every(row => !JSON.stringify(row.context).includes('viewport-native-links-and-buttons')), 'sidecar controls do not enter the actor prompt');
+            assert.ok(!JSON.stringify(trace).includes('fixture-token'), 'control secret never enters the trace');
+            assert.ok(report.decisionTraceOverheadMs! > 0);
             assert.equal(submissions, mode === 'unsettled-actor' ? 0 : 1, 'no duplicate submissions');
             if (['unsettled', 'failed-response', 'unsettled-actor'].includes(mode)) {
                 assert.deepEqual(report.verification, { status: 'unavailable', reason: mode === 'failed-response' ? 'submission_unsettled' : 'work_not_settled' }, mode);

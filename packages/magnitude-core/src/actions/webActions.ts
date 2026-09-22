@@ -166,7 +166,7 @@ export const switchTabAction = createAction({
 
 export const newTabAction = createAction({
     name: 'browser:tab:new',
-    description: "Open and switch to a new tab",
+    description: "Open and switch to a new blank tab. Use browser:nav to navigate it to a URL.",
     schema: z.object({}),
     resolver: async ({ agent }) => {
         const webConnector = agent.require(BrowserConnector);

@@ -23,10 +23,14 @@ test('capture dry-run reuses the six cases without credentials or network calls'
         expect(manifest.browserOrigin).toBe('http://127.0.0.1:4312');
         expect(manifest.actor.reasoningEffort).toBe('high');
         expect(manifest.groundedControls).toBe(false);
+        expect(manifest.traceDecisions).toBe(false);
         expect(manifest.suite).toBe('retrieval');
         const writes = await cli(['capture', '--portal-root', root, '--out', join(root, 'writes'), '--suite', 'writes', '--dry-run']);
         expect(writes.code).toBe(0);
         expect(JSON.parse(writes.stdout).episodes).toEqual(writeCaseIds);
+        const trace = await cli(['capture', '--portal-root', root, '--out', join(root, 'trace'), '--trace-decisions', '--dry-run']);
+        expect(trace.code).toBe(0);
+        expect(JSON.parse(trace.stdout).traceDecisions).toBe(true);
         const invalid = await cli(['capture', '--portal-root', root, '--out', join(root, 'out'), '--case', 'send-message', '--dry-run']);
         expect(invalid.code).toBe(1); expect(invalid.stderr).toContain('Unknown retrieval case');
         const remote = await cli(['capture', '--portal-root', root, '--out', join(root, 'out'), '--browser-url', 'https://real.example', '--dry-run']);

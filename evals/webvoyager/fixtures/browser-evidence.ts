@@ -90,6 +90,97 @@ function finishTransfer(id: string) {
     transfers.delete(id);
 }
 
+test('new-tab opens and activates a blank page without navigating existing tabs or contacting external sites', async () => {
+    const { agent, connector, context, page } = await fixture();
+    const requests: string[] = [];
+    await context.route('**/*', route => {
+        const url = route.request().url();
+        requests.push(url);
+        return new URL(url).origin === base ? route.continue() : route.abort();
+    });
+    try {
+        await page.evaluate(() => { document.body.dataset.unsaved = 'keep original state'; });
+        for (let index = 1; index <= 2; index++) {
+            requests.length = 0;
+            const previousTabs = context.pages().map(tab => tab.url());
+            await agent.exec({ variant: 'browser:tab:new' }, agent.memory);
+            const harness = connector.getHarness();
+            const created = context.pages()[index];
+            assert.equal(context.pages().length, index + 1);
+            assert.equal(harness.page, created);
+            assert.equal(created.url(), 'about:blank');
+            assert.deepEqual(context.pages().slice(0, index).map(tab => tab.url()), previousTabs);
+            assert.deepEqual(requests, [], 'opening a tab must not make any network request');
+            assert.equal((await harness.retrieveTabState()).activeTab, index);
+            const observations = await connector.collectObservations();
+            assert.match(String(observations.find(item => item.retention?.type === 'tabinfo')?.content), /\[ACTIVE\] .*\(about:blank\)/);
+            assert.equal((observations.find(item => item.retention?.type === 'screenshot')?.content as { url: string }).url, 'about:blank');
+
+            await agent.exec({ variant: 'browser:nav', url: `${base}/record-${index}` }, agent.memory);
+            assert.equal(created.url(), `${base}/record-${index}`);
+            assert.deepEqual(context.pages().slice(0, index).map(tab => tab.url()), previousTabs);
+            assert.ok(requests.every(url => new URL(url).origin === base));
+        }
+        await agent.exec({ variant: 'browser:tab:switch', index: 0 });
+        assert.equal(connector.getHarness().page, page);
+        assert.equal(await page.locator('body').getAttribute('data-unsaved'), 'keep original state');
+
+        // Fresh activity can still select a different tab after an explicit switch.
+        const active = Promise.withResolvers<void>();
+        const target = context.pages()[2];
+        connector.getHarness().events.on('activePageChanged', selected => {
+            if (selected === target) active.resolve();
+            return Promise.resolve();
+        });
+        await target.locator('#target').click();
+        await active.promise;
+        assert.equal(connector.getHarness().page, target);
+    } finally { await connector.onStop(); }
+});
+
+for (const cause of ['signal', 'deadline'] as const) test(`${cause} during new-tab creation prevents later tab-switch and navigation dispatch`, async () => {
+    const { agent, connector, context } = await fixture();
+    const controller = new AbortController();
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+    const newPage = context.newPage.bind(context);
+    let activations = 0, plans = 0;
+    const requests: string[] = [];
+    await context.route('**/*', route => { requests.push(route.request().url()); return route.abort(); });
+    context.newPage = async () => {
+        const created = await newPage();
+        const bringToFront = created.bringToFront.bind(created);
+        created.bringToFront = async () => { activations++; await bringToFront(); };
+        entered.resolve();
+        await release.promise;
+        return created;
+    };
+    agent.models.partialAct = async () => {
+        plans++;
+        return plan({ variant: 'browser:tab:new' }, { variant: 'browser:nav', url: `${base}/must-not-navigate` });
+    };
+    try {
+        const result = agent.act('Open another tab, then navigate', cause === 'signal'
+            ? { signal: controller.signal } : { deadline: Date.now() + 1500 });
+        const rejected = assert.rejects(result, cause === 'signal' ? OperationCancelledError : OperationDeadlineError);
+        await entered.promise;
+        controller.abort();
+        await rejected;
+        assert.equal(agent.busy, true, 'in-flight page creation still owns the session');
+        release.resolve();
+        await agent.whenIdle();
+        assert.equal(agent.busy, false);
+        assert.equal(activations, 0);
+        assert.deepEqual(requests, []);
+        assert.equal(plans, 1);
+        assert.deepEqual(context.pages().map(tab => tab.url()), [`${base}/`, 'about:blank']);
+    } finally {
+        release.resolve();
+        context.newPage = newPage;
+        await agent.whenIdle();
+        await connector.onStop();
+    }
+});
+
 test('right-click reaches Chromium as button 2 and preserves left-click, double-click, and coordinate scaling', async () => {
     const context = await browser.newContext({ viewport: { width: 1024, height: 768 } });
     const connector = new BrowserConnector({ browser: { context }, url: base, virtualScreenDimensions: { width: 512, height: 384 }, visuals: { animateCursor: false } });

@@ -61,6 +61,7 @@ holdoutOptions(program.command('capture')
     .option('--max-actions <count>', 'Existing per-act action budget', positive, 80)
     .option('--seed <number>', 'Fixture seed; different seeds are not new layouts', positive, 42)
     .option('--grounded-controls', 'Enable PR #9 observed controls; recorded in the baseline manifest')
+    .option('--trace-decisions', 'Save synthetic planner inputs/outputs and sidecar controls for offline decision analysis')
     .option('--dry-run', 'Validate and print configuration without creating runs or making model calls'))
     .action(async options => {
         const portal = options.portal as PortalId;
@@ -84,7 +85,8 @@ holdoutOptions(program.command('capture')
         if (actor.provider === 'baseten') validateBasetenOptions(actor);
         const manifest: Manifest = { synthetic: true, portal, portalRoot: resolve(options.portalRoot), browserOrigin, controlOrigin,
             actor, timeoutMs: options.timeout * 1000, maxActions: options.maxActions, seed: options.seed, groundedControls: !!options.groundedControls,
-            suite: suiteName, suiteHash: suite.hash, protocolHash, episodes: options.case ? [options.case] : [...suiteCases[suiteName]],
+            suite: suiteName, suiteHash: suite.hash, traceDecisions: !!options.traceDecisions,
+            protocolHash, episodes: options.case ? [options.case] : [...suiteCases[suiteName]],
             revision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: import.meta.dir, encoding: 'utf8' }).trim(),
             dirty: !!execFileSync('git', ['status', '--porcelain'], { cwd: import.meta.dir, encoding: 'utf8' }).trim() };
         if (options.dryRun) { console.log(JSON.stringify(manifest, null, 2)); return; }

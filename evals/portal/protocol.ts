@@ -40,22 +40,27 @@ export function checkHoldout(portal: string, allow: boolean, frozen?: string) {
 const probability = z.number().finite().min(0).max(1);
 const answerSchema = z.object({
     model: z.string().min(1),
-    answers: z.object({ page_state: z.object({
-        type: z.literal('choice'), choice: z.enum(labels as [Label, ...Label[]]),
+    answers: z.record(z.object({
+        type: z.literal('choice'), choice: z.string(),
         probabilities: z.record(probability), confidence: probability,
-    }) }),
+    })),
     usage: z.object({ input_tokens: z.number().int().nonnegative(), output_tokens: z.number().int().nonnegative() }).optional(),
 });
 
 export function parseDecision(raw: unknown) {
+    return parseChoice(raw, 'page_state', labels);
+}
+
+export function parseChoice<T extends string>(raw: unknown, question: string, choices: readonly T[]) {
     const value = answerSchema.parse(raw);
-    const answer = value.answers.page_state;
-    if (Object.keys(answer.probabilities).length !== labels.length || labels.some(label => !(label in answer.probabilities))
+    const answer = value.answers[question];
+    if (!answer || !choices.includes(answer.choice as T)
+        || Object.keys(answer.probabilities).length !== choices.length || choices.some(label => !(label in answer.probabilities))
         || Math.abs(Object.values(answer.probabilities).reduce((sum, p) => sum + p, 0) - 1) > 0.001
         || answer.probabilities[answer.choice] + 1e-6 < Math.max(...Object.values(answer.probabilities))) {
         throw new Error('Invalid choice probability distribution');
     }
-    return { ...answer, model: value.model, usage: value.usage ?? null };
+    return { ...answer, choice: answer.choice as T, model: value.model, usage: value.usage ?? null };
 }
 
 export function djevEndpoint(input: string) {
@@ -68,10 +73,15 @@ export function djevEndpoint(input: string) {
 }
 
 export async function askDjev(image: Buffer, endpoint: string, apiKey: string, signal: AbortSignal, request = fetch) {
+    return parseDecision(await requestDjev(image, protocol, endpoint, apiKey, signal, request));
+}
+
+export async function requestDjev(image: Buffer, question: { state: string; questions: unknown; options: unknown },
+    endpoint: string, apiKey: string, signal: AbortSignal, request = fetch): Promise<unknown> {
     signal.throwIfAborted();
     if (!apiKey) throw new Error('Set BASETEN_API_KEY');
     if (image.byteLength > 5 * 1024 * 1024) throw new Error('Screenshot exceeds Djev image limit');
-    const body = JSON.stringify({ ...protocol, images: [`data:image/png;base64,${image.toString('base64')}`] });
+    const body = JSON.stringify({ ...question, images: [`data:image/png;base64,${image.toString('base64')}`] });
     if (Buffer.byteLength(body) > 8 * 1024 * 1024) throw new Error('Djev request exceeds body limit');
     const response = await request(djevEndpoint(endpoint), {
         method: 'POST', headers: { Authorization: `Api-Key ${apiKey}`, 'Content-Type': 'application/json' },
@@ -81,5 +91,5 @@ export async function askDjev(image: Buffer, endpoint: string, apiKey: string, s
     if (!response.ok) { await response.body?.cancel(); throw new Error(`Djev HTTP ${response.status}`); }
     const raw: unknown = await response.json();
     signal.throwIfAborted();
-    return parseDecision(raw);
+    return raw;
 }
