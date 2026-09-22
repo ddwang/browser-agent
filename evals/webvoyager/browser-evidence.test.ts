@@ -11,6 +11,6 @@ test('browser input, download evidence, and no-progress regressions', async () =
             new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
         ]);
         expect({ code, stderr, stdout: code === 0 ? undefined : stdout }).toEqual({ code: 0, stderr: '', stdout: undefined });
-        expect(stdout.match(/^PASS:/gm)).toHaveLength(20);
+        expect(stdout.match(/^PASS:/gm)).toHaveLength(23);
     } finally { clearTimeout(deadline); }
 }, 125_000);

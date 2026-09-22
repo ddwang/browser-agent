@@ -3,6 +3,7 @@ import logger from "@/logger";
 import EventEmitter from "eventemitter3";
 import { BrowserContext, Page } from "playwright";
 import { retryOnErrorIsSuccess } from "@/common";
+import { checkOperation } from "@/common/operation";
 
 export interface TabEvents {
     'tabChanged': (page: Page) => void
@@ -25,6 +26,7 @@ export class TabManager {
     private activePage!: Page;
     private options: TabManagerOptions;
     private pollInterval?: NodeJS.Timeout;
+    private lastExplicitSwitch = 0;
     public readonly events: EventEmitter<TabEvents>;
 
     constructor(context: BrowserContext, options: TabManagerOptions = {}) {
@@ -249,6 +251,7 @@ export class TabManager {
             // Switch to the most recently active page if it's different and activity is recent
             if (mostRecentPage && 
                 mostRecentPage !== this.activePage && 
+                mostRecentTime > this.lastExplicitSwitch &&
                 mostRecentTime > Date.now() - 1000) { // Activity within last second
                 logger.trace(`Activity detected on ${mostRecentPage.url()}, switching...`);
                 this.setActivePage(mostRecentPage);
@@ -284,6 +287,9 @@ export class TabManager {
         const page = pages[index];
         logger.debug(`Switching to tab ${index} (${page.url()})`);
         await page.bringToFront();
+        checkOperation();
+        // Activity sampled before this switch must not undo the explicit selection.
+        this.lastExplicitSwitch = Date.now();
         this.setActivePage(page);
     }
 
