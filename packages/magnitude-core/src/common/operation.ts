@@ -23,8 +23,24 @@ export interface ProviderAttemptDiagnostics {
     elapsedMs: number | null;
     httpStatus: number | null;
     requestId: string | null;
+    /** Local planner invocation, when this HTTP attempt belongs to act() planning. */
+    plannerCallId?: string;
     /** HTTP outcome, not successful parsing or completion of the agent's task. */
     outcome: 'succeeded' | 'failed' | 'unknown';
+}
+
+export interface PlannerCallDiagnostics {
+    id: string;
+    /** One-based timeout attempt within a planning step. */
+    attempt: number;
+    provider: string;
+    model: string;
+    startedAt: number;
+    endedAt?: number;
+    elapsedMs: number;
+    timeoutMs?: number;
+    status: 'running' | 'draining' | 'finished';
+    outcome?: 'succeeded' | 'failed' | 'timeout' | 'cancelled' | 'deadline';
 }
 
 export interface BrowserClickDiagnostics {
@@ -55,6 +71,9 @@ export interface OperationDiagnostics {
     /** Latest 100 SDK attempts, available after each model invocation settles. */
     providerAttempts?: ProviderAttemptDiagnostics[];
     providerAttemptsTruncated?: boolean;
+    /** Latest 100 planner invocations, including the currently running request. */
+    plannerCalls?: PlannerCallDiagnostics[];
+    plannerCallsTruncated?: boolean;
     /** Pre-dispatch hit evidence for the latest submitted click, not proof of success. */
     lastClick?: BrowserClickDiagnostics;
 }
@@ -92,6 +111,8 @@ export class Operation {
     private providerAttempts: ProviderAttemptDiagnostics[] = [];
     private providerAttemptCount = 0;
     private lastClick?: BrowserClickDiagnostics;
+    private plannerCalls: { diagnostics: PlannerCallDiagnostics; started: number }[] = [];
+    private plannerCallCount = 0;
 
     constructor(readonly owner: object, options: OperationOptions, private kind: OperationKind = 'exec',
         private onUpdate?: (diagnostics: OperationDiagnostics) => void) {
@@ -170,6 +191,13 @@ export class Operation {
                 providerAttempts: this.providerAttempts.map(attempt => ({ ...attempt })),
                 providerAttemptsTruncated: this.providerAttemptCount > this.providerAttempts.length,
             } : {}),
+            ...(this.plannerCallCount ? {
+                plannerCalls: this.plannerCalls.map(({ diagnostics, started }) => ({
+                    ...diagnostics,
+                    elapsedMs: diagnostics.status === 'finished' ? diagnostics.elapsedMs : now - started,
+                })),
+                plannerCallsTruncated: this.plannerCallCount > this.plannerCalls.length,
+            } : {}),
             ...(this.lastClick ? { lastClick: {
                 ...this.lastClick,
                 screenshot: this.lastClick.screenshot && { ...this.lastClick.screenshot },
@@ -183,6 +211,27 @@ export class Operation {
         if (this.closed) return;
         this.providerAttempts.push({ ...attempt, operationId: this.id, attempt: ++this.providerAttemptCount });
         if (this.providerAttempts.length > 100) this.providerAttempts.shift();
+        this.publish();
+    }
+
+    startPlannerCall(input: Pick<PlannerCallDiagnostics, 'provider' | 'model' | 'attempt' | 'timeoutMs'>): string {
+        this.check();
+        const id = randomUUID();
+        this.plannerCalls.push({ started: performance.now(), diagnostics: {
+            ...input, id, startedAt: Date.now(), elapsedMs: 0, status: 'running',
+        } });
+        this.plannerCallCount++;
+        if (this.plannerCalls.length > 100) this.plannerCalls.shift();
+        this.publish();
+        return id;
+    }
+
+    updatePlannerCall(id: string, outcome: NonNullable<PlannerCallDiagnostics['outcome']>, status: 'draining' | 'finished'): void {
+        if (this.closed) return;
+        const call = this.plannerCalls.find(call => call.diagnostics.id === id);
+        if (!call) return;
+        Object.assign(call.diagnostics, { outcome, status, elapsedMs: performance.now() - call.started,
+            ...(status === 'finished' ? { endedAt: Date.now() } : {}) });
         this.publish();
     }
 

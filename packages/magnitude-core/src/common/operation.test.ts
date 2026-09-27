@@ -125,3 +125,31 @@ test('click snapshots retain only the latest operation-owned metadata and clone 
     expect(next.snapshot().lastClick).toBeUndefined();
     next.finish();
 });
+
+test('planner lifecycle snapshots are live, bounded, and isolated from callers', async () => {
+    const operation = new Operation({}, {});
+    for (let attempt = 1; attempt <= 105; attempt++) {
+        const id = operation.startPlannerCall({ provider: 'fixture', model: 'fixture', attempt });
+        operation.updatePlannerCall(id, 'succeeded', 'finished');
+    }
+    const id = operation.startPlannerCall({ provider: 'fixture', model: 'fixture', attempt: 106, timeoutMs: 100 });
+    const initial = operation.snapshot();
+    await operationSleep(5);
+    const active = operation.snapshot();
+    expect(active.plannerCalls).toHaveLength(100);
+    expect(active.plannerCallsTruncated).toBe(true);
+    expect(active.plannerCalls![0].attempt).toBe(7);
+    expect(active.plannerCalls!.at(-1)!.elapsedMs).toBeGreaterThan(initial.plannerCalls!.at(-1)!.elapsedMs);
+    active.plannerCalls!.at(-1)!.model = 'changed';
+    operation.updatePlannerCall(id, 'timeout', 'draining');
+    expect(operation.snapshot().plannerCalls!.at(-1)).toMatchObject({ model: 'fixture', status: 'draining', outcome: 'timeout' });
+    operation.updatePlannerCall(id, 'timeout', 'finished');
+    operation.finish();
+    const finished = operation.snapshot();
+    operation.updatePlannerCall(id, 'succeeded', 'finished');
+    expect(() => operation.startPlannerCall({ provider: 'fixture', model: 'fixture', attempt: 107 })).toThrow(OperationCancelledError);
+    expect(operation.snapshot()).toEqual(finished);
+    const next = new Operation({}, {});
+    expect(next.snapshot().plannerCalls).toBeUndefined();
+    next.finish();
+});

@@ -9,7 +9,9 @@ for (const [format, load] of [
     ['CommonJS', () => require('../packages/magnitude-core/dist/index.cjs')],
     ['ESM', () => import('../packages/magnitude-core/dist/index.mjs')],
 ]) {
-    const { Agent, AgentMemory, BrowserConnector, createAction, AgentBusyError, OperationCancelledError } = await load();
+    const { Agent, AgentMemory, BrowserConnector, createAction, AgentBusyError, OperationCancelledError, PlannerTimeoutError } = await load();
+    assert.equal(new PlannerTimeoutError(100).options.variant, 'planner_timeout');
+    assert.throws(() => new Agent({ llm, telemetry: false, planner: { timeoutMs: 0 } }), /planner.timeoutMs/);
     const disabled = new BrowserConnector();
     const enabled = new BrowserConnector({ groundedControls: true });
     assert.ok(!disabled.getActionSpace().some(action => action.name === 'browser:click'));
