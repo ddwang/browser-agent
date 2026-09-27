@@ -30,6 +30,10 @@ function decide(blocker: PlaywrightBlocker, details: Request): Decision {
     return match ? { kind: 'abort' } : { kind: 'continue' };
 }
 
+// Service worker requests have no frame and report every subresource as a fetch, so
+// rules can't match them reliably or exempt navigations. Filtered runs disable them.
+export const filteredContextOptions = { serviceWorkers: 'block' } as const;
+
 // Blocks network requests and injects cosmetic filters in every page of the context.
 // Request routing disables Chromium's HTTP cache for this context.
 export async function enableFilterLists(context: BrowserContext, runDir: string, lists: FilterList[]) {
@@ -39,7 +43,7 @@ export async function enableFilterLists(context: BrowserContext, runDir: string,
     await context.route('**/*', async (route: Route) => {
         let decision: Decision;
         try { decision = decide(blocker, route.request()); }
-        catch { decision = { kind: 'continue' }; } // Service worker requests have no frame.
+        catch { decision = { kind: 'continue' }; } // Only service worker requests lack a frame.
         if (decision.kind !== 'continue') stats.blockedRequests++;
         try {
             if (decision.kind === 'abort') await route.abort('blockedbyclient');
@@ -47,9 +51,9 @@ export async function enableFilterLists(context: BrowserContext, runDir: string,
             else await route.continue();
         } catch {} // The page can close while its request is routed.
     });
-    // Like BlockingContext.enable, also rescan the first loaded document.
+    // The navigation scan runs before the document is parsed, so rescan each loaded document.
     const watch = (page: Page) => page.on('framenavigated', blocker.onFrameNavigated)
-        .once('domcontentloaded', () => blocker.onFrameNavigated(page.mainFrame()));
+        .on('domcontentloaded', () => blocker.onFrameNavigated(page.mainFrame()));
     context.pages().forEach(watch);
     context.on('page', watch);
     return stats;

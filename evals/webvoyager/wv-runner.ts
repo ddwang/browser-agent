@@ -15,7 +15,7 @@ import { untilAborted, type OperationDiagnostics } from '../../packages/magnitud
 import { DEFAULT_LIMITS } from './budget';
 import { taskPrompt } from './tasks';
 import { checkpointWriter } from './checkpoint';
-import { enableFilterLists } from './adblock';
+import { enableFilterLists, filteredContextOptions } from './adblock';
 
 // One process and one attempt per task. The parent enforces a final process deadline.
 export async function runTaskWorker(runDir: string, taskId: string) {
@@ -96,6 +96,7 @@ export async function runTaskWorker(runDir: string, taskId: string) {
             headless: false,
             viewport: { width: 1024, height: 768 },
             deviceScaleFactor: process.platform === 'darwin' ? 2 : 1,
+            ...(manifest.filterLists ? filteredContextOptions : {}),
         });
         if (controller.signal.aborted) {
             await context.close(); // A browser launch can finish after the caller was cancelled.

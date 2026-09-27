@@ -270,8 +270,10 @@ bun evals/webvoyager/wv.ts run --suite evals/webvoyager/baseline.json --eval \
 
 Blocking is off unless you pass `--filter-list`. It uses the Ghostery adblocker
 engine, which reads Adblock Plus-syntax lists. Matching requests are aborted, and
-cosmetic rules hide matching elements in every tab. Top-level page navigations
-are never blocked.
+cosmetic rules hide matching elements in every tab after each document loads.
+Top-level page navigations are never blocked. Filtered runs also disable service
+workers, because their requests can't be matched reliably and would otherwise
+bypass filtering.
 
 The run copies each list into `filter-lists/`, and the manifest records its name
 and SHA-256 hash. Resuming with different lists, or none, is rejected. Each task

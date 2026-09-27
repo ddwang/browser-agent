@@ -18,7 +18,7 @@ test('filter list snapshots are identified by name and content hash', () => {
     } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
-test('filter lists block requests and hide elements in every tab', async () => {
+test('filter lists block requests and hide elements across tabs, navigations, and service workers', async () => {
     const child = Bun.spawn([process.execPath, join(import.meta.dir, 'fixtures/adblock.ts')], {
         stdout: 'pipe', stderr: 'pipe',
     });
@@ -28,6 +28,6 @@ test('filter lists block requests and hide elements in every tab', async () => {
             new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
         ]);
         expect({ code, stderr, stdout: code === 0 ? undefined : stdout }).toEqual({ code: 0, stderr: '', stdout: undefined });
-        expect(stdout.match(/^PASS:/gm)).toHaveLength(3);
+        expect(stdout.match(/^PASS:/gm)).toHaveLength(4);
     } finally { clearTimeout(deadline); }
 }, 65_000);
