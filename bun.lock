@@ -39,7 +39,7 @@
     },
     "packages/magnitude-core": {
       "name": "@ddwang/magnitude-core",
-      "version": "0.3.1-ddwang.9",
+      "version": "0.3.1-ddwang.10",
       "bin": {
         "magnus": "dist/cli.js",
       },
