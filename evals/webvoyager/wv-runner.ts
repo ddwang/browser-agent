@@ -15,6 +15,7 @@ import { untilAborted, type OperationDiagnostics } from '../../packages/magnitud
 import { DEFAULT_LIMITS } from './budget';
 import { taskPrompt } from './tasks';
 import { checkpointWriter } from './checkpoint';
+import { enableFilterLists } from './adblock';
 
 // One process and one attempt per task. The parent enforces a final process deadline.
 export async function runTaskWorker(runDir: string, taskId: string) {
@@ -36,6 +37,7 @@ export async function runTaskWorker(runDir: string, taskId: string) {
     let block: BrowserBlock | undefined;
     let budget: TaskResult['budget'];
     let failureOperation: OperationDiagnostics | undefined;
+    let adblock: TaskResult['adblock'];
     let saved: TaskResult | undefined;
     let progress: TaskProgress = { startedAt: started, updatedAt: started, phase: 'starting', phaseStartedAt: started, network: [] };
     let lastLog = '';
@@ -78,6 +80,7 @@ export async function runTaskWorker(runDir: string, taskId: string) {
             ...(status !== 'running' ? { cleanup: { status: 'pending' as const, elapsedMs: 0 } } : {}),
             ...(block ? { block } : {}),
             ...(budget ? { budget } : {}),
+            ...(adblock ? { adblock: { ...adblock } } : {}),
             ...(error ? { error, timedOut: status === 'timeout' } : {}),
         };
         writeJson(join(runDir, `${task.id}.json`), result);
@@ -98,6 +101,7 @@ export async function runTaskWorker(runDir: string, taskId: string) {
             await context.close(); // A browser launch can finish after the caller was cancelled.
             controller.signal.throwIfAborted();
         }
+        if (manifest.filterLists) adblock = await enableFilterLists(context, runDir, manifest.filterLists);
         const { provider, ...modelOptions } = manifest.actor;
         const options = {
             browser: { context },

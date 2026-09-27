@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { Command, InvalidArgumentError, Option } from 'commander';
 import { DEFAULT_LIMITS } from './budget';
+import { describeFilterLists, saveFilterLists } from './adblock';
 import { suiteTasks } from './tasks';
 import { DEFAULT_BASETEN_MODEL, validateBasetenOptions } from '../../packages/magnitude-core/src/ai/baseten';
 import * as prompts from '@clack/prompts';
@@ -215,6 +216,7 @@ program.command('run [input]')
     .option('--judge-timeout <seconds>', 'Judge process timeout', positiveInteger, 300)
     .option('--max-actions <number>', 'Fail tasks that cannot finish within this many actions', positiveInteger, DEFAULT_LIMITS.maxActions)
     .option('--max-judge-mb <number>', 'Fail saved traces over this many MiB without calling the judge', positiveInteger, DEFAULT_LIMITS.maxJudgeBytes / 1024 / 1024)
+    .option('--filter-list <paths...>', 'Block requests and hide elements with these Adblock Plus-syntax list snapshots, such as EasyList and EasyPrivacy')
     .option('--eval', 'Score each completed task')
     .option('--dry-run', 'Print selected tasks and configuration without running or writing files')
     .option('--allow-holdout', 'Acknowledge one-shot holdout exposure; only use after freezing the candidate')
@@ -270,6 +272,7 @@ program.command('run [input]')
             sourceHash: sourceHash(), judgeVersion: JUDGE_VERSION, workers: options.workers,
             actor, judge, timeoutMs: options.timeout * 1000, judgeTimeoutMs: options.judgeTimeout * 1000, tasks,
             limits: { maxActions: options.maxActions, maxJudgeBytes: options.maxJudgeMb * 1024 * 1024 },
+            ...(options.filterList ? { filterLists: describeFilterLists(options.filterList) } : {}),
         };
         if (options.dryRun) {
             console.log(JSON.stringify({ runDir, ...manifest }, null, 2));
@@ -280,7 +283,7 @@ program.command('run [input]')
         if (previous?.partition === 'holdout') throw new Error('Holdout runs are immutable. Do not resume or replace their attempts.');
         if (holdout && (manifest.dirty || previous)) throw new Error('Holdout runs require a clean committed candidate and a fresh run directory.');
         if (previous) {
-            if (JSON.stringify(previous.actor) !== JSON.stringify(actor) || JSON.stringify(previous.judge) !== JSON.stringify(judge) || previous.workers !== manifest.workers || previous.timeoutMs !== manifest.timeoutMs || previous.judgeTimeoutMs !== manifest.judgeTimeoutMs || previous.sourceHash !== manifest.sourceHash || JSON.stringify(previous.limits ?? DEFAULT_LIMITS) !== JSON.stringify(manifest.limits)) {
+            if (JSON.stringify(previous.actor) !== JSON.stringify(actor) || JSON.stringify(previous.judge) !== JSON.stringify(judge) || previous.workers !== manifest.workers || previous.timeoutMs !== manifest.timeoutMs || previous.judgeTimeoutMs !== manifest.judgeTimeoutMs || previous.sourceHash !== manifest.sourceHash || JSON.stringify(previous.limits ?? DEFAULT_LIMITS) !== JSON.stringify(manifest.limits) || JSON.stringify(previous.filterLists) !== JSON.stringify(manifest.filterLists)) {
                 throw new Error('Run configuration differs from its manifest. Use a new --run-dir.');
             }
             const savedTasks = new Set(previous.tasks.map(task => JSON.stringify(task)));
@@ -297,7 +300,10 @@ program.command('run [input]')
         await checkCredentials(actor.provider);
         if (options.eval && judge.provider !== actor.provider) await checkCredentials(judge.provider);
         mkdirSync(runDir, { recursive: true });
-        if (!previous) writeJson(manifestPath, manifest);
+        if (!previous) {
+            if (options.filterList) saveFilterLists(options.filterList, runDir);
+            writeJson(manifestPath, manifest);
+        }
         console.log(`Run directory: ${runDir}\nRunning ${pending.length} tasks with ${options.workers} workers`);
         const interrupted = await withInterrupt(signal => parallel(pending, options.workers, async ({ task }) => {
             // An explicit rerun must not retain the previous verdict.
