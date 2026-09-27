@@ -7,8 +7,8 @@ import { ModelHarness } from "@/ai/modelHarness";
 import { AgentEvents } from "@/common/events";
 import { AgentConnector } from '@/connectors';
 import { Observation, RenderableContent } from '@/memory/observation';
-import { LLMClient } from "@/ai/types";
-import { ActionLimitError, AgentBusyError, AgentError } from "@/agent/errors";
+import { LLMClient, type PlannerOptions } from "@/ai/types";
+import { ActionLimitError, AgentBusyError, AgentError, PlannerTimeoutError } from "@/agent/errors";
 import {
     Operation, attachOperationDiagnostics, checkOperation, currentOperation, measureOperation,
     operationOptions, untilAborted, withoutOperation,
@@ -35,6 +35,8 @@ export interface AgentOptions {
     prompt?: string | null; // additional agent-level system prompt instructions
     telemetry?: boolean;
     maxActions?: number;
+    /** Omitted preserves existing planner retry behavior without a per-call timeout. */
+    planner?: PlannerOptions;
     //executor?: GroundingClient;
 }
 
@@ -47,7 +49,7 @@ export interface ActOptions extends OperationOptions {
 
 // Options for the startAgent helper function
 
-const DEFAULT_CONFIG: Required<Omit<AgentOptions, 'actions'> & { actions: ActionDefinition<any>[] }> = {
+const DEFAULT_CONFIG: Required<Omit<AgentOptions, 'actions' | 'planner'> & { actions: ActionDefinition<any>[] }> = {
     actions: [...taskActions], // Default to taskActions; other actions come from connectors
     connectors: [],
     llm: {
@@ -142,7 +144,7 @@ export class Agent {
         }
 
         //this.model = new ModelHarness({ llm: this.options.llm });
-        this.models = new MultiModelHarness(llms);
+        this.models = new MultiModelHarness(llms, this.options.planner);
         this.models.events.on('tokensUsed', (usage) => this.events.emit('tokensUsed', usage), this);
         this.doneActing = false;
         this._paused = false;
@@ -507,21 +509,21 @@ export class Agent {
                 this.events.emit('planningStarted');
                 const memoryContext = await this._buildContext(memory);
                 memoryContext.connectorInstructions.unshift({ connectorId: 'task_memory', instructions: NOTEBOOK_INSTRUCTIONS });
-                await retryOnError(
-                    async () => {
-                        ({ reasoning, actions, memory_updates: memoryUpdates } = await this.models.partialAct(
-                            memoryContext,
-                            description,
-                            dataContentParts,
-                            this.actions 
-                        ));
-                        checkOperation();
-                        if (actions.length === 0) {
-                            // Empty action list behavior - default wait else ... err? what if not in action space?
-                            //actions.push()
-                            throw new AgentError(`No actions generated`);
-                        }
-                    },
+                const plan = async () => {
+                    ({ reasoning, actions, memory_updates: memoryUpdates } = await this.models.partialAct(
+                        memoryContext,
+                        description,
+                        dataContentParts,
+                        this.actions
+                    ));
+                    checkOperation();
+                    if (actions.length === 0) throw new AgentError(`No actions generated`);
+                };
+                // A bounded planner owns its timeout retries. Do not multiply
+                // them with the legacy outer retry loop.
+                if (this.options.planner) await plan();
+                else await retryOnError(
+                    plan,
                     // HTTP body is not JSON - comes from Anthropic sometimes, weird error
                     // Sometimes Anthropic will give 401 Unauthorized randomly even when authorized
                     {
@@ -534,6 +536,7 @@ export class Agent {
                 );
             } catch (error: unknown) {
                 checkOperation();
+                if (error instanceof PlannerTimeoutError) throw error;
                 logger.error(`Error planning actions: ${error instanceof Error ? error.message : String(error)}`);
                 /**
                  * (1) Failure to conform to JSON

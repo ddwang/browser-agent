@@ -7,7 +7,7 @@ import { BamlAsyncClient } from "./baml_client/async_client";
 import logger from "@/logger";
 import { Logger } from 'pino';
 import { BugDetectedFailure, MisalignmentFailure } from "@/common";
-import { LLMClient, ModelUsage } from "@/ai/types";
+import { LLMClient, ModelUsage, type PlannerOptions } from "@/ai/types";
 import { TabState } from "@/web/tabs";
 import { ActionDefinition } from "@/actions";
 import TypeBuilder from "./baml_client/type_builder";
@@ -20,11 +20,12 @@ import { parsePlannerResponse, PlannerResponseError, memoryUpdatesSchema, type P
 import { anthropicOutputFormat, plannerSchema, usesStructuredOutput } from './structuredOutput';
 import { ModelResponseError } from './modelResponseError';
 import { DEFAULT_BASETEN_MODEL } from './baseten';
-import { beginOperationPhase, checkOperation, currentOperation, operationOptions } from '@/common/operation';
+import { beginOperationPhase, checkOperation, currentOperation, operationOptions, type PlannerCallDiagnostics } from '@/common/operation';
+import { OperationDeadlineError, PlannerTimeoutError } from '@/agent/errors';
 
 interface ModelHarnessOptions {
     llm: LLMClient;
-    //promptCaching?: boolean;
+    planner?: PlannerOptions;
 }
 
 // export interface ModelUsage {
@@ -44,7 +45,7 @@ export class ModelHarness {
      * Strong reasoning agent for high level strategy and planning.
      */
     public readonly events: EventEmitter<ModelHarnessEvents> = new EventEmitter();
-    private options: Required<ModelHarnessOptions>;
+    private options: ModelHarnessOptions;
     private cr!: ClientRegistry;
     private clientOptions!: Record<string, any>;
     private baml!: BamlAsyncClient;
@@ -56,9 +57,17 @@ export class ModelHarness {
     };
 
     constructor(options: ModelHarnessOptions) {
+        if (options.planner) {
+            if (!Number.isInteger(options.planner.timeoutMs) || options.planner.timeoutMs <= 0 || options.planner.timeoutMs > 2_147_483_647) {
+                throw new TypeError('planner.timeoutMs must be an integer between 1 and 2147483647');
+            }
+            if (!Number.isSafeInteger(options.planner.maxRetries ?? 1) || (options.planner.maxRetries ?? 1) < 0) {
+                throw new TypeError('planner.maxRetries must be a non-negative safe integer');
+            }
+        }
         this.options = {
             llm: options.llm,
-            //promptCaching: options.promptCaching ?? false
+            planner: options.planner && { ...options.planner },
         };
 
         this.logger = logger.child({ name: 'llm' });
@@ -104,7 +113,7 @@ export class ModelHarness {
         return `${this.options.llm.provider}:${'model' in this.options.llm.options ? this.options.llm.options.model : 'unknown'}`;
     }
 
-    private async _withUsage<T>(invoke: (collector: Collector) => Promise<T>): Promise<T> {
+    private async _withUsage<T>(invoke: (collector: Collector) => Promise<T>, plannerCallId?: string): Promise<T> {
         checkOperation();
         // Scope usage to this invocation, including failed parses and provider
         // retries. A shared cumulative collector can double-count concurrent calls.
@@ -149,6 +158,7 @@ export class ModelHarness {
                     const requestId = Object.entries(headers ?? {}).find(([name]) =>
                         ['request-id', 'x-request-id'].includes(name.toLowerCase()))?.[1];
                     currentOperation()?.recordProviderAttempt({
+                        ...(plannerCallId ? { plannerCallId } : {}),
                         provider: this.options.llm.provider,
                         model: ((this.options.llm.options as { model?: string }).model ?? 'unknown').slice(0, 200),
                         startedAt: call.timing.startTimeUtcMs,
@@ -287,10 +297,73 @@ export class ModelHarness {
     }
 
     async partialAct<T>(
-        context: AgentContext, // Changed to ModularMemoryContext
+        context: AgentContext,
         task: string,
         data: MultiMediaContentPart[],
         actionVocabulary: ActionDefinition<T>[]
+    ): Promise<PlannerResponse> {
+        const policy = this.options.planner;
+        for (let attempt = 1; ; attempt++) {
+            checkOperation();
+            const operation = currentOperation();
+            const controller = new AbortController();
+            const abortFromParent = () => controller.abort(operation!.signal.reason);
+            const started = performance.now();
+            const checkRequest = () => {
+                checkOperation();
+                // Synchronous validation can occupy the event loop past the
+                // timer's due time, on either success or failure.
+                if (policy && performance.now() - started >= policy.timeoutMs) controller.abort(new PlannerTimeoutError(policy.timeoutMs));
+                controller.signal.throwIfAborted();
+                return controller.signal;
+            };
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const callId = operation?.startPlannerCall({
+                attempt, provider: this.options.llm.provider,
+                model: ((this.options.llm.options as { model?: string }).model ?? 'unknown').slice(0, 200),
+                ...(policy ? { timeoutMs: policy.timeoutMs } : {}),
+            });
+            const abortOutcome = () => controller.signal.reason instanceof PlannerTimeoutError ? 'timeout'
+                : controller.signal.reason instanceof OperationDeadlineError ? 'deadline' : 'cancelled';
+            controller.signal.addEventListener('abort', () => {
+                if (callId) operation!.updatePlannerCall(callId, abortOutcome(), 'draining');
+            }, { once: true });
+            operation?.signal.addEventListener('abort', abortFromParent, { once: true });
+            if (operation?.signal.aborted) abortFromParent();
+            if (policy) timer = setTimeout(() => controller.abort(new PlannerTimeoutError(policy.timeoutMs)), policy.timeoutMs);
+            let outcome: NonNullable<PlannerCallDiagnostics['outcome']> = 'failed';
+            try {
+                checkRequest();
+                // Await native settlement, not a Promise.race: a timeout must
+                // never release ownership or overlap a still-running request.
+                let plan: PlannerResponse;
+                try { plan = await this.partialActAttempt(context, task, data, actionVocabulary, checkRequest, callId); }
+                finally { checkRequest(); }
+                outcome = 'succeeded';
+                return plan;
+            } catch (error) {
+                checkOperation();
+                if (!controller.signal.aborted) throw error;
+                outcome = abortOutcome();
+                if (!(controller.signal.reason instanceof PlannerTimeoutError) || attempt > (policy?.maxRetries ?? 1)) {
+                    throw controller.signal.reason;
+                }
+            } finally {
+                clearTimeout(timer);
+                operation?.signal.removeEventListener('abort', abortFromParent);
+                if (operation?.signal.aborted) outcome = operation.signal.reason instanceof OperationDeadlineError ? 'deadline' : 'cancelled';
+                if (callId) operation!.updatePlannerCall(callId, outcome, 'finished');
+            }
+        }
+    }
+
+    private async partialActAttempt<T>(
+        context: AgentContext,
+        task: string,
+        data: MultiMediaContentPart[],
+        actionVocabulary: ActionDefinition<T>[],
+        checkRequest: () => AbortSignal,
+        callId?: string,
     ): Promise<PlannerResponse> {
         // Notes have one planner path: a required review before browser actions.
         // Keep memory:note registered on Agent for execution and explicit callers.
@@ -318,7 +391,7 @@ export class ModelHarness {
                         await this.baml.CreatePartialRecipe(
                             context, task, data,
                             this.options.llm.provider === 'claude-code',
-                            { tb, collector, clientRegistry, signal: operationOptions().signal }
+                            { tb, collector, clientRegistry, signal: checkRequest() }
                         );
                     } catch (error) {
                         checkOperation();
@@ -327,13 +400,13 @@ export class ModelHarness {
                     }
                     // BAML can fail first or coerce invalid fields. Diagnose its
                     // raw response locally, but never bypass either validator.
-                    checkOperation();
+                    checkRequest();
                     const plan = parsePlannerResponse(collector.last?.rawLlmResponse ?? null, actionVocabulary);
                     if (bamlRejected) throw new PlannerResponseError('$: BAML parser rejected the response despite local validation; return a plan matching the supplied schema');
                     return plan;
-                });
+                }, callId);
             } catch (error) {
-                checkOperation();
+                checkRequest();
                 if (!(error instanceof PlannerResponseError)) throw error;
                 this.logger.warn({ attempt: attempt + 1, diagnostic: error.diagnostic }, attempt === 0
                     ? 'Invalid planner response; retrying once with the same observations'

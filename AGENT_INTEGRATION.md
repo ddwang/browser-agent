@@ -153,12 +153,15 @@ There is no default deadline or finite action budget. Configure both. `maxAction
 
 `recovery.noProgress` is opt-in. It detects repeated unchanged or previously seen states, but is a heuristic, not a timeout. Canvas or iframe workflows can need a different setting. Keep the deadline and action budget even when this guard is enabled.
 
+To bound each `act()` planner invocation, optionally set `planner: { timeoutMs: 30_000, maxRetries: 1 }` when creating the agent. This example budget includes native provider retries and format correction; one timeout retry is allowed after the previous invocation settles. Choose the budget for your model and workflow—long reasoning responses can be legitimate. The operation deadline still bounds the whole task. Omit `planner` to preserve existing timeout-free planner behavior. See [planner budgets](docs/advanced/cancellation.mdx#planner-request-budgets) for retry and drainage semantics.
+
 Import error classes from `@ddwang/magnitude-core` and map them to your host's existing tool outcomes:
 
 | Error | Host handling |
 | --- | --- |
 | `OperationCancelledError` | Report cancellation; do not assume an already-dispatched action was undone. |
 | `OperationDeadlineError` | Report the deadline; preserve uncertainty about side effects. |
+| `PlannerTimeoutError` | The configured planner timeout retries were exhausted. This is a local request budget, not proof of a provider or website rate limit. |
 | `AgentBusyError` | The session has pending work. Queue or reject the request instead of issuing another action. |
 | `ActionLimitError` | Report the action limit with available evidence. Do not automatically restart the task. |
 | `BrowserBlockedError` | Inspect `block.reason`: `rate_limit`, `authentication`, `subscription`, or `no_progress`. Respect `block.retryAt` when present. |
@@ -224,6 +227,7 @@ Read `agent.operation` or subscribe to `agent.events.on('operation', snapshot =>
 - `id`, `status`, `outcome`, `phase`, `elapsedMs`, and `lastAction` locate the failure. Action states `started` and `failed` can both have side effects.
 - `timings` separates model, action, screenshot, stability, cooldown, and other work. Totals overlap: use `elapsedMs` for wall-clock duration, not their sum.
 - `providerAttempts` contains at most the latest 100 SDK attempts, including retries, once each invocation settles. Deduplicate by `(operationId, attempt)`. Null HTTP status or duration means unknown, not a proven timeout. Provider HTTP errors are separate from website blocks.
+- `plannerCalls` exposes at most the latest 100 planner invocations from start through drainage and settlement, even while HTTP metadata is unavailable. Match `providerAttempts[].plannerCallId` to `plannerCalls[].id`. A local timeout does not identify the cause of provider latency.
 - `lastClick` includes dispatched coordinates, dimensions, and pre-dispatch hit tag/explicit role where known. It does not prove activation or retarget a click. Normal planner context keeps only the latest click state outside cached history.
 - `browser-downloads` observations report `started`, `completed`, or `failed`. Completion means browser transfer completion, not verified file contents. These observations do not save files or return paths. The host must arrange file saving and content checks, with `acceptDownloads: true` and an open context.
 - `tokensUsed` events report model usage separately from operation timings.

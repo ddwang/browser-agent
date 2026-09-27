@@ -35,6 +35,26 @@ try {
 
 Existing calls without these options remain valid. `maxActions` and browser recovery settings remain agent-level configuration; cancellation does not replace those limits.
 
+## Planner request budgets
+
+Optionally configure `planner` when creating an `Agent` or calling `startBrowserAgent()`:
+
+```typescript
+const agent = await startBrowserAgent({
+  // ...your model and browser settings
+  planner: { timeoutMs: 30_000, maxRetries: 1 },
+});
+await agent.act('Complete the requested workflow', { deadline: Date.now() + 90_000 });
+```
+
+These numbers are examples, not recommended limits for every model. `timeoutMs` must be an integer from 1 through 2,147,483,647. `maxRetries` is a non-negative safe integer and defaults to 1; set it to 0 to fail on the first timeout. Omit `planner` to keep the existing behavior without a per-invocation timeout. The option applies only to `act()` planning, not `query()`, `extract()`, browser actions, or startup.
+
+One budget covers an entire planner invocation, including native provider retries and the existing format-correction retry. When it expires, Magnitude aborts that invocation and discards its output. It retries with the same observations only after the previous invocation settles. Native retry and format-validation rules remain in effect, but configuring `planner` disables the legacy outer retries for selected planner error strings so they cannot multiply the configured timeout retries. Errors other than local timeouts do not receive an additional timeout-policy retry.
+
+Every retry remains subject to the operation's original deadline and cancellation signal. A caller cancellation or expired operation deadline takes precedence over the planner timeout and prevents further requests or actions. Exhausting the timeout retries throws `PlannerTimeoutError`, with `timeoutMs` and operation diagnostics. Notes and actions from a timed-out response are not applied; previously completed work remains intact.
+
+The request budget is an abort signal, not forced teardown. If a transport ignores abort, Magnitude waits for it to settle before retrying or reporting `PlannerTimeoutError`, and the agent stays busy. Always set an operation deadline to bound the caller's wait. A local planner timeout does not establish that the provider or website rate-limited the request, and retrying can add model cost. It does not replay previously executed browser actions or resolve uncertain business outcomes.
+
 ## Cancellation versus idle
 
 Cancellation rejects the public call promptly and prevents subsequent Magnitude action dispatch. Model requests receive the cancellation signal; built-in waits stop. Late model output is discarded without saving thoughts or notes.
@@ -86,6 +106,7 @@ Snapshots include `providerAttempts` after a model invocation settles. Each reco
 | Field | Meaning |
 | --- | --- |
 | `operationId`, `attempt` | Operation correlation and a one-based attempt number within that operation. |
+| `plannerCallId` | Optional local planner invocation ID. Match it to `plannerCalls[].id`; absent for query and extraction. |
 | `provider`, `model` | Configured provider and model, not values copied from response bodies. Model names are limited to 200 characters. |
 | `startedAt`, `elapsedMs` | SDK start time in Unix milliseconds and duration, or `null` when duration is unavailable. |
 | `httpStatus`, `requestId` | Response status and allowlisted request ID, or `null` when unavailable. |
@@ -96,6 +117,14 @@ HTTP success does not establish successful parsing or task completion. An operat
 Magnitude retains the latest 100 attempts. `providerAttemptsTruncated` indicates that earlier records were dropped; attempt numbers continue increasing. Repeated snapshots contain the same records, so deduplicate by `(operationId, attempt)` when exporting events. Token usage remains separate, and an attempt can be recorded without usage.
 
 The collector is not a live HTTP trace: attempts become available only after the SDK invocation settles. The installed SDK can report no response and a zero duration for a cancelled request that waited; Magnitude reports `null` duration, status, and request ID with `unknown` outcome in that case. The operation's model timing still measures the wait. Magnitude does not infer a provider timeout or rate limit from the application's cancellation or deadline. After cancellation, read later events or `agent.operation` after drainage; the error's earlier snapshot does not gain new records.
+
+### Planner calls
+
+`plannerCalls` is available from invocation start, with or without the optional planner timeout policy. Each exported `PlannerCallDiagnostics` record contains a local `id`, configured `provider` and `model`, `startedAt`, live `elapsedMs`, and optional configured `timeoutMs`. `attempt` is the one-based timeout attempt within a planning step, not an HTTP attempt number. Native retries and format correction share a planner call ID.
+
+The status starts as `running`, changes to `draining` when its signal is aborted, and becomes `finished` when the invocation settles. `outcome` is `succeeded`, `failed`, `timeout`, `cancelled`, or `deadline`; it is absent while running. Finished records include `endedAt`. A planner success means a valid plan was returned, not that actions ran or the task succeeded. No provider queue, reasoning, or network cause is inferred from these timings.
+
+Snapshots retain the latest 100 planner calls and set `plannerCallsTruncated` when earlier records are dropped. Records are updated under the same ID; upsert by `(operation ID, planner call ID)` rather than counting every event as another call. Events occur at lifecycle transitions, not on a heartbeat. Read `agent.operation` to obtain current elapsed time during a long wait. Planner diagnostics exclude prompts, reasoning, output, and page content, but configured model names must still be nonsensitive.
 
 ### Latency measurements
 
@@ -124,6 +153,7 @@ Import these errors from `@ddwang/magnitude-core`:
 | --- | --- |
 | `OperationCancelledError` | The caller cancelled, or `stop()` cancelled the operation. `cause` contains the supplied reason. |
 | `OperationDeadlineError` | The operation reached its `deadline`. |
+| `PlannerTimeoutError` | All configured planner timeout attempts settled without an accepted plan. `timeoutMs` is the per-invocation budget. |
 | `AgentBusyError` | Another operation is active or draining, or a lifecycle transition is pending. |
 | `ActionLimitError` | The existing action budget was exhausted. |
 | `BrowserBlockedError` | Browser recovery stopped execution. Inspect `block.reason`, `block.evidence`, and optional `block.retryAt`. |
