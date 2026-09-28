@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeJson } from './results';
@@ -299,6 +299,20 @@ test('action and judge payload budgets are configurable and recorded', async () 
     const result = await cli(['run', 'Allrecipes--0', '--max-actions', '50', '--max-judge-mb', '8', '--dry-run']);
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout).limits).toEqual({ maxActions: 50, maxJudgeBytes: 8 * 1024 * 1024 });
+});
+
+test('filter list snapshots are recorded and must match on resume', async () => {
+    const list = join(directory, 'easylist.txt');
+    writeFileSync(list, '##.ad\n');
+    const dryRun = await cli(['run', 'Allrecipes--0', '--filter-list', list, '--dry-run']);
+    expect(dryRun.code).toBe(0);
+    expect(JSON.parse(dryRun.stdout).filterLists).toEqual([{ name: 'easylist.txt', sha256: new Bun.CryptoHasher('sha256').update('##.ad\n').digest('hex') }]);
+    expect(JSON.parse((await cli(['run', 'Allrecipes--0', '--dry-run'])).stdout).filterLists).toBeUndefined();
+    const runDir = join(directory, 'filter-list-resume');
+    expect((await cli(['run', 'Allrecipes--0', '--run-dir', runDir])).code).toBe(0);
+    const changed = await cli(['run', 'Allrecipes--0', '--run-dir', runDir, '--filter-list', list, '--replace']);
+    expect(changed.code).toBe(1);
+    expect(changed.stderr).toContain('Run configuration differs');
 });
 
 test('run --eval preserves earlier evidence for judging and the saved final answer, then stats reads the complete manifest', async () => {

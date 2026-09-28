@@ -254,6 +254,38 @@ wall-clock time. Failed and partially drained operations contribute their observ
 timings. Each distribution reports its sample count; missing metadata in older
 runs is not treated as zero. These metrics cover actor operations, not judging.
 
+### Ad and tracker blocking
+
+To test whether blocking ads and trackers helps the actor, download list
+snapshots once and pass them to every compared run:
+
+```sh
+mkdir -p .context/filter-lists
+curl -fsSL https://easylist.to/easylist/easylist.txt -o .context/filter-lists/easylist.txt
+curl -fsSL https://easylist.to/easylist/easyprivacy.txt -o .context/filter-lists/easyprivacy.txt
+
+bun evals/webvoyager/wv.ts run --suite evals/webvoyager/baseline.json --eval \
+  --filter-list .context/filter-lists/easylist.txt .context/filter-lists/easyprivacy.txt
+```
+
+Blocking is off unless you pass `--filter-list`. It uses the Ghostery adblocker
+engine, which reads Adblock Plus-syntax lists. Matching requests are aborted, and
+cosmetic rules hide matching elements in every tab after each document loads.
+Top-level page navigations are never blocked. Filtered runs also disable service
+workers, because their requests can't be matched reliably and would otherwise
+bypass filtering.
+
+The run copies each list into `filter-lists/`, and the manifest records its name
+and SHA-256 hash. Resuming with different lists, or none, is rejected. Each task
+result records `adblock.blockedRequests`. Hidden elements are not counted.
+
+Routing requests through Playwright disables Chromium's HTTP cache for the run,
+so repeated navigations can load more slowly. Compare blocked and unblocked runs
+on the same suite with fresh run directories, interleaved when possible. Compare
+success rate, task duration, planner time, and screenshots, not only request
+counts. Blocking can break sites, and these lists don't remove cookie banners,
+app promotions, or other annoyances.
+
 ## Compare results
 
 Use fresh run directories and the same task suite, judge/version, actor temperature,

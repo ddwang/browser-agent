@@ -51,7 +51,10 @@ export interface RunManifest {
     judgeTimeoutMs: number;
     tasks: Task[];
     limits?: EvalLimits;
+    filterLists?: FilterList[];
 }
+
+export interface FilterList { name: string; sha256: string; }
 
 export interface EvalLimits { maxActions: number; maxJudgeBytes: number; }
 export interface BudgetFailure { kind: 'actions' | 'payload_bytes'; actual: number; limit: number; }
@@ -93,6 +96,7 @@ export interface TaskResult extends ReturnType<typeof emptyUsage> {
     cleanup?: { status: 'pending' | 'settled' | 'timed_out'; elapsedMs: number };
     block?: BrowserBlock;
     budget?: BudgetFailure;
+    adblock?: { blockedRequests: number };
     worker?: { exitCode: number | null; signal: string | null; savedStatus: TaskResult['status'] };
 }
 
