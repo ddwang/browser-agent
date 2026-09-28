@@ -24,6 +24,9 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', idleTimeout: 0, fetch
             cancel() { transfers.delete(id); },
         }), { headers: { ...attachment, 'content-length': '8192' } });
     }
+    if (url.pathname === '/dialog') return new Response(`<button id="open" style="width:220px;height:50px">Compose</button><dialog id="compose">
+        <label>To <select id="to" style="width:400px;height:40px"><option value="">Choose a recipient</option><option value="brooks">Dr. Elena Brooks</option></select></label></dialog>
+        <script>document.getElementById("open").onclick=()=>compose.showModal()</script>`, { headers: { 'content-type': 'text/html' } });
     if (url.pathname === '/popup') return new Response('<h1>Attachment</h1><a id="attachment" download href="/download">Download</a><script>attachment.click()</script>', { headers: { 'content-type': 'text/html' } });
     const pagination = url.pathname === '/pagination';
     const href = url.pathname === '/pending' ? `/slow?id=${url.searchParams.get('id')}`
@@ -179,6 +182,29 @@ for (const cause of ['signal', 'deadline'] as const) test(`${cause} during new-t
         await agent.whenIdle();
         await connector.onStop();
     }
+});
+
+test('select options open above a modal dialog, including on a page loaded before the agent started', async () => {
+    const context = await browser.newContext({ viewport: { width: 1024, height: 768 } });
+    const loaded = await context.newPage();
+    await loaded.goto(`${base}/dialog`);
+    const connector = new BrowserConnector({ browser: { context }, visuals: { animateCursor: false } });
+    await connector.onStart();
+    try {
+        const harness = connector.getHarness(), page = harness.page;
+        assert.equal(page, loaded);
+        // Injection is asynchronous; patchright's evaluate shares the adapter's context, waitForFunction does not.
+        for (let tries = 0; !await page.evaluate(() => (window as any).__magnitudeShadowDOMAdapterInjected) && tries < 20; tries++) await page.waitForTimeout(100);
+        assert.equal(await page.evaluate(() => (window as any).__magnitudeShadowDOMAdapterInjected), true, 'a page loaded before tracking gets the adapter');
+        await harness.click(await point(page, '#open'), { transform: false });
+        await harness.click(await point(page, '#to'), { transform: false });
+        const option = page.locator('#compose [data-popup-type="select"] [data-index="1"]');
+        assert.equal(await option.count(), 1, 'the option list opens inside the modal dialog');
+        const { x, y } = await point(page, '#compose [data-popup-type="select"] [data-index="1"]');
+        assert.equal(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.textContent, { x, y }), 'Dr. Elena Brooks', 'the option is topmost');
+        await harness.click({ x, y }, { transform: false });
+        assert.equal(await page.locator('#to').inputValue(), 'brooks');
+    } finally { await connector.onStop(); await context.close(); }
 });
 
 test('right-click reaches Chromium as button 2 and preserves left-click, double-click, and coordinate scaling', async () => {
