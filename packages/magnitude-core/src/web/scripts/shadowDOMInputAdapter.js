@@ -139,6 +139,13 @@ module.exports = function getShadowDOMInputAdapterScript() {
       _attachPopup: function(originalElement, popup) {
         const root = originalElement.getRootNode();
         (root instanceof ShadowRoot ? root : originalElement.closest('dialog') || document.body).appendChild(popup);
+        // The top layer places the popup above dialogs, in viewport coordinates,
+        // unaffected by an ancestor's transform or overflow clipping.
+        if (typeof popup.showPopover === 'function') {
+          this._setStyles(popup, { right: 'auto', bottom: 'auto', margin: '0' });
+          popup.popover = 'manual';
+          popup.showPopover();
+        }
       },
 
       _createPopupElement: function(originalElement, type) { // Added type for specific styling/content
