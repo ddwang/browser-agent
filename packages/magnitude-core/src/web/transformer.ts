@@ -15,6 +15,8 @@ export class DOMTransformer {
                 await this.setupScriptForPage(newPage);
             });
             this.initializedPages.add(newPage); // Mark this Page object as having its 'load' listener set up.
+            // A page that loaded before it was tracked never fires 'load' again.
+            void this.setupScriptForPage(newPage);
         }
     }
 

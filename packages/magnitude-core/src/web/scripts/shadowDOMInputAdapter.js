@@ -134,6 +134,20 @@ module.exports = function getShadowDOMInputAdapterScript() {
         }, 0);
       },
       
+      // A modal dialog renders above the body and makes content outside it inert,
+      // so attach inside the dialog. A shadow root stays in its host's subtree.
+      _attachPopup: function(originalElement, popup) {
+        const root = originalElement.getRootNode();
+        (root instanceof ShadowRoot ? root : originalElement.closest('dialog') || document.body).appendChild(popup);
+        // The top layer places the popup above dialogs, in viewport coordinates,
+        // unaffected by an ancestor's transform or overflow clipping.
+        if (typeof popup.showPopover === 'function') {
+          this._setStyles(popup, { right: 'auto', bottom: 'auto', margin: '0' });
+          popup.popover = 'manual';
+          popup.showPopover();
+        }
+      },
+
       _createPopupElement: function(originalElement, type) { // Added type for specific styling/content
         const rect = originalElement.getBoundingClientRect();
         const popup = document.createElement('div');
@@ -230,8 +244,7 @@ module.exports = function getShadowDOMInputAdapterScript() {
 
         dropdown.appendChild(contentWrapper);
         
-        const rootNode = select.getRootNode() instanceof ShadowRoot ? select.getRootNode() : document.body;
-        rootNode.appendChild(dropdown);
+        this._attachPopup(select, dropdown);
 
         this.activePopup = dropdown;
         this.activePopupType = 'select';
@@ -400,8 +413,7 @@ module.exports = function getShadowDOMInputAdapterScript() {
             }
         });
 
-        const rootNode = originalDateInput.getRootNode() instanceof ShadowRoot ? originalDateInput.getRootNode() : document.body;
-        rootNode.appendChild(popup);
+        this._attachPopup(originalDateInput, popup);
 
         this.activePopup = popup;
         this.activePopupType = 'date';
@@ -497,8 +509,7 @@ module.exports = function getShadowDOMInputAdapterScript() {
             }
         });
         
-        const rootNode = originalColorInput.getRootNode() instanceof ShadowRoot ? originalColorInput.getRootNode() : document.body;
-        rootNode.appendChild(popup);
+        this._attachPopup(originalColorInput, popup);
         
         this.activePopup = popup;
         this.activePopupType = 'color';
