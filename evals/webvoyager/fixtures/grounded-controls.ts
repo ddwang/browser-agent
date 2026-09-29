@@ -25,6 +25,12 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch(request): Respo
         <iframe id="cross" src="${crossBase}/frame-content" style="width:600px;height:200px;border:0"></iframe>`, { headers: { 'content-type': 'text/html' } });
     if (path === '/two-buttons') return new Response(`<button onclick="document.body.dataset.clicked='target'">Target</button><button onclick="document.body.dataset.clicked='wrong'">Wrong</button>`, { headers: { 'content-type': 'text/html' } });
     if (path === '/scaled-frame') return new Response(`<iframe id="scaled" src="/two-buttons" style="transform:scale(0.5);transform-origin:0 0;width:800px;height:300px;border:0"></iframe>`, { headers: { 'content-type': 'text/html' } });
+    if (path === '/invisible-frames') return new Response(`<iframe id="clear" src="/frame-content" style="opacity:0;width:600px;height:150px;border:0"></iframe>
+        <div style="opacity:0"><iframe id="nested" src="/frame-content" style="width:600px;height:150px;border:0"></iframe></div>
+        <iframe id="shown" src="/frame-content" style="width:600px;height:150px;border:0"></iframe>`, { headers: { 'content-type': 'text/html' } });
+    if (path === '/hidden-options') return new Response(`<style>.gone{display:none}.faded{visibility:hidden}</style>
+        <label>Pick <select id="pick"><option value="shown">Shown</option><optgroup hidden label="Secret"><option value="secret">Secret</option></optgroup>
+        <option class="gone" value="gone">Gone</option><option class="faded" value="faded">Faded</option></select></label>`, { headers: { 'content-type': 'text/html' } });
     if (path === '/done') return new Response('<h1>Done</h1>', { headers: { 'content-type': 'text/html' } });
     if (path === '/fields') return new Response(`<label>Due <input id="due" type="date" value="2026-09-29"></label>
         <label>Letter <select id="letter"><option value="a">A</option><option value="b-disabled" disabled>B</option><option value="b-enabled">B</option>
@@ -215,6 +221,46 @@ test('a rejected field action stops the batch, and a covered field is not change
         await agent.act('Change the due date');
         assert.equal(await page.locator('#due').inputValue(), '2026-09-29', 'the covered field is unchanged');
         assert.equal(await page.locator('#notes').inputValue(), '', 'typing after the rejection did not run');
+    } finally { await agent.stop(); }
+});
+
+test('controls inside an invisible iframe, or one that becomes invisible, are not grounded', async () => {
+    const { agent, connector, page } = await fixture();
+    try {
+        await connector.getHarness().navigate(`${base}/invisible-frames`);
+        let calls = 0;
+        agent.models.partialAct = async ctx => {
+            const inner = controls(ctx).controls.filter(item => item.label === 'Inner action');
+            if (++calls === 1) {
+                assert.equal(inner.length, 1, 'only the visible frame lists its button');
+                // Hide the remaining frame after observation; its reference must now be rejected.
+                await page.locator('#shown').evaluate(frame => { (frame as HTMLElement).style.opacity = '0'; });
+                return plan({ variant: 'browser:click', ref: inner[0].ref });
+            }
+            assert.ok(JSON.stringify(ctx.observationContent).includes('target_unavailable'));
+            return done();
+        };
+        await agent.act('Click the inner action');
+        for (const id of ['clear', 'nested', 'shown']) assert.equal(await page.frameLocator(`#${id}`).locator('body').getAttribute('data-clicked'), null);
+    } finally { await agent.stop(); }
+});
+
+test('options hidden directly, by their group, or by CSS are not offered or selectable', async () => {
+    const { agent, connector, page } = await fixture();
+    try {
+        await connector.getHarness().navigate(`${base}/hidden-options`);
+        let calls = 0;
+        const rejected: boolean[] = [];
+        agent.models.partialAct = async ctx => {
+            const pick = controls(ctx).controls.find(item => item.label === 'Pick') as Controls['controls'][number] & { options?: string[] };
+            if (calls === 0) assert.deepEqual(pick.options, ['Shown']);
+            else rejected.push(JSON.stringify(ctx.observationContent).includes('option_unavailable'));
+            const option = ['Secret', 'Gone', 'Faded'][calls++];
+            return option ? plan({ variant: 'browser:select', ref: pick.ref, option }) : done();
+        };
+        await agent.act('Pick hidden options');
+        assert.deepEqual(rejected, [true, true, true]);
+        assert.equal(await page.locator('#pick').inputValue(), 'shown');
     } finally { await agent.stop(); }
 });
 

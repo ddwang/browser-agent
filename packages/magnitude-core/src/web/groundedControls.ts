@@ -31,9 +31,16 @@ function captureControls(fields: string) {
         + '[role~="combobox"],[role~="listbox"],[role~="textbox"],[role~="searchbox"],'
         + '[role~="slider"],[role~="spinbutton"],[role~="scrollbar"],[role~="tab"],[role~="treeitem"]';
     const text = (value: string | null | undefined) => (value ?? '').replace(/\s+/g, ' ').trim();
-    // Options a person could choose: not disabled directly or through their group, and not hidden.
-    const eligible = (select: HTMLSelectElement) => Array.from(select.options)
-        .filter(option => !option.disabled && !(option.parentElement as HTMLOptGroupElement | null)?.matches('optgroup:disabled') && !option.hidden);
+    // Options a person could choose: neither the option nor its group is disabled or hidden.
+    // Computed styles work while the picker is closed; layout-based visibility checks do not.
+    const concealed = (element: HTMLElement) => {
+        const style = getComputedStyle(element);
+        return element.hidden || style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse';
+    };
+    const eligible = (select: HTMLSelectElement) => Array.from(select.options).filter(option => {
+        const group = option.parentElement instanceof HTMLOptGroupElement ? option.parentElement : null;
+        return !option.disabled && !concealed(option) && !(group && (group.disabled || concealed(group)));
+    });
     function describe(node: Element) {
         const field = node.matches(fields) ? node as HTMLSelectElement | HTMLInputElement : null;
         if (!(field || node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement)
@@ -161,6 +168,9 @@ async function frameArea(frame: Frame, viewport: Rect): Promise<Rect & { dx: num
     try {
         const box = await owner.evaluate(node => {
             const element = node as HTMLElement;
+            // An iframe that is invisible, hidden, or inert hides its controls, as it would a control of its own.
+            if (!element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })
+                || element.closest('[hidden],[inert],[aria-hidden="true"]')) return null;
             // A transformed or zoomed iframe doesn't map its coordinates by offset; don't ground its controls.
             for (let ancestor: Element | null = element; ancestor; ancestor = ancestor.parentElement) {
                 const style = getComputedStyle(ancestor);
