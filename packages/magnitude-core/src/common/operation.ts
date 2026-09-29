@@ -27,6 +27,12 @@ export interface ProviderAttemptDiagnostics {
     plannerCallId?: string;
     /** HTTP outcome, not successful parsing or completion of the agent's task. */
     outcome: 'succeeded' | 'failed' | 'unknown';
+    /** Reported input tokens, including cached input, or null when the response has no usage. */
+    promptTokens: number | null;
+    /** Reported input tokens read from the provider's cache, or null when the response has no usage. */
+    cachedPromptTokens: number | null;
+    /** Reported output tokens, including reasoning, or null when the response has no usage. */
+    outputTokens: number | null;
 }
 
 export interface PlannerCallDiagnostics {

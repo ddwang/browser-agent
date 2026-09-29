@@ -150,6 +150,9 @@ export class ModelHarness {
             for (const { call, key } of calls) {
                 if (seen.has(key)) continue;
                 seen.add(key);
+                let usage: ModelUsage | undefined;
+                try { usage = this._reportCallUsage(call); }
+                catch { this.logger.warn('Unable to report model response usage'); }
                 try {
                     const response = call.httpResponse;
                     const httpStatus = response?.status ?? null;
@@ -167,17 +170,18 @@ export class ModelHarness {
                         httpStatus,
                         requestId: typeof requestId === 'string' && /^[\w.:-]{1,200}$/.test(requestId) ? requestId : null,
                         outcome: httpStatus === null ? 'unknown' : httpStatus >= 200 && httpStatus < 300 ? 'succeeded' : 'failed',
+                        promptTokens: usage ? usage.inputTokens + (usage.cacheWriteInputTokens ?? 0) + (usage.cacheReadInputTokens ?? 0) : null,
+                        cachedPromptTokens: usage ? usage.cacheReadInputTokens ?? 0 : null,
+                        outputTokens: usage?.outputTokens ?? null,
                     });
                 } catch {
                     this.logger.warn('Unable to report provider attempt metadata');
                 }
-                try { this._reportCallUsage(call); }
-                catch { this.logger.warn('Unable to report model response usage'); }
             }
         }
     }
 
-    private _reportCallUsage(call: FunctionLog['calls'][number]): void {
+    private _reportCallUsage(call: FunctionLog['calls'][number]): ModelUsage | undefined {
         let inputTokens = call.usage?.inputTokens;
         let outputTokens = call.usage?.outputTokens;
         let cacheWriteInputTokens: number = 0;
@@ -293,7 +297,7 @@ export class ModelHarness {
 
         this.events.emit('tokensUsed', usage);
         //console.log("Usage:", usage);
-
+        return usage;
     }
 
     async partialAct<T>(

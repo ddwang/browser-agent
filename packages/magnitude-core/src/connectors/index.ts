@@ -11,6 +11,8 @@ export interface AgentConnector {
     onStop?(): Promise<void>;
     beforeAction?(action: Action, options?: OperationOptions): Promise<void>;
     onTaskStart?(options?: OperationOptions): void;
+    /** Called before each planner request, after the observations it will see are recorded. */
+    beforePlan?(options?: OperationOptions): Promise<void>;
     // Action space (optional)
     getActionSpace?(): ActionDefinition<any>[];
     // State retrieval (WIP)

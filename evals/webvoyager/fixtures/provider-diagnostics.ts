@@ -50,9 +50,10 @@ for (const provider of ['anthropic', 'openai', 'baseten'] as const) {
         assert.equal(requests, 2); assert.equal(usages, 1);
         const attempts = agent.operation!.providerAttempts!;
         assert.equal(attempts.length, 2);
-        assert.deepEqual(attempts.map(attempt => [attempt.attempt, attempt.httpStatus, attempt.requestId, attempt.outcome]), [
-            [1, 429, 'fixture-1', 'failed'], [2, 200, 'fixture-2', 'succeeded'],
-        ]);
+        assert.deepEqual(attempts.map(attempt => [attempt.attempt, attempt.httpStatus, attempt.requestId, attempt.outcome,
+            attempt.promptTokens, attempt.cachedPromptTokens, attempt.outputTokens]), [
+            [1, 429, 'fixture-1', 'failed', null, null, null], [2, 200, 'fixture-2', 'succeeded', 1, 0, 1],
+        ], 'only the successful attempt reports token counts');
         assert.ok(attempts[0].startedAt <= attempts[1].startedAt, 'collector order must not determine attempt order');
         for (const attempt of attempts) {
             assert.equal(attempt.operationId, agent.operation!.id);
@@ -83,6 +84,7 @@ for (const provider of ['anthropic', 'openai', 'baseten'] as const) {
                 operationId: agent.operation!.id, attempt: 1, provider, model: 'fixture',
                 startedAt: agent.operation!.providerAttempts![0].startedAt,
                 elapsedMs: null, httpStatus: null, requestId: null, outcome: 'unknown',
+                promptTokens: null, cachedPromptTokens: null, outputTokens: null,
             });
             const finished = JSON.stringify(agent.operation);
             release.resolve(); await new Promise(resolve => setTimeout(resolve, 10));
@@ -102,6 +104,7 @@ for (const provider of ['anthropic', 'openai', 'baseten'] as const) {
         assert.equal(agent.operation!.providerAttempts![0].attempt, 1);
         assert.equal(agent.operation!.providerAttempts![0].httpStatus, 200);
         assert.equal(agent.operation!.providerAttempts![0].requestId, null);
+        assert.equal(agent.operation!.providerAttempts![0].promptTokens, null);
         assert.equal(usages, 0);
         assert.ok(!JSON.stringify(snapshots).includes('SECRET'));
         assert.ok(!JSON.stringify(snapshots).includes('http://'));

@@ -43,9 +43,11 @@ function captureControls(fields: string) {
     });
     function describe(node: Element) {
         const field = node.matches(fields) ? node as HTMLSelectElement | HTMLInputElement : null;
-        if (!(field || node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement)
+        const submit = node instanceof HTMLInputElement && node.type === 'submit' ? node : null;
+        if (!(field || submit || node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement)
             || !node.isConnected || !node.checkVisibility(visibility) || node.closest('[hidden],[inert],[aria-hidden="true"]')) return null;
-        if (node instanceof HTMLButtonElement && node.form && node.type !== 'button') return null;
+        // Submit buttons are listed; reset buttons only discard input.
+        if (node instanceof HTMLButtonElement && node.type === 'reset') return null;
         if (node instanceof HTMLAnchorElement && !/^https?:$/.test(node.protocol)) return null;
         const box = node.getBoundingClientRect();
         if (box.width <= 0 || box.height <= 0 || box.left < 0 || box.top < 0
@@ -57,7 +59,7 @@ function captureControls(fields: string) {
                 // A wrapping label also contains the field's own text, such as its option labels.
                 ? Array.from(field.labels?.[0]?.childNodes ?? []).filter(child => !(child instanceof Element && child.matches('input,select,textarea,button')))
                     .map(child => child.textContent).join(' ').trim() || node.getAttribute('title') || node.getAttribute('name')
-                : (node as HTMLElement).innerText || node.getAttribute('title')));
+                : (submit ? submit.value : (node as HTMLElement).innerText) || node.getAttribute('title')));
         if (!label || label.length > 256) return null;
         const container = node.closest('tr,[role="row"],li,fieldset,form,dialog,[role="dialog"],section,article');
         const context = text(container?.matches('tr,[role="row"],li')
@@ -76,13 +78,13 @@ function captureControls(fields: string) {
             node.getAttribute('popovertarget'), node.getAttribute('popovertargetaction'),
             node.getAttribute('commandfor'), node.getAttribute('command'),
             node.getAttribute('aria-expanded'), node.getAttribute('aria-selected'), node.getAttribute('aria-pressed')]);
-        const form = node instanceof HTMLButtonElement || field ? (node as HTMLButtonElement).form : null;
+        const form = node instanceof HTMLButtonElement || field || submit ? (node as HTMLButtonElement).form : null;
         return { label, context, role, enabled, value, options, identity, container, form,
             box: { x: box.x, y: box.y, width: box.width, height: box.height } };
     }
     const nodes: Element[] = [];
     const walker = document.createTreeWalker(document, NodeFilter.SHOW_ELEMENT, {
-        acceptNode: node => (node as Element).matches(`a[href],button,${fields}`) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP,
+        acceptNode: node => (node as Element).matches(`a[href],button,input[type="submit"],${fields}`) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP,
     }); // Does not cross frames or shadow roots; stop collecting at the first match beyond the cap.
     while (nodes.length <= 512 && walker.nextNode()) nodes.push(walker.currentNode as Element);
     const entries: { node: Element; state: NonNullable<ReturnType<typeof describe>> }[] = [];
@@ -206,18 +208,31 @@ async function frameVisibleAt(frame: Frame, x: number, y: number): Promise<boole
     } finally { await owner.dispose(); }
 }
 
+type Snapshot = { handles: JSHandle<Capture>[]; entries: Entry[]; page: Page; operation: Operation; prefix: string };
+
 /** One disposable snapshot per frame, owned by the operation that observed it. No DOM attributes are injected. */
 export class GroundedControls {
-    private snapshot?: { handles: JSHandle<Capture>[]; entries: Entry[]; page: Page; operation: Operation; prefix: string };
+    // The latest snapshot, preceded by the ones observed since the plan began, when only field changes happened in between.
+    private snapshots: Snapshot[] = [];
+    private fieldChanged = false;
 
     async clear(): Promise<void> {
-        const snapshot = this.snapshot;
-        this.snapshot = undefined;
-        await Promise.all(snapshot?.handles.map(handle => handle.dispose().catch(() => {})) ?? []);
+        await this.release(this.snapshots.splice(0));
+    }
+
+    /** Called before planning: the planner sees only the latest snapshot. */
+    async keepLatest(): Promise<void> {
+        await this.release(this.snapshots.splice(0, this.snapshots.length - 1));
+    }
+
+    private async release(snapshots: Snapshot[]) {
+        await Promise.all(snapshots.flatMap(snapshot => snapshot.handles.map(handle => handle.dispose().catch(() => {}))));
     }
 
     async observe(page: Page) {
-        await this.clear();
+        // A successful select or fill keeps earlier refs usable for the rest of the batch; any other action expires them.
+        if (!this.fieldChanged) await this.clear();
+        this.fieldChanged = false;
         checkOperation();
         const scope = 'viewport-links-buttons-and-native-fields';
         const operation = currentOperation();
@@ -229,7 +244,7 @@ export class GroundedControls {
         const candidates: { frame: Frame; handle: JSHandle<Capture>; index: number; control: Listed }[] = [];
         let truncated = false;
         const prefix = randomUUID();
-        this.snapshot = { handles, entries, page, operation, prefix };
+        this.snapshots.push({ handles, entries, page, operation, prefix });
         for (const frame of page.frames()) {
             const area = await frameArea(frame, viewport).catch(() => null);
             if (!area) continue;
@@ -265,10 +280,9 @@ export class GroundedControls {
     }
 
     private entry(ref: string) {
-        const snapshot = this.snapshot;
         const index = Number(ref.slice(ref.lastIndexOf(':') + 1));
-        if (!snapshot || snapshot.operation !== currentOperation() || !Number.isInteger(index)
-            || ref !== `${snapshot.prefix}:${index}` || !snapshot.entries[index] || snapshot.entries[index].ambiguous) return null;
+        const snapshot = this.snapshots.find(snapshot => ref === `${snapshot.prefix}:${index}`);
+        if (!snapshot || snapshot.operation !== currentOperation() || !snapshot.entries[index] || snapshot.entries[index].ambiguous) return null;
         return { snapshot, entry: snapshot.entries[index] };
     }
 
@@ -278,7 +292,7 @@ export class GroundedControls {
         const { snapshot, entry } = found;
         return harness.clickGrounded(async () => {
             checkOperation();
-            if (this.snapshot !== snapshot || harness.page !== snapshot.page) return null;
+            if (!this.snapshots.includes(snapshot) || harness.page !== snapshot.page) return null;
             try {
                 const area = await frameArea(entry.frame, UNCLIPPED);
                 const point = area && await entry.handle.evaluate((state, index) => state.point(index), entry.index);
@@ -298,7 +312,7 @@ export class GroundedControls {
         try {
             // Nothing has changed yet, so any failure here is a rejection.
             checkOperation();
-            if (this.snapshot !== snapshot || harness.page !== snapshot.page) return GROUNDED_INPUT_REJECTED;
+            if (!this.snapshots.includes(snapshot) || harness.page !== snapshot.page) return GROUNDED_INPUT_REJECTED;
             const area = await frameArea(entry.frame, UNCLIPPED);
             const checked = area && await entry.handle.evaluate((state, { index, kind, value }) => state.check(index, kind, value), args);
             if (!area || !checked) return GROUNDED_INPUT_REJECTED;
@@ -306,10 +320,11 @@ export class GroundedControls {
             if (!await frameVisibleAt(entry.frame, area.dx + checked.point.x, area.dy + checked.point.y)) return GROUNDED_INPUT_REJECTED;
         } catch { checkOperation(); return GROUNDED_INPUT_REJECTED; }
         checkOperation();
-        if (this.snapshot !== snapshot) return GROUNDED_INPUT_REJECTED;
+        if (!this.snapshots.includes(snapshot)) return GROUNDED_INPUT_REJECTED;
         // The field may change from here, so failures propagate as unknown outcomes rather than rejections.
         const applied = await entry.handle.evaluate((state, { index, kind, value }) => state.apply(index, kind, value), args);
         if (!applied.ok) return REJECTIONS[applied.reason];
+        this.fieldChanged = true;
         await harness.waitForStability();
         return { changed: true, value: applied.value };
     }
