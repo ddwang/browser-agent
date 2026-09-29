@@ -188,7 +188,7 @@ for (const cause of ['signal', 'deadline'] as const) test(`${cause} during new-t
     }
 });
 
-for (const variant of ['', '?transformed', '?transformed&open=show']) test(`select options open above dialog${variant || ' (plain modal)'}, including on a page loaded before the agent started`, async () => {
+for (const variant of ['', '?transformed', '?transformed&open=show']) test(`select pickers render in the page above dialog${variant || ' (plain modal)'}, including on a page loaded before the agent started`, async () => {
     const context = await browser.newContext({ viewport: { width: 1024, height: 768 } });
     const loaded = await context.newPage();
     await loaded.goto(`${base}/dialog${variant}`);
@@ -197,14 +197,14 @@ for (const variant of ['', '?transformed', '?transformed&open=show']) test(`sele
     try {
         const harness = connector.getHarness(), page = harness.page;
         assert.equal(page, loaded);
-        // Injection is asynchronous; patchright's evaluate shares the adapter's context, waitForFunction does not.
-        for (let tries = 0; !await page.evaluate(() => (window as any).__magnitudeShadowDOMAdapterInjected) && tries < 20; tries++) await page.waitForTimeout(100);
-        assert.equal(await page.evaluate(() => (window as any).__magnitudeShadowDOMAdapterInjected), true, 'a page loaded before tracking gets the adapter');
+        // Styling is asynchronous; a page loaded before tracking gets it too.
+        const appearance = () => page.evaluate(() => getComputedStyle(document.getElementById('to')!).appearance);
+        for (let tries = 0; await appearance() !== 'base-select' && tries < 20; tries++) await page.waitForTimeout(100);
+        assert.equal(await appearance(), 'base-select');
         await harness.click(await point(page, '#open'), { transform: false });
         await harness.click(await point(page, '#to'), { transform: false });
-        const option = page.locator('#compose [data-popup-type="select"] [data-index="2"]');
-        assert.equal(await option.count(), 1, 'the option list opens inside the modal dialog');
-        const { x, y } = await point(page, '#compose [data-popup-type="select"] [data-index="2"]');
+        // The base-select picker is in the page's top layer, so the option is on screen and topmost.
+        const { x, y } = await point(page, '#to option[value="brooks"]');
         assert.ok(x < 1024 && y < 768, 'the option is inside the viewport');
         assert.equal(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.textContent, { x, y }), 'Dr. Elena Brooks', 'the option is topmost');
         await harness.click({ x, y }, { transform: false });

@@ -89,6 +89,15 @@ The agent knows about and sees:
 - Which tab is active
 - Browser download start, completion, and failure evidence for the current operation
 
+### Native pickers in screenshots
+
+Browsers draw native select lists and date pickers outside the page, so screenshots don't include them. Magnitude changes two of them so the agent can see them:
+
+- **Selects:** single-choice `<select>` elements in every frame use Chrome's [`appearance: base-select`](https://developer.mozilla.org/en-US/docs/Learn_web_development/Extensions/Forms/Customizable_select). The option list renders in the page, so screenshots show it and clicks on an option land. The closed select also takes Chrome's base styling, so its look can differ from the site's design. Multi-selects and list boxes already render in the page and are unchanged.
+- **Date and color inputs:** in the main page, clicking one opens a small in-page text box or color field instead of the browser's picker.
+
+Inside iframes, date inputs keep the browser's picker. With [observed controls](#observed-control-clicks-opt-in), the agent can set any date-like input or select by reference instead.
+
 ## Observed-control clicks (opt-in)
 
 Set `groundedControls: true` when creating a browser agent to let its existing model choose observed native links, buttons, selects, and date-like inputs. No additional model or credentials are used. Omitting the option preserves the existing action vocabulary and skips control capture.

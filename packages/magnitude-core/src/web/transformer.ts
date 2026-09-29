@@ -1,5 +1,6 @@
 import type { Page } from 'playwright';
 import getShadowDOMInputAdapterScript from './scripts/shadowDOMInputAdapter';
+import { renderSelectPickersInFrame } from './baseSelect';
 import logger from '@/logger';
 
 export class DOMTransformer {
@@ -14,6 +15,12 @@ export class DOMTransformer {
                 // Pass 'newPage' (the page that triggered the 'load' event) to setupScriptForPage.
                 await this.setupScriptForPage(newPage);
             });
+            // An iframe can navigate without a page 'load' event; its selects still need the picker style.
+            newPage.on('framenavigated', async frame => {
+                if (!frame.parentFrame()) return;
+                await frame.waitForLoadState('domcontentloaded').catch(() => {});
+                await renderSelectPickersInFrame(frame);
+            });
             this.initializedPages.add(newPage); // Mark this Page object as having its 'load' listener set up.
             // A page that loaded before it was tracked never fires 'load' again.
             void this.setupScriptForPage(newPage);
@@ -21,6 +28,7 @@ export class DOMTransformer {
     }
 
     public async setupScriptForPage(targetPage: Page) {
+        await Promise.all(targetPage.frames().map(renderSelectPickersInFrame));
         try {
             // Check if a marker for the script already exists on the page for this load cycle.
             const scriptAlreadyInjected = await targetPage.evaluate(() => {

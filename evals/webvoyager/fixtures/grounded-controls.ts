@@ -26,8 +26,8 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch(request): Respo
     if (path === '/covered-frame') return new Response(`<iframe id="same" src="/frame-content" style="width:600px;height:200px;border:0"></iframe>
         <div style="position:absolute;left:0;top:0;width:600px;height:200px;background:rgba(0,0,0,.01)"></div>`, { headers: { 'content-type': 'text/html' } });
     if (new URL(request.url).pathname === '/dialog-select') return new Response(`<button id="open">Compose</button><dialog id="compose">
-        <select id="to" style="width:400px;height:40px"><option value="">Choose a recipient</option><option value="ellis">Dr. Noah Ellis</option>
-        <option value="brooks">Dr. Elena Brooks</option><option value="closed" disabled>Dr. Closed Clinic</option></select></dialog>
+        <label>To <select id="to" style="width:400px;height:40px"><option value="">Choose a recipient</option><option value="ellis">Dr. Noah Ellis</option>
+        <option value="brooks">Dr. Elena Brooks</option><option value="closed" disabled>Dr. Closed Clinic</option></select></label></dialog>
         <script>document.getElementById('open').onclick = () => compose.showModal()</script>`, { headers: { 'content-type': 'text/html' } });
     return new Response('<h1>Destination</h1>', { headers: { 'content-type': 'text/html' } });
 } });
@@ -146,29 +146,22 @@ test('native selects and date inputs inside frames are set by reference, and inv
 });
 
 
-test('select popup options are grounded controls that set the value by reference', async () => {
+test('a select inside a modal dialog is listed with its options and set by reference', async () => {
     const { agent, connector, page } = await fixture();
     try {
         const harness = connector.getHarness();
         await harness.navigate(`${base}/dialog-select`);
-        for (let tries = 0; !await page.evaluate(() => (window as any).__magnitudeShadowDOMAdapterInjected) && tries < 20; tries++) await page.waitForTimeout(100);
-        const center = async (selector: string) => {
-            const box = (await page.locator(selector).boundingBox())!;
-            return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-        };
-        await harness.click(await center('#open'), { transform: false });
-        await harness.click(await center('#to'), { transform: false });
+        const box = (await page.locator('#open').boundingBox())!;
+        await harness.click({ x: box.x + box.width / 2, y: box.y + box.height / 2 }, { transform: false });
         let calls = 0;
         agent.models.partialAct = async context => {
             const snapshot = controls(context);
             if (++calls === 1) {
-                const options = snapshot.controls.filter(item => item.role === 'option');
-                assert.deepEqual(options.map(item => [item.label, item.enabled]),
-                    [['Choose a recipient', true], ['Dr. Noah Ellis', true], ['Dr. Elena Brooks', true], ['Dr. Closed Clinic', false]]);
-                return plan({ variant: 'browser:click', ref: snapshot.controls.find(item => item.label === 'Dr. Elena Brooks')!.ref });
+                const select = snapshot.controls.find(item => item.role === 'select') as Controls['controls'][number] & { options?: string[] };
+                assert.deepEqual(select.options, ['Choose a recipient', 'Dr. Noah Ellis', 'Dr. Elena Brooks'], 'disabled options are omitted');
+                return plan({ variant: 'browser:select', ref: select.ref, option: 'Dr. Elena Brooks' });
             }
             assert.equal(await page.locator('#to').inputValue(), 'brooks');
-            assert.equal(await page.locator('[data-popup-type="select"]').count(), 0, 'choosing an option closes the popup');
             return done();
         };
         await agent.act('Choose Dr. Elena Brooks as the recipient');
