@@ -457,6 +457,32 @@ test('field actions on refs from one observation share a batch, and a submit but
     } finally { await agent.stop(); }
 });
 
+test('a changed submission destination invalidates submit refs, including a change made by a batched field action', async () => {
+    const form = `<form id="form" action="/expected" onsubmit="event.preventDefault();document.body.dataset.submitted='yes'">
+        <label>Scope <select id="scope" onchange="if(this.value==='all')form.action='/unexpected'"><option value="mine">Mine</option><option value="all">All</option></select></label>
+        <input type="hidden" name="action" value="shadows form.action">
+        <button id="find">Find visits</button><input id="again" type="submit" value="Search again"></form>`;
+    for (const control of ['Find visits', 'Search again']) for (const change of ['formaction', 'action', 'handler', 'none'] as const) {
+        const { agent, page } = await fixture(form);
+        try {
+            let calls = 0;
+            agent.models.partialAct = async ctx => {
+                const snapshot = controls(ctx);
+                if (++calls > 1) return done();
+                const ref = (label: string) => snapshot.controls.find(item => item.label === label)!.ref;
+                const id = control === 'Find visits' ? '#find' : '#again';
+                if (change === 'formaction') await page.locator(id).evaluate(node => node.setAttribute('formaction', '/unexpected'));
+                if (change === 'action') await page.locator('#form').evaluate(node => node.setAttribute('action', '/unexpected'));
+                return change === 'handler'
+                    ? plan({ variant: 'browser:select', ref: ref('Scope'), option: 'All' }, { variant: 'browser:click', ref: ref(control) })
+                    : plan({ variant: 'browser:click', ref: ref(control) });
+            };
+            await agent.act('Submit the search');
+            assert.equal(await page.locator('body').getAttribute('data-submitted'), change === 'none' ? 'yes' : null, `${control} after ${change}`);
+        } finally { await agent.stop(); }
+    }
+});
+
 test('a click, another browser action, or a new plan expires refs kept across field actions', async () => {
     const { agent, page } = await fixture('<label>Due <input id="due" type="date" value="2026-09-29"></label><button id="target">Open</button>');
     try {

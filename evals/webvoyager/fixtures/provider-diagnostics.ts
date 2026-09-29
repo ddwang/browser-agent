@@ -111,3 +111,41 @@ for (const provider of ['anthropic', 'openai', 'baseten'] as const) {
         console.log(`PASS: ${provider} records usage-free attempts with no stale or sensitive metadata`);
     } finally { release.resolve(); await agent.stop(); server.stop(true); }
 }
+
+// Each provider's own usage shape: cached input and reasoning are counted once, in the right field.
+for (const [provider, usage, expected] of [
+    ['google-ai', { usageMetadata: { promptTokenCount: 100, cachedContentTokenCount: 40, candidatesTokenCount: 20, thoughtsTokenCount: 30, totalTokenCount: 150 } }, [100, 40, 50]],
+    ['openai-generic', { usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150, prompt_tokens_details: { cached_tokens: 40 } } }, [100, 40, 50]],
+    ['anthropic', { usage: { input_tokens: 10, cache_creation_input_tokens: 50, cache_read_input_tokens: 40, output_tokens: 50 } }, [100, 40, 50]],
+] as const) {
+    const server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request) {
+        await request.json();
+        const text = '{"data":"ok"}';
+        return Response.json(provider === 'google-ai'
+            ? { candidates: [{ content: { role: 'model', parts: [{ text }] }, finishReason: 'STOP' }], ...usage }
+            : provider === 'anthropic'
+                ? { id: 'fixture', type: 'message', role: 'assistant', model: 'fixture', content: [{ type: 'text', text }], stop_reason: 'end_turn', ...usage }
+                : { id: 'fixture', object: 'chat.completion', created: 1, model: 'fixture', choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }], ...usage });
+    } });
+    class FixtureHarness extends ModelHarness {
+        protected createClientRegistry(options: Record<string, unknown>) {
+            const registry = new ClientRegistry();
+            registry.addLlmClient('Fixture', provider, { ...options, base_url: `http://127.0.0.1:${server.port}` });
+            registry.setPrimary('Fixture'); return registry;
+        }
+    }
+    const llm = { provider, options: { model: 'fixture', apiKey: 'unused', baseUrl: `http://127.0.0.1:${server.port}` } } as ConstructorParameters<typeof ModelHarness>[0]['llm'];
+    const harness = new FixtureHarness({ llm });
+    await harness.setup();
+    const agent = new Agent({ llm, telemetry: false });
+    agent.models.query = harness.query.bind(harness);
+    const usages: unknown[] = [];
+    harness.events.on('tokensUsed', usage => { usages.push(usage); });
+    try {
+        assert.equal(await agent.query('prompt', z.string()), 'ok');
+        const [attempt] = agent.operation!.providerAttempts!;
+        assert.deepEqual([attempt.promptTokens, attempt.cachedPromptTokens, attempt.outputTokens], expected);
+        assert.equal(usages.length, 1);
+        console.log(`PASS: ${provider} usage counts cached input and reasoning once`);
+    } finally { await agent.stop(); server.stop(true); }
+}

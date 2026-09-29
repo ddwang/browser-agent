@@ -31,6 +31,9 @@ function captureControls(fields: string) {
         + '[role~="combobox"],[role~="listbox"],[role~="textbox"],[role~="searchbox"],'
         + '[role~="slider"],[role~="spinbutton"],[role~="scrollbar"],[role~="tab"],[role~="treeitem"]';
     const text = (value: string | null | undefined) => (value ?? '').replace(/\s+/g, ' ').trim();
+    // Read form attributes through the prototype: a control named "action" would shadow form.action.
+    const formProperty = <K extends keyof HTMLFormElement>(form: HTMLFormElement, key: K) =>
+        Object.getOwnPropertyDescriptor(HTMLFormElement.prototype, key)!.get!.call(form) as HTMLFormElement[K];
     // Options a person could choose: neither the option nor its group is disabled or hidden.
     // Computed styles work while the picker is closed; layout-based visibility checks do not.
     const concealed = (element: HTMLElement) => {
@@ -70,6 +73,16 @@ function captureControls(fields: string) {
         const role = field instanceof HTMLSelectElement ? 'select' : field ? (field as HTMLInputElement).type
             : node.getAttribute('role') || (node instanceof HTMLAnchorElement ? 'link' : 'button');
         const value = field instanceof HTMLSelectElement ? text(field.selectedOptions[0]?.label) : field ? field.value : undefined;
+        const form = node instanceof HTMLButtonElement || field || submit ? (node as HTMLButtonElement).form : null;
+        // Where a submit control sends its form: its own overrides, else the form's attributes.
+        const submitter = submit ?? (node instanceof HTMLButtonElement && node.type === 'submit' ? node : null);
+        const submission = submitter && form ? [
+            submitter.hasAttribute('formaction') ? submitter.formAction : formProperty(form, 'action'),
+            submitter.hasAttribute('formmethod') ? submitter.formMethod : formProperty(form, 'method'),
+            submitter.hasAttribute('formtarget') ? submitter.formTarget : formProperty(form, 'target'),
+            submitter.hasAttribute('formenctype') ? submitter.formEnctype : formProperty(form, 'enctype'),
+            submitter.formNoValidate || formProperty(form, 'noValidate'),
+        ] : null;
         const options = field instanceof HTMLSelectElement ? eligible(field).slice(0, 40).map(option => text(option.label)) : undefined;
         // Keep activation attributes and context identity local, not in diagnostics.
         const identity = JSON.stringify([label, context, role, enabled, node.getAttribute('name'),
@@ -77,8 +90,7 @@ function captureControls(fields: string) {
             node.getAttribute('target'), node.getAttribute('download'), node.getAttribute('type'),
             node.getAttribute('popovertarget'), node.getAttribute('popovertargetaction'),
             node.getAttribute('commandfor'), node.getAttribute('command'),
-            node.getAttribute('aria-expanded'), node.getAttribute('aria-selected'), node.getAttribute('aria-pressed')]);
-        const form = node instanceof HTMLButtonElement || field || submit ? (node as HTMLButtonElement).form : null;
+            node.getAttribute('aria-expanded'), node.getAttribute('aria-selected'), node.getAttribute('aria-pressed'), submission]);
         return { label, context, role, enabled, value, options, identity, container, form,
             box: { x: box.x, y: box.y, width: box.width, height: box.height } };
     }

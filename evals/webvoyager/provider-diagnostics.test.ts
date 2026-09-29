@@ -11,6 +11,6 @@ test('actual provider attempts survive retries, cancellation, and absent usage w
             new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
         ]);
         expect({ code, stderr, stdout: code ? stdout : '' }).toEqual({ code: 0, stderr: '', stdout: '' });
-        expect(stdout.match(/^PASS:/gm)).toHaveLength(12);
+        expect(stdout.match(/^PASS:/gm)).toHaveLength(15);
     } finally { clearTimeout(timer); }
 }, 35_000);
