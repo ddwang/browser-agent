@@ -44,7 +44,7 @@ test('trace reader preserves unfinished calls and failures and rejects duplicate
 
 test('selection receives only prior inputs, excludes disabled or ambiguous refs, and delegates incomplete observations', () => {
     const input = { ...row(['mouse:click']), outcome: 'FUTURE_OUTCOME', controls: { truncated: false,
-        scope: 'viewport-native-links-and-buttons', controls: [
+        scope: 'viewport-links-buttons-and-native-fields', controls: [
             { ref: 'ref-1', role: 'link', label: 'One', context: 'Section', enabled: true, ambiguous: false },
             { ref: 'ref-2', role: 'button', label: 'Two', context: '', enabled: true, ambiguous: false },
             { ref: 'ref-3', role: 'button', label: 'Disabled', context: '', enabled: false, ambiguous: false },

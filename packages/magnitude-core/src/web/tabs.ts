@@ -269,14 +269,6 @@ export class TabManager {
         logger.debug(`Active tab changed to: ${page.url()}`);
         this.activePage = page;
         this.events.emit('tabChanged', page);
-
-        page.removeAllListeners('framenavigated');
-        page.on('framenavigated', async (frame) => {
-            if (frame === page.mainFrame()) {
-                // const url = frame.url();
-                // await logNavigation(url);
-            }
-        });
     }
 
     async switchTab(index: number) {

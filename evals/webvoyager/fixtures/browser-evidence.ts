@@ -31,6 +31,9 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', idleTimeout: 0, fetch
         <select id="to" style="width:400px;height:40px"><option value="">Choose a recipient</option><option value="ellis">Dr. Noah Ellis</option><option value="brooks">Dr. Elena Brooks</option></select></dialog>
         <script>document.getElementById("open").onclick=()=>compose.${url.searchParams.get('open') ?? 'showModal'}()</script>`, { headers: { 'content-type': 'text/html' } });
     }
+    if (url.pathname === '/dropdowns') return new Response(`<style>#styled{appearance:none}</style>
+        <select id="sized" size="1" style="width:200px;height:30px;margin:20px"><option>First</option><option>Second</option></select>
+        <select id="styled" style="width:200px;height:30px;margin:20px;appearance:none"><option>First</option><option>Second</option></select>`, { headers: { 'content-type': 'text/html' } });
     if (url.pathname === '/popup') return new Response('<h1>Attachment</h1><a id="attachment" download href="/download">Download</a><script>attachment.click()</script>', { headers: { 'content-type': 'text/html' } });
     const pagination = url.pathname === '/pagination';
     const href = url.pathname === '/pending' ? `/slow?id=${url.searchParams.get('id')}`
@@ -188,7 +191,7 @@ for (const cause of ['signal', 'deadline'] as const) test(`${cause} during new-t
     }
 });
 
-for (const variant of ['', '?transformed', '?transformed&open=show']) test(`select options open above dialog${variant || ' (plain modal)'}, including on a page loaded before the agent started`, async () => {
+for (const variant of ['', '?transformed', '?transformed&open=show']) test(`select pickers render in the page above dialog${variant || ' (plain modal)'}, including on a page loaded before the agent started`, async () => {
     const context = await browser.newContext({ viewport: { width: 1024, height: 768 } });
     const loaded = await context.newPage();
     await loaded.goto(`${base}/dialog${variant}`);
@@ -197,18 +200,46 @@ for (const variant of ['', '?transformed', '?transformed&open=show']) test(`sele
     try {
         const harness = connector.getHarness(), page = harness.page;
         assert.equal(page, loaded);
-        // Injection is asynchronous; patchright's evaluate shares the adapter's context, waitForFunction does not.
-        for (let tries = 0; !await page.evaluate(() => (window as any).__magnitudeShadowDOMAdapterInjected) && tries < 20; tries++) await page.waitForTimeout(100);
-        assert.equal(await page.evaluate(() => (window as any).__magnitudeShadowDOMAdapterInjected), true, 'a page loaded before tracking gets the adapter');
+        // Styling is asynchronous; a page loaded before tracking gets it too.
+        const appearance = () => page.evaluate(() => getComputedStyle(document.getElementById('to')!).appearance);
+        for (let tries = 0; await appearance() !== 'base-select' && tries < 20; tries++) await page.waitForTimeout(100);
+        assert.equal(await appearance(), 'base-select');
         await harness.click(await point(page, '#open'), { transform: false });
         await harness.click(await point(page, '#to'), { transform: false });
-        const option = page.locator('#compose [data-popup-type="select"] [data-index="2"]');
-        assert.equal(await option.count(), 1, 'the option list opens inside the modal dialog');
-        const { x, y } = await point(page, '#compose [data-popup-type="select"] [data-index="2"]');
+        // The base-select picker is in the page's top layer, so the option is on screen and topmost.
+        const { x, y } = await point(page, '#to option[value="brooks"]');
         assert.ok(x < 1024 && y < 768, 'the option is inside the viewport');
         assert.equal(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.textContent, { x, y }), 'Dr. Elena Brooks', 'the option is topmost');
         await harness.click({ x, y }, { transform: false });
         assert.equal(await page.locator('#to').inputValue(), 'brooks');
+    } finally { await connector.onStop(); await context.close(); }
+});
+
+test('size="1" dropdowns and author appearance:none still open an on-screen picker', async () => {
+    const { connector, page } = await fixture('/dropdowns');
+    try {
+        const harness = connector.getHarness();
+        for (const id of ['sized', 'styled']) {
+            for (let tries = 0; await page.evaluate(id => getComputedStyle(document.getElementById(id)!).appearance, id) !== 'base-select' && tries < 20; tries++) await page.waitForTimeout(100);
+            await harness.click(await point(page, `#${id}`), { transform: false });
+            const option = await page.evaluate(id => { const r = document.querySelectorAll(`#${id} option`)[1].getBoundingClientRect(); return { width: r.width, height: r.height }; }, id);
+            assert.ok(option.width > 0 && option.height > 0, `#${id} renders its options in the page`);
+            await harness.click({ x: 900, y: 700 }, { transform: false }); // Close the picker.
+        }
+    } finally { await connector.onStop(); }
+});
+
+test('switching tabs keeps other components\' frame navigation listeners', async () => {
+    const { connector, page, context } = await fixture();
+    try {
+        const harness = connector.getHarness();
+        let navigations = 0;
+        page.on('framenavigated', () => { navigations++; }); // Stands in for another component's listener.
+        await context.newPage();
+        await harness.switchTab({ index: context.pages().indexOf(page) === 0 ? 1 : 0 });
+        await harness.switchTab({ index: context.pages().indexOf(page) });
+        await page.goto(`${base}/`);
+        assert.ok(navigations > 0, 'the listener still fires after a tab round trip');
     } finally { await connector.onStop(); await context.close(); }
 });
 

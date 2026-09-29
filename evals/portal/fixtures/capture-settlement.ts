@@ -80,7 +80,7 @@ try {
             const inputs = trace.filter(row => row.event === 'started');
             assert.equal(inputs.length, report.plannerCalls);
             assert.ok(inputs.every(row => row.image && row.controls.controls.length === 1));
-            assert.ok(inputs.every(row => !JSON.stringify(row.context).includes('viewport-native-links-and-buttons')), 'sidecar controls do not enter the actor prompt');
+            assert.ok(inputs.every(row => !JSON.stringify(row.context).includes('viewport-links-buttons-and-native-fields')), 'sidecar controls do not enter the actor prompt');
             assert.ok(!JSON.stringify(trace).includes('fixture-token'), 'control secret never enters the trace');
             assert.ok(report.decisionTraceOverheadMs! > 0);
             assert.equal(submissions, mode === 'unsettled-actor' ? 0 : 1, 'no duplicate submissions');

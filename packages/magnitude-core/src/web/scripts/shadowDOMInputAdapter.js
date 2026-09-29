@@ -10,14 +10,11 @@ module.exports = function getShadowDOMInputAdapterScript() {
 
     window.magnitudeShadowDOMAdapter = {
       activePopup: null, // Generic reference to the currently open popup/dropdown
-      activePopupType: null, // 'select', 'date', 'color'
+      activePopupType: null, // 'date' or 'color'; selects use Chrome's base-select picker
       activePopupOriginalElement: null, // The element that triggered the popup
       boundHandleDocumentMousedown: null,
       boundHandleDocumentClick: null, // For click event prevention
       boundHandleOutsidePopupClick: null,
-      boundHandleDocumentKeydown: null, // For select typeahead
-      searchString: '', // For select typeahead
-      searchTimeoutId: null, // For select typeahead
 
       // --- Initialization and Cleanup ---
       init: function() {
@@ -26,14 +23,12 @@ module.exports = function getShadowDOMInputAdapterScript() {
         
         this.boundHandleDocumentClick = this.handleDocumentClick.bind(this);
         document.addEventListener('click', this.boundHandleDocumentClick, true);
-        
-        this.boundHandleDocumentKeydown = this.handleDocumentKeydown.bind(this); // Added for select typeahead
 
-        console.log('Shadow DOM Input Adapter mousedown, click, and keydown listeners prepared.');
+        console.log('Shadow DOM Input Adapter mousedown and click listeners prepared.');
       },
 
       cleanup: function() {
-        this.closeActivePopup(); // This will also remove keydown listener if active
+        this.closeActivePopup();
         if (this.boundHandleDocumentMousedown) {
           document.removeEventListener('mousedown', this.boundHandleDocumentMousedown, true);
           this.boundHandleDocumentMousedown = null;
@@ -41,10 +36,6 @@ module.exports = function getShadowDOMInputAdapterScript() {
         if (this.boundHandleDocumentClick) {
           document.removeEventListener('click', this.boundHandleDocumentClick, true);
           this.boundHandleDocumentClick = null;
-        }
-        // Ensure keydown listener is removed if it was somehow left active
-        if (this.boundHandleDocumentKeydown && this.activePopupType !== 'select') { // Only if not handled by closeActivePopup
-             document.removeEventListener('keydown', this.boundHandleDocumentKeydown, true);
         }
         console.log('Shadow DOM Input Adapter cleaned up.');
       },
@@ -59,9 +50,7 @@ module.exports = function getShadowDOMInputAdapterScript() {
             return;
         }
 
-        if (target.tagName === 'SELECT' || (target.tagName === 'OPTION' && target.parentElement && target.parentElement.tagName === 'SELECT')) {
-          this.handleSelectInteraction(target.tagName === 'SELECT' ? target : target.parentElement, e);
-        } else if (target.tagName === 'INPUT' && target.type === 'date') {
+        if (target.tagName === 'INPUT' && target.type === 'date') {
           this.handleDateInputInteraction(target, e);
         } else if (target.tagName === 'INPUT' && target.type === 'color') {
           this.handleColorInputInteraction(target, e);
@@ -74,14 +63,11 @@ module.exports = function getShadowDOMInputAdapterScript() {
         const target = e.target;
         if (!target || typeof target.tagName !== 'string') return;
 
-        // If the click target is one of the elements we manage (select, date input, color input),
+        // If the click target is one of the elements we manage (date or color input),
         // and the click is NOT inside an active custom popup UI that we've created,
         // then prevent the default action of the click. This is a secondary measure
         // to stop native pickers or behaviors if mousedown prevention wasn't enough.
-        if ( (target.tagName === 'INPUT' && (target.type === 'date' || target.type === 'color')) ||
-             (target.tagName === 'SELECT') ||
-             (target.tagName === 'OPTION' && target.parentElement && target.parentElement.tagName === 'SELECT')
-           ) {
+        if (target.tagName === 'INPUT' && (target.type === 'date' || target.type === 'color')) {
           
           if (this.activePopup && this.activePopup.contains(target)) {
             // Click is inside our active custom popup. Do nothing here.
@@ -89,8 +75,7 @@ module.exports = function getShadowDOMInputAdapterScript() {
             return;
           }
           
-          // If the click is on the original element (or an option within a select),
-          // prevent its default action. Our mousedown handler should have already
+          // If the click is on the original element, prevent its default action. Our mousedown handler should have already
           // initiated the custom UI if applicable.
           e.preventDefault();
           e.stopPropagation();
@@ -110,12 +95,6 @@ module.exports = function getShadowDOMInputAdapterScript() {
           document.removeEventListener('mousedown', this.boundHandleOutsidePopupClick, true);
           this.boundHandleOutsidePopupClick = null;
         }
-        if (this.activePopupType === 'select' && this.boundHandleDocumentKeydown) {
-          document.removeEventListener('keydown', this.boundHandleDocumentKeydown, true);
-        }
-        clearTimeout(this.searchTimeoutId);
-        this.searchString = '';
-        this.searchTimeoutId = null;
       },
 
       _setupOutsideClickListener: function() {
@@ -197,154 +176,6 @@ module.exports = function getShadowDOMInputAdapterScript() {
         }
       },
 
-      // --- SELECT Element Specific Logic ---
-      handleSelectInteraction: function(selectElement, event) {
-        event.preventDefault();
-        event.stopPropagation();
-        
-        if (this.activePopupType === 'select' && this.activePopupOriginalElement === selectElement) {
-          this.closeActivePopup();
-          return;
-        }
-        this.closeActivePopup();
-        this.createAndShowSelectDropdown(selectElement);
-      },
-
-      createAndShowSelectDropdown: function(select) {
-        const dropdown = this._createPopupElement(select, 'select');
-        this._setStyles(dropdown, { 
-            padding: '0', 
-            maxHeight: `${Math.min(300, window.innerHeight - select.getBoundingClientRect().bottom - 20)}px`,
-            overflowY: 'auto',
-            gap: '0', // Select doesn't need the main popup gap
-        });
-
-        const contentWrapper = document.createElement('div'); 
-        this._setStyles(contentWrapper, { padding: '5px 0' });
-        
-        Array.from(select.options).forEach((option, index) => {
-          // Buttons appear in grounded controls, so the planner can click an option by reference.
-          const div = document.createElement('button');
-          div.type = 'button';
-          div.setAttribute('role', 'option');
-          div.setAttribute('aria-selected', String(index === select.selectedIndex));
-          div.disabled = option.disabled;
-          div.textContent = option.text;
-          this._setStyles(div, {
-            display: 'block', width: '100%', border: 'none', font: 'inherit', color: 'inherit', textAlign: 'left',
-            padding: '8px 12px', margin: '0', cursor: 'pointer',
-            backgroundColor: index === select.selectedIndex ? '#e0e0e0' : 'white',
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          });
-          div.setAttribute('data-index', index.toString());
-          div.onmouseenter = function() { this.style.backgroundColor = index === select.selectedIndex ? '#d0d0d0' : '#f0f0f0'; };
-          div.onmouseleave = function() { this.style.backgroundColor = index === select.selectedIndex ? '#e0e0e0' : 'white'; };
-          div.onclick = () => {
-            select.selectedIndex = index;
-            select.dispatchEvent(new Event('input', { bubbles: true }));
-            select.dispatchEvent(new Event('change', { bubbles: true }));
-            this.closeActivePopup();
-          };
-          contentWrapper.appendChild(div);
-        });
-
-        dropdown.appendChild(contentWrapper);
-        
-        this._attachPopup(select, dropdown);
-
-        this.activePopup = dropdown;
-        this.activePopupType = 'select';
-        this.activePopupOriginalElement = select;
-        select.blur();
-        this._setupOutsideClickListener();
-
-        // For typeahead
-        this.searchString = '';
-        clearTimeout(this.searchTimeoutId);
-        document.addEventListener('keydown', this.boundHandleDocumentKeydown, true);
-
-        console.log('Custom select dropdown created for:', select.id || select.name);
-      },
-
-      // --- Keydown Handler for Select Typeahead ---
-      handleDocumentKeydown: function(e) {
-        if (!this.activePopup || this.activePopupType !== 'select' || !this.activePopupOriginalElement) {
-          return;
-        }
-
-        // Ignore modifier keys, navigation keys, Escape, Tab (but handle Enter)
-        if (e.metaKey || e.ctrlKey || e.altKey || 
-            ['Shift', 'Control', 'Alt', 'Meta', 'Escape', 'Tab', 
-             'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 
-             'Home', 'End', 'PageUp', 'PageDown'].includes(e.key)) {
-          if (e.key === 'Escape') {
-            this.closeActivePopup();
-          }
-          return;
-        }
-
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          e.stopImmediatePropagation(); // Changed to stopImmediatePropagation
-          const options = Array.from(this.activePopup.querySelectorAll('[data-index]'));
-          const highlightedOption = options.find(opt => opt.style.backgroundColor === 'rgb(173, 216, 230)'); // Light blue in rgb
-
-          if (highlightedOption) {
-            const index = parseInt(highlightedOption.getAttribute('data-index'));
-            const select = this.activePopupOriginalElement;
-            select.selectedIndex = index;
-            select.dispatchEvent(new Event('input', { bubbles: true }));
-            select.dispatchEvent(new Event('change', { bubbles: true }));
-            this.closeActivePopup();
-          }
-          return;
-        }
-        
-        // Prevent default browser behavior for printable characters when dropdown is open
-        // e.g. page search
-        if (e.key.length === 1) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-
-
-        clearTimeout(this.searchTimeoutId);
-        this.searchString += e.key.toLowerCase();
-
-        this.searchTimeoutId = setTimeout(() => {
-          this.searchString = '';
-        }, 800); // Reset search string after 800ms of inactivity
-
-        const options = Array.from(this.activePopup.querySelectorAll('[data-index]'));
-        let matchedOption = null;
-
-        for (const optionElement of options) {
-          if (optionElement.textContent.toLowerCase().startsWith(this.searchString)) {
-            matchedOption = optionElement;
-            break;
-          }
-        }
-
-        if (matchedOption) {
-          options.forEach(opt => {
-            // Reset background for all options, considering original selected state
-            const optIndex = parseInt(opt.getAttribute('data-index'));
-            const originalSelect = this.activePopupOriginalElement;
-            opt.style.backgroundColor = optIndex === originalSelect.selectedIndex ? '#e0e0e0' : 'white';
-            // Reset hover effect styles if any were applied directly
-            opt.onmouseenter = function() { this.style.backgroundColor = optIndex === originalSelect.selectedIndex ? '#d0d0d0' : '#f0f0f0'; };
-            opt.onmouseleave = function() { this.style.backgroundColor = optIndex === originalSelect.selectedIndex ? '#e0e0e0' : 'white'; };
-          });
-          
-          // Highlight the matched option
-          matchedOption.style.backgroundColor = '#add8e6'; // Light blue for highlight
-          // Temporarily override hover for matched item to keep highlight
-          matchedOption.onmouseenter = function() { this.style.backgroundColor = '#add8e6'; }; 
-          
-          matchedOption.scrollIntoView({ block: 'nearest' });
-        }
-      },
-      
       // --- DATE Input Specific Logic ---
       handleDateInputInteraction: function(dateInputElement, event) {
         event.preventDefault();
