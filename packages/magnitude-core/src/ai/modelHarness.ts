@@ -150,6 +150,9 @@ export class ModelHarness {
             for (const { call, key } of calls) {
                 if (seen.has(key)) continue;
                 seen.add(key);
+                let usage: ModelUsage | undefined;
+                try { usage = this._reportCallUsage(call); }
+                catch { this.logger.warn('Unable to report model response usage'); }
                 try {
                     const response = call.httpResponse;
                     const httpStatus = response?.status ?? null;
@@ -167,47 +170,53 @@ export class ModelHarness {
                         httpStatus,
                         requestId: typeof requestId === 'string' && /^[\w.:-]{1,200}$/.test(requestId) ? requestId : null,
                         outcome: httpStatus === null ? 'unknown' : httpStatus >= 200 && httpStatus < 300 ? 'succeeded' : 'failed',
+                        promptTokens: usage ? usage.inputTokens + (usage.cacheWriteInputTokens ?? 0) + (usage.cacheReadInputTokens ?? 0) : null,
+                        cachedPromptTokens: usage ? usage.cacheReadInputTokens ?? 0 : null,
+                        outputTokens: usage?.outputTokens ?? null,
                     });
                 } catch {
                     this.logger.warn('Unable to report provider attempt metadata');
                 }
-                try { this._reportCallUsage(call); }
-                catch { this.logger.warn('Unable to report model response usage'); }
             }
         }
     }
 
-    private _reportCallUsage(call: FunctionLog['calls'][number]): void {
+    private _reportCallUsage(call: FunctionLog['calls'][number]): ModelUsage | undefined {
         let inputTokens = call.usage?.inputTokens;
         let outputTokens = call.usage?.outputTokens;
         let cacheWriteInputTokens: number = 0;
         let cacheReadInputTokens: number = 0;
 
-        if (this.options.llm.provider === 'anthropic' || this.options.llm.provider === 'claude-code') {
-            // Anthropic's input_tokens excludes cache reads/writes. BAML's
-            // normalized usage does not expose that breakdown.
-            try {
-                const usage = call.httpResponse?.body.json()?.usage;
-                if (usage) {
-                    inputTokens = usage.input_tokens ?? inputTokens;
-                    outputTokens = usage.output_tokens ?? outputTokens;
-                    cacheWriteInputTokens = usage.cache_creation_input_tokens ?? 0;
-                    cacheReadInputTokens = usage.cache_read_input_tokens ?? 0;
-                }
-            } catch { /* Non-JSON error response; use per-call usage if available. */ }
-        } else if (this.options.llm.provider === 'openai' || this.options.llm.provider === 'baseten') {
-            try {
-                const usage = call.httpResponse?.body.json()?.usage;
-                if (usage) {
-                    // Both providers include cached input in prompt_tokens and reasoning
-                    // output in completion_tokens. Neither should be counted twice.
-                    cacheReadInputTokens = usage.prompt_tokens_details?.cached_tokens ?? 0;
-                    cacheWriteInputTokens = usage.prompt_tokens_details?.cache_write_tokens ?? 0;
-                    const totalInputTokens = usage.prompt_tokens ?? inputTokens;
-                    if (totalInputTokens != null) inputTokens = totalInputTokens - cacheReadInputTokens - cacheWriteInputTokens;
-                    outputTokens = usage.completion_tokens ?? outputTokens;
-                }
-            } catch { /* Non-JSON error response; use per-call usage if available. */ }
+        // BAML's normalized usage has no cache or reasoning breakdown, so read the
+        // provider's own usage shape. inputTokens below excludes cached input.
+        let body: any;
+        try { body = call.httpResponse?.body.json(); } catch { /* Non-JSON error response; use per-call usage if available. */ }
+        const reported = body?.usage, google = body?.usageMetadata;
+        if (google?.promptTokenCount != null) {
+            // Gemini (Google AI, Vertex): the prompt count includes cached content, and
+            // billed thinking is reported apart from candidates.
+            cacheReadInputTokens = google.cachedContentTokenCount ?? 0;
+            inputTokens = google.promptTokenCount + (google.toolUsePromptTokenCount ?? 0) - cacheReadInputTokens;
+            outputTokens = (google.candidatesTokenCount ?? 0) + (google.thoughtsTokenCount ?? 0);
+        } else if (reported?.input_tokens != null) {
+            // Anthropic, including Claude on Vertex: input_tokens excludes cache reads/writes.
+            inputTokens = reported.input_tokens;
+            outputTokens = reported.output_tokens ?? outputTokens;
+            cacheWriteInputTokens = reported.cache_creation_input_tokens ?? 0;
+            cacheReadInputTokens = reported.cache_read_input_tokens ?? 0;
+        } else if (reported?.prompt_tokens != null) {
+            // OpenAI-compatible providers include cached input in prompt_tokens and reasoning
+            // output in completion_tokens. Neither should be counted twice.
+            cacheReadInputTokens = reported.prompt_tokens_details?.cached_tokens ?? 0;
+            cacheWriteInputTokens = reported.prompt_tokens_details?.cache_write_tokens ?? 0;
+            inputTokens = reported.prompt_tokens - cacheReadInputTokens - cacheWriteInputTokens;
+            outputTokens = reported.completion_tokens ?? outputTokens;
+        } else if (reported?.inputTokens != null) {
+            // Bedrock Converse reports cache reads/writes apart from inputTokens.
+            inputTokens = reported.inputTokens;
+            outputTokens = reported.outputTokens ?? outputTokens;
+            cacheWriteInputTokens = reported.cacheWriteInputTokens ?? 0;
+            cacheReadInputTokens = reported.cacheReadInputTokens ?? 0;
         }
         // A transport failure with no usage is not a paid completion. In
         // particular, never reuse the preceding successful response's usage.
@@ -293,7 +302,7 @@ export class ModelHarness {
 
         this.events.emit('tokensUsed', usage);
         //console.log("Usage:", usage);
-
+        return usage;
     }
 
     async partialAct<T>(

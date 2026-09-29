@@ -31,6 +31,11 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch(request): Respo
     if (path === '/hidden-options') return new Response(`<style>.gone{display:none}.faded{visibility:hidden}</style>
         <label>Pick <select id="pick"><option value="shown">Shown</option><optgroup hidden label="Secret"><option value="secret">Secret</option></optgroup>
         <option class="gone" value="gone">Gone</option><option class="faded" value="faded">Faded</option></select></label>`, { headers: { 'content-type': 'text/html' } });
+    if (path === '/form-content') return new Response(`<form onsubmit="event.preventDefault();document.body.dataset.submitted=JSON.stringify([kind.value,start.value,end.value])">
+        <label>Visit type <select id="kind"><option value="">Choose</option><option value="video">Video visit</option></select></label>
+        <label>Start date <input id="start" type="date"></label><label>End date <input id="end" type="date"></label>
+        <button id="find">Find visits</button><input type="submit" value="Search again"><button type="reset">Clear</button></form>`, { headers: { 'content-type': 'text/html' } });
+    if (path === '/framed-form') return new Response(`<iframe id="form" src="/form-content" style="width:900px;height:200px;border:0"></iframe>`, { headers: { 'content-type': 'text/html' } });
     if (path === '/done') return new Response('<h1>Done</h1>', { headers: { 'content-type': 'text/html' } });
     if (path === '/fields') return new Response(`<label>Due <input id="due" type="date" value="2026-09-29"></label>
         <label>Letter <select id="letter"><option value="a">A</option><option value="b-disabled" disabled>B</option><option value="b-enabled">B</option>
@@ -389,9 +394,11 @@ test('a link reference cannot activate an independently interactive descendant',
             let calls = 0;
             agent.models.partialAct = async context => {
                 const snapshot = controls(context);
+                // A nested submit button is listed as its own control; the link's ref must not activate it.
+                const links = snapshot.controls.filter(item => item.role === 'link');
                 if (++calls === 1) {
-                    assert.deepEqual(snapshot.controls.map(item => item.label), ['View record']);
-                    return plan({ variant: 'browser:click', ref: snapshot.controls[0].ref });
+                    assert.deepEqual(links.map(item => item.label), ['View record']);
+                    return plan({ variant: 'browser:click', ref: links[0].ref });
                 }
                 assert.deepEqual(await clicks(page), []);
                 assert.equal(await page.locator('#external').isChecked(), false);
@@ -424,11 +431,88 @@ test('ordinary text and icon descendants still activate their observed control',
     }
 });
 
+test('field actions on refs from one observation share a batch, and a submit button click can end it', async () => {
+    const { agent, connector, page } = await fixture();
+    try {
+        await connector.getHarness().navigate(`${base}/framed-form`);
+        const frame = page.frameLocator('#form');
+        let calls = 0;
+        agent.models.partialAct = async ctx => {
+            const snapshot = controls(ctx);
+            const ref = (label: string) => snapshot.controls.find(item => item.label === label)!.ref;
+            if (++calls === 1) {
+                assert.deepEqual(snapshot.controls.filter(item => item.role === 'button').map(item => item.label), ['Find visits', 'Search again'],
+                    'submit buttons are listed; reset buttons are not');
+                return plan({ variant: 'browser:select', ref: ref('Visit type'), option: 'Video visit' },
+                    { variant: 'browser:fill', ref: ref('Start date'), value: '2026-01-01' },
+                    { variant: 'browser:fill', ref: ref('End date'), value: '2026-09-30' },
+                    { variant: 'browser:click', ref: ref('Find visits') });
+            }
+            assert.ok(!JSON.stringify(ctx.observationContent).includes('target_unavailable'));
+            return done();
+        };
+        await agent.act('Find video visits from January 1 through September 30, 2026');
+        assert.equal(calls, 2, 'the whole form took one plan');
+        assert.equal(await frame.locator('body').getAttribute('data-submitted'), JSON.stringify(['video', '2026-01-01', '2026-09-30']));
+    } finally { await agent.stop(); }
+});
+
+test('a changed submission destination invalidates submit refs, including a change made by a batched field action', async () => {
+    const form = `<form id="form" action="/expected" onsubmit="event.preventDefault();document.body.dataset.submitted='yes'">
+        <label>Scope <select id="scope" onchange="if(this.value==='all')form.action='/unexpected'"><option value="mine">Mine</option><option value="all">All</option></select></label>
+        <input type="hidden" name="action" value="shadows form.action">
+        <button id="find">Find visits</button><input id="again" type="submit" value="Search again"></form>`;
+    for (const control of ['Find visits', 'Search again']) for (const change of ['formaction', 'action', 'handler', 'none'] as const) {
+        const { agent, page } = await fixture(form);
+        try {
+            let calls = 0;
+            agent.models.partialAct = async ctx => {
+                const snapshot = controls(ctx);
+                if (++calls > 1) return done();
+                const ref = (label: string) => snapshot.controls.find(item => item.label === label)!.ref;
+                const id = control === 'Find visits' ? '#find' : '#again';
+                if (change === 'formaction') await page.locator(id).evaluate(node => node.setAttribute('formaction', '/unexpected'));
+                if (change === 'action') await page.locator('#form').evaluate(node => node.setAttribute('action', '/unexpected'));
+                return change === 'handler'
+                    ? plan({ variant: 'browser:select', ref: ref('Scope'), option: 'All' }, { variant: 'browser:click', ref: ref(control) })
+                    : plan({ variant: 'browser:click', ref: ref(control) });
+            };
+            await agent.act('Submit the search');
+            assert.equal(await page.locator('body').getAttribute('data-submitted'), change === 'none' ? 'yes' : null, `${control} after ${change}`);
+        } finally { await agent.stop(); }
+    }
+});
+
+test('a click, another browser action, or a new plan expires refs kept across field actions', async () => {
+    const { agent, page } = await fixture('<label>Due <input id="due" type="date" value="2026-09-29"></label><button id="target">Open</button>');
+    try {
+        const values: string[] = [];
+        let calls = 0, earlier = '';
+        agent.models.partialAct = async ctx => {
+            const snapshot = controls(ctx);
+            const ref = (label: string) => snapshot.controls.find(item => item.label === label)!.ref;
+            if (calls > 0) values.push(await page.locator('#due').inputValue());
+            switch (++calls) {
+                case 1: return plan({ variant: 'browser:click', ref: ref('Open') }, { variant: 'browser:fill', ref: ref('Due'), value: '2026-10-01' });
+                case 2: return plan({ variant: 'browser:fill', ref: ref('Due'), value: '2026-10-02' }, { variant: 'wait', seconds: 0 },
+                    { variant: 'browser:fill', ref: ref('Due'), value: '2026-10-03' });
+                case 3: earlier = ref('Due'); return plan({ variant: 'browser:fill', ref: earlier, value: '2026-10-04' });
+                case 4: return plan({ variant: 'browser:fill', ref: earlier, value: '2026-10-05' });
+                default: return done();
+            }
+        };
+        await agent.act('Change the due date');
+        // Each later fill is rejected: after the click, after the wait, and in the plan after the fill's own batch.
+        assert.deepEqual(values, ['2026-09-29', '2026-10-02', '2026-10-04', '2026-10-04']);
+        assert.deepEqual(await clicks(page), ['target']);
+    } finally { await agent.stop(); }
+});
+
 test('grounded clicks follow preparatory actions in a new plan and can follow memory writes', async () => {
     const { agent, connector, page } = await fixture();
     try {
-        assert.match(connector.getActionSpace().find(action => action.name === 'browser:click')!.description!, /sole non-memory action/);
-        assert.match((await connector.getInstructions())!, /sole non-memory action/);
+        assert.match(connector.getActionSpace().find(action => action.name === 'browser:click')!.description!, /expires references/);
+        assert.match((await connector.getInstructions())!, /expires references/);
         let calls = 0;
         let previousRef = '';
         agent.models.partialAct = async context => {
@@ -655,7 +739,7 @@ test('changing a button form owner invalidates refs even when nearby context is 
 
 test('unsupported surfaces and sensitive inputs do not enter control payloads; frame controls do', async () => {
     const { agent } = await fixture(`<input type="password" value="SECRET_PASSWORD"><input value="SECRET_VALUE">
-        <form><button>Submit</button></form><div role="button">Custom</div><iframe srcdoc="<button>Frame</button>"></iframe>
+        <form><button type="reset">Reset</button></form><div role="button">Custom</div><iframe srcdoc="<button>Frame</button>"></iframe>
         <div id="shadow"></div><script>shadow.attachShadow({mode:'open'}).innerHTML='<button>Shadow</button>'</script>
         <button hidden>Hidden</button><button style="position:absolute;top:3000px">Offscreen</button><button id="normal">Visible</button>`);
     try {

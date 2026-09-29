@@ -83,7 +83,8 @@ test('late callbacks cannot rewrite a completed outcome after its former deadlin
 test('provider attempts are bounded, isolated, and immutable in snapshots', () => {
     const operation = new Operation({}, {});
     const attempt = { provider: 'fixture', model: 'fixture', startedAt: 123,
-        elapsedMs: null, httpStatus: null, requestId: null, outcome: 'unknown' as const };
+        elapsedMs: null, httpStatus: null, requestId: null, outcome: 'unknown' as const,
+        promptTokens: null, cachedPromptTokens: null, outputTokens: null };
     for (let i = 0; i < 105; i++) operation.recordProviderAttempt(attempt);
     const snapshot = operation.snapshot();
     expect(snapshot.providerAttempts).toHaveLength(100);

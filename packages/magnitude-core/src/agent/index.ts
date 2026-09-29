@@ -505,6 +505,8 @@ export class Agent {
             let actions: Action[] = [];
             let memoryUpdates: NoteUpdate[] = [];
 
+            for (const connector of this.connectors) await connector.beforePlan?.(operationOptions());
+            checkOperation();
             try {
                 this.events.emit('planningStarted');
                 const memoryContext = await this._buildContext(memory);
