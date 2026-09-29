@@ -12,10 +12,19 @@ import { createAction } from '../../../packages/magnitude-core/src/actions';
 const cases: { name: string; check: () => Promise<void> }[] = [];
 function test(name: string, check: () => Promise<void>) { cases.push({ name, check }); }
 let browser: Browser;
-const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch(request) {
+let crossBase = '';
+const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch(request): Response {
     if (new URL(request.url).pathname === '/download') return new Response('fixture bytes', {
         headers: { 'content-disposition': 'attachment; filename="fixture.txt"', 'content-type': 'text/plain' },
     });
+    const path = new URL(request.url).pathname;
+    if (path === '/frame-content') return new Response(`<button id="inner" style="width:160px;height:40px" onclick="document.body.dataset.clicked='yes'">Inner action</button>
+        <label>Visit type <select id="kind"><option value="">Choose</option><option value="video">Video visit</option><option value="office">Office visit</option></select></label>
+        <label>Start date <input id="start" type="date"></label>`, { headers: { 'content-type': 'text/html' } });
+    if (path === '/framed') return new Response(`<iframe id="same" src="/frame-content" style="width:600px;height:200px;border:0"></iframe>
+        <iframe id="cross" src="${crossBase}/frame-content" style="width:600px;height:200px;border:0"></iframe>`, { headers: { 'content-type': 'text/html' } });
+    if (path === '/covered-frame') return new Response(`<iframe id="same" src="/frame-content" style="width:600px;height:200px;border:0"></iframe>
+        <div style="position:absolute;left:0;top:0;width:600px;height:200px;background:rgba(0,0,0,.01)"></div>`, { headers: { 'content-type': 'text/html' } });
     if (new URL(request.url).pathname === '/dialog-select') return new Response(`<button id="open">Compose</button><dialog id="compose">
         <select id="to" style="width:400px;height:40px"><option value="">Choose a recipient</option><option value="ellis">Dr. Noah Ellis</option>
         <option value="brooks">Dr. Elena Brooks</option><option value="closed" disabled>Dr. Closed Clinic</option></select></dialog>
@@ -23,13 +32,16 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch(request) {
     return new Response('<h1>Destination</h1>', { headers: { 'content-type': 'text/html' } });
 } });
 const base = `http://127.0.0.1:${server.port}`;
+// A different port is a different origin, so this frame runs out of process from the page.
+const crossServer = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: (request: Request): Response | Promise<Response> => server.fetch(request) });
+crossBase = `http://127.0.0.1:${crossServer.port}`;
 const body = '<section><h2>Record one</h2><button id="target">Open</button></section><input id="input">';
 const plan = (...actions: { variant: string; [key: string]: unknown }[]) => ({ reasoning: 'Deterministic fixture', memory_updates: [], actions });
 const done = () => plan({ variant: 'task:done', evidence: 'Fixture verified independently' });
 type Controls = { scope: string; truncated: boolean; controls: { ref: string; label: string; context: string; role: string; enabled: boolean; ambiguous: boolean }[] };
 function controls(context: AgentContext): Controls {
     const messages = context.observationContent.map(message => message.content.filter(part => typeof part === 'string').join(''))
-        .filter(text => text.includes('"scope": "viewport-native-links-and-buttons"'));
+        .filter(text => text.includes('"scope": "viewport-links-buttons-and-native-fields"'));
     assert.equal(messages.length, 1, 'only the latest control snapshot reaches the planner, including cached contexts');
     return JSON.parse(messages[0].slice(messages[0].indexOf('{')));
 }
@@ -48,6 +60,91 @@ async function fixture(html = body, options: Partial<BrowserConnectorOptions> = 
     return { agent, connector, page, context };
 }
 const clicks = (page: Page) => page.evaluate(() => JSON.parse(document.body.dataset.clicked!) as string[]);
+
+test('controls inside same-origin and cross-origin frames are listed in page coordinates and clicked by ref', async () => {
+    const { agent, connector, page, context } = await fixture();
+    await context.unroute('**/*');
+    try {
+        await connector.getHarness().navigate(`${base}/framed`);
+        let calls = 0;
+        agent.models.partialAct = async ctx => {
+            const inner = controls(ctx).controls.filter(item => item.label === 'Inner action');
+            if (++calls === 1) {
+                assert.equal(inner.length, 2, 'one button per frame');
+                assert.ok(inner.every(item => item.ambiguous), 'identical controls in two frames are ambiguous');
+                return plan({ variant: 'browser:click', ref: inner[0].ref });
+            }
+            assert.ok(JSON.stringify(ctx.observationContent).includes('target_unavailable'), 'an ambiguous ref is rejected');
+            return done();
+        };
+        await agent.act('Click the inner action');
+        for (const id of ['same', 'cross']) assert.equal(await page.frameLocator(`#${id}`).locator('body').getAttribute('data-clicked'), null);
+        // Remove the duplicate, then click the cross-origin frame's button by reference.
+        await page.frameLocator('#same').locator('#inner').evaluate(node => node.remove());
+        calls = 0;
+        agent.models.partialAct = async ctx => {
+            if (++calls === 1) return plan({ variant: 'browser:click', ref: controls(ctx).controls.find(item => item.label === 'Inner action')!.ref });
+            return done();
+        };
+        await agent.act('Click the inner action');
+        assert.equal(await page.frameLocator('#cross').locator('body').getAttribute('data-clicked'), 'yes');
+    } finally { await agent.stop(); }
+});
+
+test('a frame covered by another element rejects its references before clicking', async () => {
+    const { agent, connector, page } = await fixture();
+    try {
+        await connector.getHarness().navigate(`${base}/covered-frame`);
+        let calls = 0;
+        agent.models.partialAct = async ctx => {
+            if (++calls === 1) return plan({ variant: 'browser:click', ref: controls(ctx).controls.find(item => item.label === 'Inner action')!.ref });
+            assert.ok(JSON.stringify(ctx.observationContent).includes('target_unavailable'));
+            return done();
+        };
+        await agent.act('Click the inner action');
+        assert.equal(await page.frameLocator('#same').locator('body').getAttribute('data-clicked'), null);
+    } finally { await agent.stop(); }
+});
+
+test('native selects and date inputs inside frames are set by reference, and invalid values change nothing', async () => {
+    const { agent, connector, page, context } = await fixture();
+    await context.unroute('**/*');
+    try {
+        await connector.getHarness().navigate(`${base}/framed`);
+        await page.frameLocator('#same').locator('body').evaluate(body => body.remove());
+        const frame = page.frameLocator('#cross');
+        type Field = Controls['controls'][number] & { value?: string; options?: string[] };
+        const find = (snapshot: Controls, label: string) => snapshot.controls.find(item => item.label === label) as Field;
+        const steps: ((snapshot: Controls) => ReturnType<typeof plan>)[] = [
+            snapshot => {
+                const kind = find(snapshot, 'Visit type');
+                assert.deepEqual([kind.role, kind.value, kind.options], ['select', 'Choose', ['Choose', 'Video visit', 'Office visit']]);
+                return plan({ variant: 'browser:select', ref: kind.ref, option: 'Telehealth' });
+            },
+            snapshot => plan({ variant: 'browser:select', ref: find(snapshot, 'Visit type').ref, option: 'Office visit' }),
+            snapshot => {
+                const start = find(snapshot, 'Start date');
+                assert.deepEqual([start.role, start.value], ['date', '']);
+                return plan({ variant: 'browser:fill', ref: start.ref, value: '09/30/2026' });
+            },
+            snapshot => plan({ variant: 'browser:fill', ref: find(snapshot, 'Start date').ref, value: '2026-09-30' }),
+        ];
+        let calls = 0;
+        const observed: string[] = [];
+        agent.models.partialAct = async ctx => {
+            const text = JSON.stringify(ctx.observationContent);
+            if (calls === 1) observed.push(await frame.locator('#kind').inputValue(), String(text.includes('option_unavailable')));
+            if (calls === 3) observed.push(await frame.locator('#start').inputValue(), String(text.includes('invalid_value')));
+            const step = steps[calls++];
+            return step ? step(controls(ctx)) : done();
+        };
+        await agent.act('Choose an office visit starting September 30, 2026');
+        assert.deepEqual(observed, ['', 'true', '', 'true'], 'rejected values change nothing and say why');
+        assert.equal(await frame.locator('#kind').inputValue(), 'office');
+        assert.equal(await frame.locator('#start').inputValue(), '2026-09-30');
+    } finally { await agent.stop(); }
+});
+
 
 test('select popup options are grounded controls that set the value by reference', async () => {
     const { agent, connector, page } = await fixture();
@@ -237,7 +334,7 @@ test('disabled mode adds neither controls, action, instructions, nor DOM capture
         assert.ok(!connector.getActionSpace().some(action => action.name === 'browser:click'));
         assert.ok(!(await connector.getInstructions())?.includes('browser-controls'));
         agent.models.partialAct = async context => {
-            assert.ok(!JSON.stringify(context.observationContent).includes('viewport-native-links-and-buttons'));
+            assert.ok(!JSON.stringify(context.observationContent).includes('viewport-links-buttons-and-native-fields'));
             return done();
         };
         await agent.act('No new observation path');
@@ -430,7 +527,7 @@ test('changing a button form owner invalidates refs even when nearby context is 
     }
 });
 
-test('unsupported surfaces and sensitive inputs do not enter control payloads', async () => {
+test('unsupported surfaces and sensitive inputs do not enter control payloads; frame controls do', async () => {
     const { agent } = await fixture(`<input type="password" value="SECRET_PASSWORD"><input value="SECRET_VALUE">
         <form><button>Submit</button></form><div role="button">Custom</div><iframe srcdoc="<button>Frame</button>"></iframe>
         <div id="shadow"></div><script>shadow.attachShadow({mode:'open'}).innerHTML='<button>Shadow</button>'</script>
@@ -438,7 +535,7 @@ test('unsupported surfaces and sensitive inputs do not enter control payloads', 
     try {
         agent.models.partialAct = async context => {
             const snapshot = controls(context);
-            assert.deepEqual(snapshot.controls.map(item => item.label), ['Visible']);
+            assert.deepEqual(snapshot.controls.map(item => item.label), ['Visible', 'Frame']);
             assert.ok(!JSON.stringify(snapshot).includes('SECRET'));
             return done();
         };
@@ -626,4 +723,4 @@ test('switching the active page cannot redirect an old reference into the new pa
 try {
     browser = await chromium.launch({ headless: true });
     for (const entry of cases) { await entry.check(); console.log(`PASS: ${entry.name}`); }
-} finally { await browser!?.close(); server.stop(true); }
+} finally { await browser!?.close(); server.stop(true); crossServer.stop(true); }

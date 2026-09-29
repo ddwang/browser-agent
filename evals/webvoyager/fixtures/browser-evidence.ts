@@ -212,6 +212,20 @@ for (const variant of ['', '?transformed', '?transformed&open=show']) test(`sele
     } finally { await connector.onStop(); await context.close(); }
 });
 
+test('switching tabs keeps other components\' frame navigation listeners', async () => {
+    const { connector, page, context } = await fixture();
+    try {
+        const harness = connector.getHarness();
+        let navigations = 0;
+        page.on('framenavigated', () => { navigations++; }); // Stands in for another component's listener.
+        await context.newPage();
+        await harness.switchTab({ index: context.pages().indexOf(page) === 0 ? 1 : 0 });
+        await harness.switchTab({ index: context.pages().indexOf(page) });
+        await page.goto(`${base}/`);
+        assert.ok(navigations > 0, 'the listener still fires after a tab round trip');
+    } finally { await connector.onStop(); await context.close(); }
+});
+
 test('right-click reaches Chromium as button 2 and preserves left-click, double-click, and coordinate scaling', async () => {
     const context = await browser.newContext({ viewport: { width: 1024, height: 768 } });
     const connector = new BrowserConnector({ browser: { context }, url: base, virtualScreenDimensions: { width: 512, height: 384 }, visuals: { animateCursor: false } });
