@@ -17,7 +17,7 @@ import { Image } from '@/memory/image';
 import EventEmitter from "eventemitter3";
 import { MultiMediaContentPart } from "@/memory/rendering";
 import { parsePlannerResponse, PlannerResponseError, memoryUpdatesSchema, type PlannerResponse } from './plannerResponse';
-import { anthropicOutputFormat, plannerSchema, usesStructuredOutput } from './structuredOutput';
+import { anthropicOutputFormat, BASETEN_ENFORCED, plannerSchema, usesStructuredOutput } from './structuredOutput';
 import { ModelResponseError } from './modelResponseError';
 import { DEFAULT_BASETEN_MODEL } from './baseten';
 import { beginOperationPhase, checkOperation, currentOperation, operationOptions, type PlannerCallDiagnostics } from '@/common/operation';
@@ -98,7 +98,7 @@ export class ModelHarness {
         if (!usesStructuredOutput(this.options.llm)) return this.cr;
         // Reuse the conservative schema subset across providers; all original
         // value constraints and notebook semantics remain locally validated.
-        const format = anthropicOutputFormat(schema);
+        const format = anthropicOutputFormat(schema, this.options.llm.provider === 'baseten' ? BASETEN_ENFORCED : undefined);
         if (!format) {
             this.logger.debug('Schema requires prompt-only output; native structured output cannot represent it');
             return this.cr;

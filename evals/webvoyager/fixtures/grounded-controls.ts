@@ -36,6 +36,7 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch(request): Respo
         <label>Start date <input id="start" type="date"></label><label>End date <input id="end" type="date"></label>
         <button id="find">Find visits</button><input type="submit" value="Search again"><button type="reset">Clear</button></form>`, { headers: { 'content-type': 'text/html' } });
     if (path === '/framed-form') return new Response(`<iframe id="form" src="/form-content" style="width:900px;height:200px;border:0"></iframe>`, { headers: { 'content-type': 'text/html' } });
+    if (path === '/low-framed-form') return new Response(`<div id="spacer" style="height:600px"></div><iframe id="form" src="/form-content" style="width:900px;height:300px;border:0"></iframe><div style="height:1200px"></div>`, { headers: { 'content-type': 'text/html' } });
     if (path === '/done') return new Response('<h1>Done</h1>', { headers: { 'content-type': 'text/html' } });
     if (path === '/fields') return new Response(`<label>Due <input id="due" type="date" value="2026-09-29"></label>
         <label>Letter <select id="letter"><option value="a">A</option><option value="b-disabled" disabled>B</option><option value="b-enabled">B</option>
@@ -483,8 +484,48 @@ test('a changed submission destination invalidates submit refs, including a chan
     }
 });
 
-test('a click, another browser action, or a new plan expires refs kept across field actions', async () => {
-    const { agent, page } = await fixture('<label>Due <input id="due" type="date" value="2026-09-29"></label><button id="target">Open</button>');
+test('a partly visible control is listed and scrolled into view before a click', async () => {
+    const { agent, page } = await fixture('<div style="height:740px"></div><button id="low" style="height:60px">Low</button><div style="height:1200px"></div>');
+    try {
+        let calls = 0;
+        agent.models.partialAct = async ctx => {
+            const low = controls(ctx).controls.find(item => item.label === 'Low');
+            if (++calls === 1) { assert.ok(low, 'the button straddling the fold is listed'); return plan({ variant: 'browser:click', ref: low!.ref }); }
+            return done();
+        };
+        await agent.act('Click Low');
+        assert.deepEqual(await clicks(page), ['low']);
+        const box = (await page.locator('#low').boundingBox())!;
+        assert.ok(box.y + box.height <= 768, 'the click scrolled the whole button into view');
+    } finally { await agent.stop(); }
+});
+
+test('a form in an iframe whose submit button straddles the fold is filled and submitted in one plan', async () => {
+    const { agent, connector, page } = await fixture();
+    try {
+        await connector.getHarness().navigate(`${base}/low-framed-form`);
+        const frame = page.frameLocator('#form');
+        // Place the submit button so only its top 10 px are in the 768 px viewport.
+        const find = (await frame.locator('#find').boundingBox())!;
+        await page.locator('#spacer').evaluate((node, shift) => { (node as HTMLElement).style.height = `${600 + shift}px`; }, 758 - find.y);
+        let calls = 0;
+        agent.models.partialAct = async ctx => {
+            const snapshot = controls(ctx);
+            const ref = (label: string) => snapshot.controls.find(item => item.label === label)!.ref;
+            if (++calls === 1) return plan({ variant: 'browser:select', ref: ref('Visit type'), option: 'Video visit' },
+                { variant: 'browser:fill', ref: ref('Start date'), value: '2026-01-01' },
+                { variant: 'browser:fill', ref: ref('End date'), value: '2026-09-30' },
+                { variant: 'browser:click', ref: ref('Find visits') });
+            return done();
+        };
+        await agent.act('Find video visits from January 1 through September 30, 2026');
+        assert.equal(calls, 2);
+        assert.equal(await frame.locator('body').getAttribute('data-submitted'), JSON.stringify(['video', '2026-01-01', '2026-09-30']));
+    } finally { await agent.stop(); }
+});
+
+test('refs stay usable for the whole batch, after clicks and other actions, and expire when the next plan starts', async () => {
+    const { agent, page } = await fixture('<label>Due <input id="due" type="date" value="2026-09-29"></label><button id="target">Open</button><input id="input">');
     try {
         const values: string[] = [];
         let calls = 0, earlier = '';
@@ -493,26 +534,26 @@ test('a click, another browser action, or a new plan expires refs kept across fi
             const ref = (label: string) => snapshot.controls.find(item => item.label === label)!.ref;
             if (calls > 0) values.push(await page.locator('#due').inputValue());
             switch (++calls) {
-                case 1: return plan({ variant: 'browser:click', ref: ref('Open') }, { variant: 'browser:fill', ref: ref('Due'), value: '2026-10-01' });
-                case 2: return plan({ variant: 'browser:fill', ref: ref('Due'), value: '2026-10-02' }, { variant: 'wait', seconds: 0 },
-                    { variant: 'browser:fill', ref: ref('Due'), value: '2026-10-03' });
-                case 3: earlier = ref('Due'); return plan({ variant: 'browser:fill', ref: earlier, value: '2026-10-04' });
-                case 4: return plan({ variant: 'browser:fill', ref: earlier, value: '2026-10-05' });
+                case 1: return plan({ variant: 'browser:click', ref: ref('Open') }, { variant: 'browser:fill', ref: ref('Due'), value: '2026-10-01' },
+                    { variant: 'mouse:click', x: 5, y: 5 }, { variant: 'wait', seconds: 0 }, { variant: 'browser:fill', ref: ref('Due'), value: '2026-10-02' });
+                case 2: earlier = ref('Due'); return plan({ variant: 'browser:fill', ref: earlier, value: '2026-10-03' });
+                case 3: return plan({ variant: 'browser:fill', ref: earlier, value: '2026-10-04' }, { variant: 'keyboard:type', content: 'MUST_NOT_TYPE' });
                 default: return done();
             }
         };
         await agent.act('Change the due date');
-        // Each later fill is rejected: after the click, after the wait, and in the plan after the fill's own batch.
-        assert.deepEqual(values, ['2026-09-29', '2026-10-02', '2026-10-04', '2026-10-04']);
-        assert.deepEqual(await clicks(page), ['target']);
+        // Refs survive a click, a coordinate click, and a wait in their own batch; a ref from an earlier plan is rejected and stops its batch.
+        assert.deepEqual(values, ['2026-10-02', '2026-10-03', '2026-10-03']);
+        assert.deepEqual((await clicks(page)).slice(0, 1), ['target']);
+        assert.equal(await page.locator('#input').inputValue(), '');
     } finally { await agent.stop(); }
 });
 
 test('grounded clicks follow preparatory actions in a new plan and can follow memory writes', async () => {
     const { agent, connector, page } = await fixture();
     try {
-        assert.match(connector.getActionSpace().find(action => action.name === 'browser:click')!.description!, /expires references/);
-        assert.match((await connector.getInstructions())!, /expires references/);
+        assert.match(connector.getActionSpace().find(action => action.name === 'browser:click')!.description!, /whole batch/);
+        assert.match((await connector.getInstructions())!, /expire when the next plan starts/);
         let calls = 0;
         let previousRef = '';
         agent.models.partialAct = async context => {
@@ -890,22 +931,6 @@ test('cancelling during pointer movement prevents click dispatch and drains befo
         assert.deepEqual(await clicks(page), []);
         assert.equal(agent.operation?.lastClick, undefined);
         assert.equal(agent.busy, false);
-    } finally { await agent.stop(); }
-});
-
-test('an intervening observation invalidates remaining refs in a batch', async () => {
-    const { agent, page } = await fixture();
-    try {
-        let calls = 0;
-        agent.models.partialAct = async context => {
-            const snapshot = controls(context);
-            if (++calls === 1) return plan({ variant: 'wait', seconds: 0 },
-                { variant: 'browser:click', ref: snapshot.controls[0].ref }, { variant: 'keyboard:type', content: 'MUST_NOT_TYPE' });
-            assert.deepEqual(await clicks(page), []);
-            assert.equal(await page.locator('#input').inputValue(), '');
-            return done();
-        };
-        await agent.act('Reject expired batch ref');
     } finally { await agent.stop(); }
 });
 

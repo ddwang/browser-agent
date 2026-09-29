@@ -9,6 +9,7 @@ import { DOMTransformer } from "./transformer";
 import { Image } from '@/memory/image';
 import EventEmitter from "eventemitter3";
 import { checkOperation, currentOperation, drainAll, measureOperation, operationSleep, type Operation, type BrowserClickDiagnostics } from '@/common/operation';
+import { BrowserBlockedError } from './recovery';
 //import { StateComponent } from "@/facets";
 
 
@@ -18,6 +19,8 @@ export interface WebHarnessOptions {
     virtualScreenDimensions?: { width: number, height: number }
     visuals?: ActionVisualizerOptions
     switchTabsOnActivity?: boolean  // Whether to automatically switch tabs when user activity is detected vs only if switchTab is used
+    /** Refuse to type into password and one-time-code fields; the host owns authentication. */
+    hostOnlyAuthentication?: boolean
 }
 
 export interface WebHarnessEvents {
@@ -174,6 +177,12 @@ export class WebHarness { // implements StateComponent
             } else if (chunk == '<tab>') {
                 await this.page.keyboard.press('Tab')
             } else {
+                // Checked per chunk, because an earlier <tab> can move focus into a credential field.
+                if (this.options.hostOnlyAuthentication && await this.credentialFieldFocused()) {
+                    throw new BrowserBlockedError({ reason: 'authentication',
+                        evidence: 'Typing stopped: the focused field takes a password or one-time code, and the host reserves authentication.' });
+                }
+                checkOperation();
                 const chunkProportion = chunk.length / totalTextLength;
                 const chunkDelay = totalTextDelay * chunkProportion;
                 const chunkCharDelay = chunkDelay / chunk.length;
@@ -402,6 +411,17 @@ export class WebHarness { // implements StateComponent
         }
         await this.waitForStability();
         //await this.visualizer.removeActionVisuals();
+    }
+
+    private async credentialFieldFocused(): Promise<boolean> {
+        // Only a focused document's active element receives keystrokes; follow open shadow roots.
+        const results = await Promise.all(this.page.frames().map(frame => frame.evaluate(() => {
+            if (!document.hasFocus()) return false;
+            let element = document.activeElement;
+            while (element?.shadowRoot?.activeElement) element = element.shadowRoot.activeElement;
+            return !!element?.matches('input[type="password" i],[autocomplete~="one-time-code" i],[autocomplete~="current-password" i],[autocomplete~="new-password" i]');
+        }).catch(() => false)));
+        return results.includes(true);
     }
 
     async type({ content }: { content: string }) {
