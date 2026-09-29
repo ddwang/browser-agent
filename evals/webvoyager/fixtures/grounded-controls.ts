@@ -16,6 +16,10 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch(request) {
     if (new URL(request.url).pathname === '/download') return new Response('fixture bytes', {
         headers: { 'content-disposition': 'attachment; filename="fixture.txt"', 'content-type': 'text/plain' },
     });
+    if (new URL(request.url).pathname === '/dialog-select') return new Response(`<button id="open">Compose</button><dialog id="compose">
+        <select id="to" style="width:400px;height:40px"><option value="">Choose a recipient</option><option value="ellis">Dr. Noah Ellis</option>
+        <option value="brooks">Dr. Elena Brooks</option><option value="closed" disabled>Dr. Closed Clinic</option></select></dialog>
+        <script>document.getElementById('open').onclick = () => compose.showModal()</script>`, { headers: { 'content-type': 'text/html' } });
     return new Response('<h1>Destination</h1>', { headers: { 'content-type': 'text/html' } });
 } });
 const base = `http://127.0.0.1:${server.port}`;
@@ -44,6 +48,36 @@ async function fixture(html = body, options: Partial<BrowserConnectorOptions> = 
     return { agent, connector, page, context };
 }
 const clicks = (page: Page) => page.evaluate(() => JSON.parse(document.body.dataset.clicked!) as string[]);
+
+test('select popup options are grounded controls that set the value by reference', async () => {
+    const { agent, connector, page } = await fixture();
+    try {
+        const harness = connector.getHarness();
+        await harness.navigate(`${base}/dialog-select`);
+        for (let tries = 0; !await page.evaluate(() => (window as any).__magnitudeShadowDOMAdapterInjected) && tries < 20; tries++) await page.waitForTimeout(100);
+        const center = async (selector: string) => {
+            const box = (await page.locator(selector).boundingBox())!;
+            return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+        };
+        await harness.click(await center('#open'), { transform: false });
+        await harness.click(await center('#to'), { transform: false });
+        let calls = 0;
+        agent.models.partialAct = async context => {
+            const snapshot = controls(context);
+            if (++calls === 1) {
+                const options = snapshot.controls.filter(item => item.role === 'option');
+                assert.deepEqual(options.map(item => [item.label, item.enabled]),
+                    [['Choose a recipient', true], ['Dr. Noah Ellis', true], ['Dr. Elena Brooks', true], ['Dr. Closed Clinic', false]]);
+                return plan({ variant: 'browser:click', ref: snapshot.controls.find(item => item.label === 'Dr. Elena Brooks')!.ref });
+            }
+            assert.equal(await page.locator('#to').inputValue(), 'brooks');
+            assert.equal(await page.locator('[data-popup-type="select"]').count(), 0, 'choosing an option closes the popup');
+            return done();
+        };
+        await agent.act('Choose Dr. Elena Brooks as the recipient');
+        assert.equal(calls, 2);
+    } finally { await agent.stop(); }
+});
 
 test('open shadow-host and custom-element hit paths reject before click', async () => {
     for (const variant of ['open-custom', 'open-native', 'closed-custom', 'slotted', 'hover-created'] as const) {

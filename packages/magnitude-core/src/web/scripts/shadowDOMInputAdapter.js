@@ -223,9 +223,15 @@ module.exports = function getShadowDOMInputAdapterScript() {
         this._setStyles(contentWrapper, { padding: '5px 0' });
         
         Array.from(select.options).forEach((option, index) => {
-          const div = document.createElement('div');
+          // Buttons appear in grounded controls, so the planner can click an option by reference.
+          const div = document.createElement('button');
+          div.type = 'button';
+          div.setAttribute('role', 'option');
+          div.setAttribute('aria-selected', String(index === select.selectedIndex));
+          div.disabled = option.disabled;
           div.textContent = option.text;
           this._setStyles(div, {
+            display: 'block', width: '100%', border: 'none', font: 'inherit', color: 'inherit', textAlign: 'left',
             padding: '8px 12px', margin: '0', cursor: 'pointer',
             backgroundColor: index === select.selectedIndex ? '#e0e0e0' : 'white',
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
