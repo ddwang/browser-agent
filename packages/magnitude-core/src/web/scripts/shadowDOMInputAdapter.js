@@ -391,7 +391,8 @@ module.exports = function getShadowDOMInputAdapterScript() {
               originalDateInput.value = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
               originalDateInput.dispatchEvent(new Event('input', { bubbles: true }));
               originalDateInput.dispatchEvent(new Event('change', { bubbles: true }));
-              // Do NOT close popup here, wait for Enter or outside click
+              // A complete date is committed; close so the popup can't cover the next field.
+              self.closeActivePopup();
             } else {
               self._updateInputValidationIndicator(popup, false);
             }

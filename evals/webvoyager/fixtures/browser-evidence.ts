@@ -31,6 +31,9 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', idleTimeout: 0, fetch
         <select id="to" style="width:400px;height:40px"><option value="">Choose a recipient</option><option value="ellis">Dr. Noah Ellis</option><option value="brooks">Dr. Elena Brooks</option></select></dialog>
         <script>document.getElementById("open").onclick=()=>compose.${url.searchParams.get('open') ?? 'showModal'}()</script>`, { headers: { 'content-type': 'text/html' } });
     }
+    if (url.pathname === '/frame-form') return new Response(frameForm, { headers: { 'content-type': 'text/html' } });
+    if (url.pathname === '/framed') return new Response(`<iframe id="form" src="/frame-form" style="width:600px;height:300px"></iframe>
+        <iframe id="other" src="http://127.0.0.1:${crossOrigin.port}/" style="width:600px;height:100px"></iframe>`, { headers: { 'content-type': 'text/html' } });
     if (url.pathname === '/popup') return new Response('<h1>Attachment</h1><a id="attachment" download href="/download">Download</a><script>attachment.click()</script>', { headers: { 'content-type': 'text/html' } });
     const pagination = url.pathname === '/pagination';
     const href = url.pathname === '/pending' ? `/slow?id=${url.searchParams.get('id')}`
@@ -45,6 +48,9 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', idleTimeout: 0, fetch
             });</script>`}`, { headers: { 'content-type': 'text/html' } });
 } });
 const base = `http://127.0.0.1:${server.port}`;
+// A different port is a different origin; the adapter must leave this frame unchanged.
+const frameForm = '<input id="start" type="date" style="width:300px;height:30px"><select id="kind" style="width:300px;height:30px"><option value="">Choose</option><option value="video">Video visit</option></select>';
+const crossOrigin = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response(frameForm, { headers: { 'content-type': 'text/html' } }) });
 
 async function fixture(path = '/', contextOptions: BrowserContextOptions = {}) {
     const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, ...contextOptions });
@@ -186,6 +192,37 @@ for (const cause of ['signal', 'deadline'] as const) test(`${cause} during new-t
         await agent.whenIdle();
         await connector.onStop();
     }
+});
+
+test('same-origin iframes get the date and select adapter, including after the frame navigates', async () => {
+    const { connector, page } = await fixture('/framed');
+    try {
+        const harness = connector.getHarness();
+        const frame = page.frameLocator('#form');
+        const injected = async (selector: string) => {
+            const handle = await (await page.$(selector))!.contentFrame();
+            return handle!.evaluate(() => (window as any).__magnitudeShadowDOMAdapterInjected === true);
+        };
+        for (let tries = 0; !await injected('#form') && tries < 20; tries++) await page.waitForTimeout(100);
+        assert.equal(await injected('#form'), true, 'the same-origin frame gets the adapter');
+        assert.equal(await injected('#other'), false, 'a cross-origin frame is unchanged');
+        const center = async (selector: string) => {
+            const box = (await frame.locator(selector).boundingBox())!;
+            return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+        };
+        // The click lands mid-field, where a native date input would start typing in the day segment.
+        await harness.click(await center('#start'), { transform: false });
+        await harness.type({ content: '09/30/2026' });
+        assert.equal(await frame.locator('#start').inputValue(), '2026-09-30');
+        assert.equal(await frame.locator('[data-popup-type]').count(), 0, 'a complete date closes its popup');
+        await harness.click(await center('#kind'), { transform: false });
+        await harness.click(await center('[data-popup-type="select"] [data-index="1"]'), { transform: false });
+        assert.equal(await frame.locator('#kind').inputValue(), 'video');
+        await page.evaluate(() => { (document.getElementById('form') as HTMLIFrameElement).src = '/frame-form?again'; });
+        await page.waitForTimeout(300);
+        for (let tries = 0; !await injected('#form') && tries < 20; tries++) await page.waitForTimeout(100);
+        assert.equal(await injected('#form'), true, 'a navigated frame gets the adapter again');
+    } finally { await connector.onStop(); }
 });
 
 for (const variant of ['', '?transformed', '?transformed&open=show']) test(`select options open above dialog${variant || ' (plain modal)'}, including on a page loaded before the agent started`, async () => {
@@ -664,4 +701,5 @@ try {
 } finally {
     await browser!?.close();
     server.stop(true);
+    crossOrigin.stop(true);
 }
