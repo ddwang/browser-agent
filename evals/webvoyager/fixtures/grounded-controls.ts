@@ -23,6 +23,15 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch(request): Respo
         <label>Start date <input id="start" type="date"></label>`, { headers: { 'content-type': 'text/html' } });
     if (path === '/framed') return new Response(`<iframe id="same" src="/frame-content" style="width:600px;height:200px;border:0"></iframe>
         <iframe id="cross" src="${crossBase}/frame-content" style="width:600px;height:200px;border:0"></iframe>`, { headers: { 'content-type': 'text/html' } });
+    if (path === '/two-buttons') return new Response(`<button onclick="document.body.dataset.clicked='target'">Target</button><button onclick="document.body.dataset.clicked='wrong'">Wrong</button>`, { headers: { 'content-type': 'text/html' } });
+    if (path === '/scaled-frame') return new Response(`<iframe id="scaled" src="/two-buttons" style="transform:scale(0.5);transform-origin:0 0;width:800px;height:300px;border:0"></iframe>`, { headers: { 'content-type': 'text/html' } });
+    if (path === '/done') return new Response('<h1>Done</h1>', { headers: { 'content-type': 'text/html' } });
+    if (path === '/fields') return new Response(`<label>Due <input id="due" type="date" value="2026-09-29"></label>
+        <label>Letter <select id="letter"><option value="a">A</option><option value="b-disabled" disabled>B</option><option value="b-enabled">B</option>
+        <optgroup label="Closed" disabled><option value="c">C</option></optgroup><option value="shown" label="Displayed label">Internal text</option></select></label>
+        <label>Go <select id="go" onchange="location.href='/done'"><option value="">Stay</option><option value="done">Done page</option></select></label>
+        <label>Notes <input id="notes"></label>
+        ${new URL(request.url).searchParams.has('covered') ? '<div style="position:fixed;inset:0;background:rgba(0,0,0,.01)"></div>' : ''}`, { headers: { 'content-type': 'text/html' } });
     if (path === '/covered-frame') return new Response(`<iframe id="same" src="/frame-content" style="width:600px;height:200px;border:0"></iframe>
         <div style="position:absolute;left:0;top:0;width:600px;height:200px;background:rgba(0,0,0,.01)"></div>`, { headers: { 'content-type': 'text/html' } });
     if (new URL(request.url).pathname === '/dialog-select') return new Response(`<button id="open">Compose</button><dialog id="compose">
@@ -145,6 +154,84 @@ test('native selects and date inputs inside frames are set by reference, and inv
     } finally { await agent.stop(); }
 });
 
+
+test('controls inside a transformed frame are not grounded, so a scaled mapping cannot click the wrong button', async () => {
+    const { agent, connector, page } = await fixture();
+    try {
+        await connector.getHarness().navigate(`${base}/scaled-frame`);
+        agent.models.partialAct = async ctx => {
+            const labels = controls(ctx).controls.map(item => item.label);
+            assert.ok(!labels.includes('Target') && !labels.includes('Wrong'), 'the transformed frame is excluded');
+            return done();
+        };
+        await agent.act('Observe the scaled frame');
+        assert.equal(await page.frameLocator('#scaled').locator('body').getAttribute('data-clicked'), null);
+    } finally { await agent.stop(); }
+});
+
+test('field actions validate before changing anything, choose eligible options by effective label, and report changes that navigate', async () => {
+    const { agent, connector, page } = await fixture();
+    try {
+        await connector.getHarness().navigate(`${base}/fields`);
+        type Field = Controls['controls'][number] & { value?: string; options?: string[] };
+        const find = (snapshot: Controls, label: string) => snapshot.controls.find(item => item.label === label) as Field;
+        const observed: unknown[] = [];
+        const steps: ((snapshot: Controls) => ReturnType<typeof plan>)[] = [
+            snapshot => {
+                assert.deepEqual(find(snapshot, 'Letter').options, ['A', 'B', 'Displayed label'], 'disabled options and disabled groups are omitted; labels are effective labels');
+                return plan({ variant: 'browser:fill', ref: find(snapshot, 'Due').ref, value: '09/30/2026' });
+            },
+            snapshot => plan({ variant: 'browser:select', ref: find(snapshot, 'Letter').ref, option: 'B' }),
+            snapshot => plan({ variant: 'browser:select', ref: find(snapshot, 'Letter').ref, option: 'Displayed label' }),
+            snapshot => plan({ variant: 'browser:select', ref: find(snapshot, 'Go').ref, option: 'Done page' }),
+        ];
+        let calls = 0;
+        agent.models.partialAct = async ctx => {
+            if (calls === 1) observed.push(await page.locator('#due').inputValue());
+            if (calls === 2) observed.push(await page.locator('#letter').inputValue());
+            if (calls === 3) observed.push(await page.locator('#letter').inputValue());
+            if (calls === 4) observed.push(new URL(page.url()).pathname, ctx.observationContent.flatMap(message => message.content)
+                .some(part => typeof part === 'string' && part.includes('"changed": true') && part.includes('Done page')));
+            const step = steps[calls++];
+            return step ? step(controls(ctx)) : done();
+        };
+        await agent.act('Set the fields');
+        assert.deepEqual(observed, ['2026-09-29', 'b-enabled', 'shown', '/done', true],
+            'a malformed date leaves the old value; the enabled B and the displayed label are chosen; a navigating change reports success');
+    } finally { await agent.stop(); }
+});
+
+test('a rejected field action stops the batch, and a covered field is not changed', async () => {
+    const { agent, connector, page } = await fixture();
+    try {
+        await connector.getHarness().navigate(`${base}/fields?covered`);
+        await page.locator('#notes').focus();
+        let calls = 0;
+        agent.models.partialAct = async ctx => {
+            const due = controls(ctx).controls.find(item => item.label === 'Due');
+            if (++calls === 1) return plan({ variant: 'browser:fill', ref: due!.ref, value: '2026-10-01' }, { variant: 'keyboard:type', content: 'TYPED' });
+            return done();
+        };
+        await agent.act('Change the due date');
+        assert.equal(await page.locator('#due').inputValue(), '2026-09-29', 'the covered field is unchanged');
+        assert.equal(await page.locator('#notes').inputValue(), '', 'typing after the rejection did not run');
+    } finally { await agent.stop(); }
+});
+
+test('ambiguity counts every eligible control, including ones beyond the list limit', async () => {
+    const buttons = ['<button>Duplicate</button>', ...Array.from({ length: 63 }, (_, i) => `<button>Unique ${i}</button>`), '<button>Duplicate</button>'];
+    const { agent } = await fixture(`<style>button{min-width:60px!important;min-height:20px!important;margin:0}</style>${buttons.join('')}`);
+    try {
+        agent.models.partialAct = async ctx => {
+            const snapshot = controls(ctx);
+            assert.equal(snapshot.truncated, true);
+            assert.equal(snapshot.controls[0].label, 'Duplicate');
+            assert.equal(snapshot.controls[0].ambiguous, true, 'the duplicate beyond the limit still makes the first ambiguous');
+            return done();
+        };
+        await agent.act('Observe the buttons');
+    } finally { await agent.stop(); }
+});
 
 test('a select inside a modal dialog is listed with its options and set by reference', async () => {
     const { agent, connector, page } = await fixture();
@@ -715,5 +802,5 @@ test('switching the active page cannot redirect an old reference into the new pa
 
 try {
     browser = await chromium.launch({ headless: true });
-    for (const entry of cases) { await entry.check(); console.log(`PASS: ${entry.name}`); }
+    for (const entry of cases.filter(test => test.name.includes(process.argv[2] ?? ''))) { await entry.check(); console.log(`PASS: ${entry.name}`); }
 } finally { await browser!?.close(); server.stop(true); crossServer.stop(true); }

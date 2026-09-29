@@ -25,7 +25,7 @@ import { isClaude } from '@/ai/util';
 import { retryOnError } from '@/common';
 import { renderContentParts } from '@/memory/rendering';
 import { MultiModelHarness } from '@/ai/multiModelHarness';
-import { GROUNDED_CLICK_REJECTED } from '@/web/groundedControls';
+import { GROUNDED_REJECTIONS } from '@/web/groundedControls';
 
 
 export interface AgentOptions {
@@ -572,7 +572,7 @@ export class Agent {
                 // Preserve the current page when an update fails. Successful
                 // earlier writes remain; the next plan sees the failure result.
                 if (action.variant === 'memory:note' && (result as { saved?: unknown })?.saved === false) break;
-                if (result === GROUNDED_CLICK_REJECTED) break;
+                if (GROUNDED_REJECTIONS.has(result)) break;
 
                 // const postActionScreenshot = await this.screenshot();
                 // const actionDescriptor: ActionDescriptor = { ...action, screenshot: postActionScreenshot.image } as ActionDescriptor;

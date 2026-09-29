@@ -3,7 +3,10 @@ import type { Frame } from 'playwright';
 // Native select popups render outside the page, so screenshots never show their options.
 // Chrome 135+ draws a base-select picker in the page's top layer, where screenshots include it.
 // Multi-selects and list boxes already render in the page.
-const CSS = 'select:not([multiple]):not([size]), select:not([multiple]):not([size])::picker(select) { appearance: base-select; }';
+// Dropdowns are single-choice selects without a list-box size. !important outranks author and inline
+// styles such as appearance: none, which would otherwise keep the native, unscreenshotted popup.
+const DROPDOWNS = ['select:not([multiple]):not([size])', 'select:not([multiple])[size="0"]', 'select:not([multiple])[size="1"]'];
+const CSS = `${DROPDOWNS.join(', ')}, ${DROPDOWNS.map(selector => `${selector}::picker(select)`).join(', ')} { appearance: base-select !important; }`;
 
 // A constructed stylesheet adds no DOM node, so the page's own markup is unchanged.
 function install(css: string) {

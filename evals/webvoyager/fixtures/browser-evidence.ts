@@ -31,6 +31,9 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', idleTimeout: 0, fetch
         <select id="to" style="width:400px;height:40px"><option value="">Choose a recipient</option><option value="ellis">Dr. Noah Ellis</option><option value="brooks">Dr. Elena Brooks</option></select></dialog>
         <script>document.getElementById("open").onclick=()=>compose.${url.searchParams.get('open') ?? 'showModal'}()</script>`, { headers: { 'content-type': 'text/html' } });
     }
+    if (url.pathname === '/dropdowns') return new Response(`<style>#styled{appearance:none}</style>
+        <select id="sized" size="1" style="width:200px;height:30px;margin:20px"><option>First</option><option>Second</option></select>
+        <select id="styled" style="width:200px;height:30px;margin:20px;appearance:none"><option>First</option><option>Second</option></select>`, { headers: { 'content-type': 'text/html' } });
     if (url.pathname === '/popup') return new Response('<h1>Attachment</h1><a id="attachment" download href="/download">Download</a><script>attachment.click()</script>', { headers: { 'content-type': 'text/html' } });
     const pagination = url.pathname === '/pagination';
     const href = url.pathname === '/pending' ? `/slow?id=${url.searchParams.get('id')}`
@@ -210,6 +213,20 @@ for (const variant of ['', '?transformed', '?transformed&open=show']) test(`sele
         await harness.click({ x, y }, { transform: false });
         assert.equal(await page.locator('#to').inputValue(), 'brooks');
     } finally { await connector.onStop(); await context.close(); }
+});
+
+test('size="1" dropdowns and author appearance:none still open an on-screen picker', async () => {
+    const { connector, page } = await fixture('/dropdowns');
+    try {
+        const harness = connector.getHarness();
+        for (const id of ['sized', 'styled']) {
+            for (let tries = 0; await page.evaluate(id => getComputedStyle(document.getElementById(id)!).appearance, id) !== 'base-select' && tries < 20; tries++) await page.waitForTimeout(100);
+            await harness.click(await point(page, `#${id}`), { transform: false });
+            const option = await page.evaluate(id => { const r = document.querySelectorAll(`#${id} option`)[1].getBoundingClientRect(); return { width: r.width, height: r.height }; }, id);
+            assert.ok(option.width > 0 && option.height > 0, `#${id} renders its options in the page`);
+            await harness.click({ x: 900, y: 700 }, { transform: false }); // Close the picker.
+        }
+    } finally { await connector.onStop(); }
 });
 
 test('switching tabs keeps other components\' frame navigation listeners', async () => {

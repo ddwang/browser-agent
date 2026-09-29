@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ElementHandle, Frame, JSHandle, Page } from 'playwright';
+import type { Frame, JSHandle, Page } from 'playwright';
 import { checkOperation, currentOperation, type Operation } from '@/common/operation';
 import type { WebHarness } from './harness';
 
@@ -8,9 +8,16 @@ export const GROUNDED_CLICK_REJECTED = Object.freeze({ clicked: false, reason: '
 
 export const GROUNDED_INPUT_REJECTED = Object.freeze({ changed: false, reason: 'target_unavailable',
     instruction: 'No value was set. Replan from the new observation; do not reuse the rejected reference.' });
+const OPTION_UNAVAILABLE = Object.freeze({ changed: false, reason: 'option_unavailable',
+    instruction: 'No value was set. Choose exactly one enabled option label from the observation.' });
+const INVALID_VALUE = Object.freeze({ changed: false, reason: 'invalid_value',
+    instruction: 'No value was set. Use the input\'s ISO format, such as yyyy-mm-dd for date, HH:MM for time, or yyyy-mm for month.' });
+/** Results that submitted nothing; the executor stops the remaining batch after any of them. */
+export const GROUNDED_REJECTIONS: ReadonlySet<unknown> = new Set([GROUNDED_CLICK_REJECTED, GROUNDED_INPUT_REJECTED, OPTION_UNAVAILABLE, INVALID_VALUE]);
+const REJECTIONS = { target_unavailable: GROUNDED_INPUT_REJECTED, option_unavailable: OPTION_UNAVAILABLE, invalid_value: INVALID_VALUE };
 
-// Native form controls whose pickers render outside the page screenshot.
-const FIELDS = 'select,input[type="date"],input[type="time"],input[type="datetime-local"],input[type="month"],input[type="week"]';
+// Single-choice native form controls whose pickers render outside the page screenshot.
+const FIELDS = 'select:not([multiple]),input[type="date"],input[type="time"],input[type="datetime-local"],input[type="month"],input[type="week"]';
 
 /** A deliberately small, current-viewport subset of one frame; this is not an accessibility tree. */
 function captureControls(fields: string) {
@@ -24,6 +31,9 @@ function captureControls(fields: string) {
         + '[role~="combobox"],[role~="listbox"],[role~="textbox"],[role~="searchbox"],'
         + '[role~="slider"],[role~="spinbutton"],[role~="scrollbar"],[role~="tab"],[role~="treeitem"]';
     const text = (value: string | null | undefined) => (value ?? '').replace(/\s+/g, ' ').trim();
+    // Options a person could choose: not disabled directly or through their group, and not hidden.
+    const eligible = (select: HTMLSelectElement) => Array.from(select.options)
+        .filter(option => !option.disabled && !(option.parentElement as HTMLOptGroupElement | null)?.matches('optgroup:disabled') && !option.hidden);
     function describe(node: Element) {
         const field = node.matches(fields) ? node as HTMLSelectElement | HTMLInputElement : null;
         if (!(field || node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement)
@@ -50,9 +60,8 @@ function captureControls(fields: string) {
         const enabled = !node.matches(':disabled') && !node.closest('[aria-disabled="true"]') && !(field as HTMLInputElement | null)?.readOnly;
         const role = field instanceof HTMLSelectElement ? 'select' : field ? (field as HTMLInputElement).type
             : node.getAttribute('role') || (node instanceof HTMLAnchorElement ? 'link' : 'button');
-        const value = field instanceof HTMLSelectElement ? text(field.selectedOptions[0]?.text) : field ? field.value : undefined;
-        const options = field instanceof HTMLSelectElement
-            ? Array.from(field.options).filter(option => !option.disabled && !option.hidden).slice(0, 40).map(option => text(option.text)) : undefined;
+        const value = field instanceof HTMLSelectElement ? text(field.selectedOptions[0]?.label) : field ? field.value : undefined;
+        const options = field instanceof HTMLSelectElement ? eligible(field).slice(0, 40).map(option => text(option.label)) : undefined;
         // Keep activation attributes and context identity local, not in diagnostics.
         const identity = JSON.stringify([label, context, role, enabled, node.getAttribute('name'),
             node.getAttribute('href'), node instanceof HTMLAnchorElement ? node.href : null,
@@ -103,9 +112,35 @@ function captureControls(fields: string) {
             }
             return { x, y };
         },
-        field(index: number) {
-            const resolved = current(index);
-            return resolved && resolved.entry.node.matches(fields) ? resolved.entry.node : null;
+        // Checks a field change without making it: the reference is current, the field receives
+        // input at its center, and the value is one the field accepts.
+        check(index: number, kind: 'select' | 'fill', value: string) {
+            const at = this.point(index);
+            const node = entries[index]?.node;
+            if (!at || !node?.matches(fields) || (kind === 'select') !== node instanceof HTMLSelectElement) return { ok: false as const, reason: 'target_unavailable' as const };
+            if (node instanceof HTMLSelectElement) {
+                const matches = eligible(node).filter(option => text(option.label) === value);
+                return matches.length === 1 ? { ok: true as const, point: at, option: matches[0].index } : { ok: false as const, reason: 'option_unavailable' as const };
+            }
+            // A detached input of the same type sanitizes an invalid value to empty, without touching the page.
+            const probe = document.createElement('input');
+            probe.type = (node as HTMLInputElement).type;
+            probe.value = value;
+            return probe.value === value ? { ok: true as const, point: at, option: -1 } : { ok: false as const, reason: 'invalid_value' as const };
+        },
+        // Rechecks and changes the field in one step, through the native setter, then reports its value.
+        apply(index: number, kind: 'select' | 'fill', value: string) {
+            const checked = this.check(index, kind, value);
+            if (!checked.ok) return checked;
+            const node = entries[index].node;
+            if (node instanceof HTMLSelectElement) {
+                Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'selectedIndex')!.set!.call(node, checked.option);
+            } else {
+                Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(node, value);
+            }
+            node.dispatchEvent(new Event('input', { bubbles: true }));
+            node.dispatchEvent(new Event('change', { bubbles: true }));
+            return { ok: true as const, value: node instanceof HTMLSelectElement ? text(node.selectedOptions[0]?.label) : (node as HTMLInputElement).value };
         },
     };
 }
@@ -126,12 +161,19 @@ async function frameArea(frame: Frame, viewport: Rect): Promise<Rect & { dx: num
     try {
         const box = await owner.evaluate(node => {
             const element = node as HTMLElement;
+            // A transformed or zoomed iframe doesn't map its coordinates by offset; don't ground its controls.
+            for (let ancestor: Element | null = element; ancestor; ancestor = ancestor.parentElement) {
+                const style = getComputedStyle(ancestor);
+                if (style.transform !== 'none' || style.scale !== 'none' || style.rotate !== 'none'
+                    || style.translate !== 'none' || (style.zoom && style.zoom !== '1')) return null;
+            }
             const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
             const left = rect.left + element.clientLeft + parseFloat(style.paddingLeft);
             const top = rect.top + element.clientTop + parseFloat(style.paddingTop);
             return { left, top, width: element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
                 height: element.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) };
         });
+        if (!box) return null;
         const dx = outer.dx + box.left, dy = outer.dy + box.top;
         const x = Math.max(outer.x, dx), y = Math.max(outer.y, dy);
         const width = Math.min(outer.x + outer.width, dx + box.width) - x, height = Math.min(outer.y + outer.height, dy + box.height) - y;
@@ -173,8 +215,9 @@ export class GroundedControls {
         const size = page.viewportSize() ?? await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
         const viewport = { x: 0, y: 0, ...size };
         const handles: JSHandle<Capture>[] = [], entries: Entry[] = [];
-        const listed: { role: string; label: string; context: string; enabled: boolean; value?: string; options?: string[] }[] = [];
-        let truncated = false, bytes = 0;
+        type Listed = { role: string; label: string; context: string; enabled: boolean; value?: string; options?: string[] };
+        const candidates: { frame: Frame; handle: JSHandle<Capture>; index: number; control: Listed }[] = [];
+        let truncated = false;
         const prefix = randomUUID();
         this.snapshot = { handles, entries, page, operation, prefix };
         for (const frame of page.frames()) {
@@ -191,19 +234,24 @@ export class GroundedControls {
                 const x = area.dx + box.x, y = area.dy + box.y;
                 // Only controls fully inside the frame's visible area of the main viewport.
                 if (x < area.x || y < area.y || x + box.width > area.x + area.width || y + box.height > area.y + area.height) return;
-                bytes += new TextEncoder().encode(JSON.stringify(control)).length + 100; // Reserve reference/JSON overhead.
-                if (listed.length === 64 || bytes > 16_000) { truncated = true; return; }
-                listed.push(control);
-                entries.push({ frame, handle, index, role: control.role });
+                candidates.push({ frame, handle, index, control });
             });
         }
         checkOperation();
-        const key = (control: { role: string; label: string; context: string }) => JSON.stringify([control.role, control.label, control.context]);
+        // Count descriptions before limiting the list, so truncation can't hide a duplicate.
+        const key = (control: Listed) => JSON.stringify([control.role, control.label, control.context]);
         const counts = new Map<string, number>();
-        for (const control of listed) counts.set(key(control), (counts.get(key(control)) ?? 0) + 1);
-        listed.forEach((control, index) => { entries[index].ambiguous = counts.get(key(control))! > 1; });
-        return { scope, truncated,
-            controls: listed.map((control, index) => ({ ref: `${prefix}:${index}`, ...control, ambiguous: entries[index].ambiguous })) };
+        for (const { control } of candidates) counts.set(key(control), (counts.get(key(control)) ?? 0) + 1);
+        const listed: (Listed & { ambiguous: boolean })[] = [];
+        let bytes = 0;
+        for (const { frame, handle, index, control } of candidates) {
+            bytes += new TextEncoder().encode(JSON.stringify(control)).length + 100; // Reserve reference/JSON overhead.
+            if (listed.length === 64 || bytes > 16_000) { truncated = true; break; }
+            const ambiguous = counts.get(key(control))! > 1;
+            listed.push({ ...control, ambiguous });
+            entries.push({ frame, handle, index, role: control.role, ambiguous });
+        }
+        return { scope, truncated, controls: listed.map((control, index) => ({ ref: `${prefix}:${index}`, ...control })) };
     }
 
     private entry(ref: string) {
@@ -232,35 +280,27 @@ export class GroundedControls {
     }
 
     /** Sets a native select or date-like input through the DOM, where its picker can't be seen. */
-    async setValue(harness: WebHarness, ref: string, value: string, kind: 'select' | 'fill'): Promise<{ changed: true; value: string } | typeof GROUNDED_INPUT_REJECTED | { changed: false; reason: string; instruction: string }> {
+    async setValue(harness: WebHarness, ref: string, value: string, kind: 'select' | 'fill'): Promise<{ changed: true; value: string } | (typeof REJECTIONS)[keyof typeof REJECTIONS]> {
         const found = this.entry(ref);
         if (!found || (kind === 'select') !== (found.entry.role === 'select')) return GROUNDED_INPUT_REJECTED;
         const { snapshot, entry } = found;
-        if (this.snapshot !== snapshot || harness.page !== snapshot.page) return GROUNDED_INPUT_REJECTED;
-        let element: ElementHandle | null = null;
+        const args = { index: entry.index, kind, value };
         try {
-            element = (await entry.handle.evaluateHandle((state, index) => state.field(index), entry.index)).asElement();
+            // Nothing has changed yet, so any failure here is a rejection.
             checkOperation();
-            if (!element) return GROUNDED_INPUT_REJECTED;
-            if (kind === 'select') {
-                const options = await element.evaluate((select, wanted) => Array.from((select as HTMLSelectElement).options)
-                    .filter(option => !option.disabled && option.text.replace(/\s+/g, ' ').trim() === wanted).length, value);
-                if (options !== 1) return { changed: false, reason: 'option_unavailable',
-                    instruction: 'No value was set. Choose exactly one enabled option label from the observation.' };
-                await element.selectOption({ label: value }, { timeout: 2000 });
-            } else {
-                await element.fill(value, { timeout: 2000 });
-            }
-            const now = await element.evaluate(field => field instanceof HTMLSelectElement
-                ? field.selectedOptions[0]?.text.replace(/\s+/g, ' ').trim() ?? '' : (field as HTMLInputElement).value);
-            await harness.waitForStability();
-            return { changed: true, value: now };
-        } catch (error) {
-            checkOperation();
-            const message = error instanceof Error ? error.message : String(error);
-            return /malformed value/i.test(message) ? { changed: false, reason: 'invalid_value',
-                instruction: 'No value was set. Use the input\'s ISO format, such as yyyy-mm-dd for date, HH:MM for time, or yyyy-mm for month.' }
-                : GROUNDED_INPUT_REJECTED;
-        } finally { await element?.dispose().catch(() => {}); }
+            if (this.snapshot !== snapshot || harness.page !== snapshot.page) return GROUNDED_INPUT_REJECTED;
+            const area = await frameArea(entry.frame, UNCLIPPED);
+            const checked = area && await entry.handle.evaluate((state, { index, kind, value }) => state.check(index, kind, value), args);
+            if (!area || !checked) return GROUNDED_INPUT_REJECTED;
+            if (!checked.ok) return REJECTIONS[checked.reason];
+            if (!await frameVisibleAt(entry.frame, area.dx + checked.point.x, area.dy + checked.point.y)) return GROUNDED_INPUT_REJECTED;
+        } catch { checkOperation(); return GROUNDED_INPUT_REJECTED; }
+        checkOperation();
+        if (this.snapshot !== snapshot) return GROUNDED_INPUT_REJECTED;
+        // The field may change from here, so failures propagate as unknown outcomes rather than rejections.
+        const applied = await entry.handle.evaluate((state, { index, kind, value }) => state.apply(index, kind, value), args);
+        if (!applied.ok) return REJECTIONS[applied.reason];
+        await harness.waitForStability();
+        return { changed: true, value: applied.value };
     }
 }
