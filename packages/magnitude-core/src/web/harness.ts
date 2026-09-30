@@ -184,10 +184,11 @@ export class WebHarness { // implements StateComponent
                 const chunkDelay = totalTextDelay * chunkProportion;
                 const chunkCharDelay = chunkDelay / chunk.length;
                 if (!this.options.hostOnlyAuthentication) await this.page.keyboard.type(chunk, {delay: chunkCharDelay});
-                // Host-only authentication: check before every character, because focus can move while typing.
+                // Host-only authentication: pace first, then check focus immediately before sending each character.
                 else for (const character of chunk) {
+                    await operationSleep(chunkCharDelay);
                     await this.refuseCredentialField();
-                    await this.page.keyboard.type(character, {delay: chunkCharDelay});
+                    await this.page.keyboard.type(character);
                 }
             }
         }
