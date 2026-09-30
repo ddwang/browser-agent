@@ -33,7 +33,11 @@ export function plannerSchema(vocabulary: ActionDefinition<any>[]): Schema {
 // in descriptions and validate the response against the original Zod schema.
 // Open maps, recursive schemas, and unknown schema constructs use the existing
 // BAML path instead of silently changing the caller's data shape.
-export function anthropicOutputFormat(schema: Schema): { type: 'json_schema'; schema: JsonSchema } | undefined {
+// Bounds Baseten's constrained decoding enforces, verified live; keeping them prevents
+// out-of-range values such as negative note sources, instead of repairing them.
+export const BASETEN_ENFORCED = new Set(['minimum', 'maximum', 'minItems', 'maxItems']);
+
+export function anthropicOutputFormat(schema: Schema, enforced: ReadonlySet<string> = new Set()): { type: 'json_schema'; schema: JsonSchema } | undefined {
     const root = zodToJsonSchema(schema) as JsonSchema;
     const constraints = new Set(['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'maxLength', 'pattern', 'format', 'maxItems', 'uniqueItems']);
     const annotations = new Set(['$schema', 'definitions', '$defs', 'title', 'description', 'default']);
@@ -50,7 +54,9 @@ export function anthropicOutputFormat(schema: Schema): { type: 'json_schema'; sc
         const result: JsonSchema = {};
         const notes: string[] = [];
         for (const [key, value] of Object.entries(input)) {
-            if (constraints.has(key) || (key === 'minItems' && value > 1)) {
+            if (enforced.has(key)) {
+                result[key] = value;
+            } else if (constraints.has(key) || (key === 'minItems' && value > 1)) {
                 notes.push(`${key}: ${JSON.stringify(value)}`);
             } else if (key === 'properties') {
                 result.properties = Object.fromEntries(Object.entries(value).map(([name, property]) => [name, convert(property as JsonSchema, path)]));

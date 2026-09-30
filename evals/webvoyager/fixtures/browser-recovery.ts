@@ -39,6 +39,13 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch(request) {
             ? `<textarea></textarea><select>${Array.from({ length: 12 }, (_, i) => `<option value="${i}">Choice ${i}</option>`).join('')}</select>${Array.from({ length: 8 }, () => '<input>').join('')}`
             : panels}<button style="position:fixed;left:10px;top:650px">Unchanged button</button>`, { headers: { 'content-type': 'text/html' } });
     }
+    if (path === '/sign-in') return new Response(`<p>Test credentials: mira.lane / synthetic-only / 246810</p>
+        <label>User ID <input id="user" autocomplete="off"></label><label>Password <input id="pass" type="password"></label>
+        <label>Verification code <input id="code" inputmode="numeric" autocomplete="one-time-code"></label><label>Notes <input id="notes"></label>
+        <iframe id="frame" srcdoc="<label>Password <input id='inner' type='password'></label>"></iframe>
+        <label>Search <input id="hop" oninput="pass.focus()"></label><div id="vault" style="display:inline-block"></div>
+        <div id="editableVault" contenteditable="true" style="display:inline-block"></div><div id="editor" contenteditable="true" style="min-width:100px">Draft: </div>
+        <script>for (const host of [vault, editableVault]) host.attachShadow({ mode: 'closed' }).innerHTML = '<input type="password" oninput="this.getRootNode().host.dataset.value = this.value">';</script>`, { headers: { 'content-type': 'text/html' } });
     const limited = path === '/limited' || (path === '/cooldown' && cooldownRequests++ === 0);
     const html = limited ? '<h1>Too many requests</h1>'
         : path === '/subscription' ? '<h1>Subscribe to Example to continue</h1>'
@@ -134,6 +141,55 @@ test('Escape dismisses a native dialog through the exposed agent action', async 
         assert.deepEqual(events, ['actionDone', 'observationsRecorded']);
         assert.ok((await agent.memory.toJSON()).observations.some(observation => observation.source === 'action:taken:keyboard:escape'));
     } finally { await connector.onStop(); }
+});
+
+test('host-only authentication stops typing into password and one-time-code fields, including after a tab', async () => {
+    for (const hostOnlyAuthentication of [true, false]) {
+        const context = await browser.newContext({ viewport: { width: 1024, height: 768 } });
+        const connector = new BrowserConnector({ browser: { context }, url: `http://127.0.0.1:${server.port}/sign-in`, hostOnlyAuthentication });
+        await connector.onStart();
+        const agent = new Agent({ connectors: [connector], telemetry: false, llm: { provider: 'anthropic', options: { model: 'fixture', apiKey: 'unused-no-model-calls' } } });
+        const page = connector.getHarness().page;
+        const type = async (selector: string, content: string, frame = false) => {
+            await (frame ? page.frameLocator('#frame').locator(selector) : page.locator(selector)).focus();
+            return agent.exec({ variant: 'keyboard:type', content }, agent.memory);
+        };
+        try {
+            assert.equal((await connector.getInstructions())?.includes('The host reserves authentication'), hostOnlyAuthentication);
+            await type('#notes', 'visible note');
+            assert.equal(await page.locator('#notes').inputValue(), 'visible note', 'ordinary fields still take typing');
+            const attempts: [string, string, boolean?][] = [['#user', 'mira.lane<tab>synthetic-only'], ['#code', '246810'], ['#inner', 'synthetic-only', true]];
+            for (const [selector, content, frame] of attempts) {
+                if (hostOnlyAuthentication) {
+                    await assert.rejects(type(selector, content, frame), (error: unknown) => error instanceof BrowserBlockedError && error.block.reason === 'authentication');
+                } else await type(selector, content, frame);
+            }
+            const values = [await page.locator('#user').inputValue(), await page.locator('#pass').inputValue(),
+                await page.locator('#code').inputValue(), await page.frameLocator('#frame').locator('#inner').inputValue()];
+            // The user ID is an ordinary text field, so it's typed before the tab reaches the password.
+            assert.deepEqual(values, hostOnlyAuthentication ? ['mira.lane', '', '', ''] : ['mira.lane', 'synthetic-only', '246810', 'synthetic-only']);
+            await page.locator('#pass').fill('');
+            // A page handler moves focus into the password after the first character.
+            const hop = type('#hop', 'abcdef');
+            if (hostOnlyAuthentication) await assert.rejects(hop, (error: unknown) => error instanceof BrowserBlockedError && error.block.reason === 'authentication');
+            else await hop;
+            assert.deepEqual([await page.locator('#hop').inputValue(), await page.locator('#pass').inputValue()],
+                ['a', hostOnlyAuthentication ? '' : 'bcdef'], 'no character reaches the password while guarded');
+            // A password in a closed shadow root can't be inspected, so text bound for it is cancelled,
+            // including when the host is itself contenteditable.
+            for (const host of ['#vault', '#editableVault']) {
+                await page.locator(host).click();
+                const hidden = agent.exec({ variant: 'keyboard:type', content: 'synthetic-only' }, agent.memory);
+                if (hostOnlyAuthentication) await assert.rejects(hidden, (error: unknown) => error instanceof BrowserBlockedError && error.block.reason === 'authentication');
+                else await hidden;
+                assert.equal(await page.locator(host).getAttribute('data-value'), hostOnlyAuthentication ? null : 'synthetic-only', host);
+            }
+            // Ordinary contenteditable text still goes through.
+            await page.locator('#editor').click();
+            await agent.exec({ variant: 'keyboard:type', content: 'notes' }, agent.memory);
+            assert.match(await page.locator('#editor').innerText(), /notes/);
+        } finally { await connector.onStop(); }
+    }
 });
 
 test('subscription headings are distinct from rate limits', async () => {

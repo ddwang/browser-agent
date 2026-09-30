@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { z } from 'zod';
 import { createAction } from '@/actions';
 import { webActions } from '@/actions/webActions';
-import { anthropicOutputFormat, plannerSchema, usesStructuredOutput } from './structuredOutput';
+import { anthropicOutputFormat, BASETEN_ENFORCED, plannerSchema, usesStructuredOutput } from './structuredOutput';
 
 test('Anthropic native output is automatic only for known supported direct models', () => {
     for (const model of ['claude-haiku-4-5-20251001', 'claude-sonnet-5', 'claude-opus-4-6']) {
@@ -49,6 +49,19 @@ test('wire schema uses existing action definitions, including primitive and nest
     expect(schema.properties.actions.items.anyOf[1].properties.input.type).toBe('string');
     expect(() => plannerSchema([])).toThrow('at least one action');
     expect(anthropicOutputFormat(plannerSchema([...webActions]))?.schema.properties.actions.items.anyOf).toHaveLength(webActions.length);
+});
+
+test('Baseten schemas keep the bounds its decoder enforces, including note source limits', () => {
+    const report = createAction({ name: 'report', schema: z.string(), resolver: async () => {} });
+    const sources = (enforced?: ReadonlySet<string>) => anthropicOutputFormat(plannerSchema([report]), enforced)!
+        .schema.properties.memory_updates.items.properties.sources;
+    expect(sources(BASETEN_ENFORCED)).toMatchObject({ minItems: 1, maxItems: 8, items: { type: 'integer', minimum: 0 } });
+    // Anthropic's structured outputs reject these keywords, so they stay descriptive there.
+    expect(sources().maxItems).toBeUndefined();
+    expect(sources().items.minimum).toBeUndefined();
+    expect(sources().items.description).toContain('minimum: 0');
+    const format = anthropicOutputFormat(z.object({ text: z.string().max(4) }), BASETEN_ENFORCED)!;
+    expect(format.schema.properties.text.maxLength).toBeUndefined();
 });
 
 test('unsupported value constraints stay in descriptions and the original validator', () => {

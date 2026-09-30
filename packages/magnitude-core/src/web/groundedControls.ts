@@ -44,7 +44,8 @@ function captureControls(fields: string) {
         const group = option.parentElement instanceof HTMLOptGroupElement ? option.parentElement : null;
         return !option.disabled && !concealed(option) && !(group && (group.disabled || concealed(group)));
     });
-    function describe(node: Element) {
+    // inView: false checks identity and eligibility regardless of where the node has scrolled.
+    function describe(node: Element, inView = true) {
         const field = node.matches(fields) ? node as HTMLSelectElement | HTMLInputElement : null;
         const submit = node instanceof HTMLInputElement && node.type === 'submit' ? node : null;
         if (!(field || submit || node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement)
@@ -53,8 +54,9 @@ function captureControls(fields: string) {
         if (node instanceof HTMLButtonElement && node.type === 'reset') return null;
         if (node instanceof HTMLAnchorElement && !/^https?:$/.test(node.protocol)) return null;
         const box = node.getBoundingClientRect();
-        if (box.width <= 0 || box.height <= 0 || box.left < 0 || box.top < 0
-            || box.right > innerWidth || box.bottom > innerHeight) return null;
+        // At least partly in view; actions scroll a control fully into view first.
+        if (box.width <= 0 || box.height <= 0 || (inView && (box.right <= 0 || box.bottom <= 0
+            || box.left >= innerWidth || box.top >= innerHeight))) return null;
         const labelledBy = node.getAttribute('aria-labelledby');
         const label = text(labelledBy
             ? labelledBy.split(/\s+/).map(id => document.getElementById(id)?.textContent ?? '').join(' ')
@@ -106,10 +108,10 @@ function captureControls(fields: string) {
         if (state) entries.push({ node, state });
     }
     // Re-check a reference against the node it was captured from, without dispatching anything.
-    function current(index: number) {
+    function current(index: number, inView = true) {
         const entry = entries[index];
         if (document !== documentAtCapture || location.href !== url || !entry) return null;
-        const state = describe(entry.node);
+        const state = describe(entry.node, inView);
         if (!state || !state.enabled || state.container !== entry.state.container
             || state.form !== entry.state.form || state.identity !== entry.state.identity) return null;
         return { entry, state };
@@ -118,6 +120,12 @@ function captureControls(fields: string) {
         truncated,
         controls: entries.map(({ state }) => ({ role: state.role, label: state.label, context: state.context, enabled: state.enabled,
             ...(state.value !== undefined ? { value: state.value } : {}), ...(state.options ? { options: state.options } : {}), box: state.box })),
+        // Scrolls a still-current control fully into view, including through enclosing frames, even if an
+        // earlier action in the batch scrolled it away. 'nearest' leaves a fully visible control where it is.
+        // The in-view checks run afterward, before any input.
+        reveal(index: number) {
+            current(index, false)?.entry.node.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+        },
         point(index: number) {
             const resolved = current(index);
             if (!resolved) return null;
@@ -224,9 +232,8 @@ type Snapshot = { handles: JSHandle<Capture>[]; entries: Entry[]; page: Page; op
 
 /** One disposable snapshot per frame, owned by the operation that observed it. No DOM attributes are injected. */
 export class GroundedControls {
-    // The latest snapshot, preceded by the ones observed since the plan began, when only field changes happened in between.
+    // Every snapshot observed since the plan began; the latest is last. Refs stay usable for the whole batch.
     private snapshots: Snapshot[] = [];
-    private fieldChanged = false;
 
     async clear(): Promise<void> {
         await this.release(this.snapshots.splice(0));
@@ -242,12 +249,12 @@ export class GroundedControls {
     }
 
     async observe(page: Page) {
-        // A successful select or fill keeps earlier refs usable for the rest of the batch; any other action expires them.
-        if (!this.fieldChanged) await this.clear();
-        this.fieldChanged = false;
         checkOperation();
         const scope = 'viewport-links-buttons-and-native-fields';
         const operation = currentOperation();
+        // Refs belong to one operation; keep earlier snapshots of this one until the next plan.
+        await this.release(this.snapshots.filter(snapshot => snapshot.operation !== operation));
+        this.snapshots = this.snapshots.filter(snapshot => snapshot.operation === operation);
         if (!operation) return { controls: [], truncated: false, scope };
         const size = page.viewportSize() ?? await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
         const viewport = { x: 0, y: 0, ...size };
@@ -269,8 +276,8 @@ export class GroundedControls {
             truncated ||= data.truncated;
             data.controls.forEach(({ box, ...control }, index) => {
                 const x = area.dx + box.x, y = area.dy + box.y;
-                // Only controls fully inside the frame's visible area of the main viewport.
-                if (x < area.x || y < area.y || x + box.width > area.x + area.width || y + box.height > area.y + area.height) return;
+                // Only controls at least partly inside the frame's visible area of the main viewport.
+                if (x + box.width <= area.x || y + box.height <= area.y || x >= area.x + area.width || y >= area.y + area.height) return;
                 candidates.push({ frame, handle, index, control });
             });
         }
@@ -298,10 +305,21 @@ export class GroundedControls {
         return { snapshot, entry: snapshot.entries[index] };
     }
 
+    // Scrolling changes no value, so a failure here rejects the ref without input.
+    private async reveal(harness: WebHarness, snapshot: Snapshot, entry: Entry): Promise<boolean> {
+        checkOperation();
+        if (!this.snapshots.includes(snapshot) || harness.page !== snapshot.page) return false;
+        try { await entry.handle.evaluate((state, index) => state.reveal(index), entry.index); }
+        catch { checkOperation(); return false; }
+        checkOperation();
+        return true;
+    }
+
     async click(harness: WebHarness, ref: string): Promise<boolean> {
         const found = this.entry(ref);
         if (!found) return false;
         const { snapshot, entry } = found;
+        if (!await this.reveal(harness, snapshot, entry)) return false;
         return harness.clickGrounded(async () => {
             checkOperation();
             if (!this.snapshots.includes(snapshot) || harness.page !== snapshot.page) return null;
@@ -321,6 +339,7 @@ export class GroundedControls {
         if (!found || (kind === 'select') !== (found.entry.role === 'select')) return GROUNDED_INPUT_REJECTED;
         const { snapshot, entry } = found;
         const args = { index: entry.index, kind, value };
+        if (!await this.reveal(harness, snapshot, entry)) return GROUNDED_INPUT_REJECTED;
         try {
             // Nothing has changed yet, so any failure here is a rejection.
             checkOperation();
@@ -336,7 +355,6 @@ export class GroundedControls {
         // The field may change from here, so failures propagate as unknown outcomes rather than rejections.
         const applied = await entry.handle.evaluate((state, { index, kind, value }) => state.apply(index, kind, value), args);
         if (!applied.ok) return REJECTIONS[applied.reason];
-        this.fieldChanged = true;
         await harness.waitForStability();
         return { changed: true, value: applied.value };
     }
