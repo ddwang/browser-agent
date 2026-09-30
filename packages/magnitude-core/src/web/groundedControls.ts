@@ -44,7 +44,8 @@ function captureControls(fields: string) {
         const group = option.parentElement instanceof HTMLOptGroupElement ? option.parentElement : null;
         return !option.disabled && !concealed(option) && !(group && (group.disabled || concealed(group)));
     });
-    function describe(node: Element) {
+    // inView: false checks identity and eligibility regardless of where the node has scrolled.
+    function describe(node: Element, inView = true) {
         const field = node.matches(fields) ? node as HTMLSelectElement | HTMLInputElement : null;
         const submit = node instanceof HTMLInputElement && node.type === 'submit' ? node : null;
         if (!(field || submit || node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement)
@@ -54,8 +55,8 @@ function captureControls(fields: string) {
         if (node instanceof HTMLAnchorElement && !/^https?:$/.test(node.protocol)) return null;
         const box = node.getBoundingClientRect();
         // At least partly in view; actions scroll a control fully into view first.
-        if (box.width <= 0 || box.height <= 0 || box.right <= 0 || box.bottom <= 0
-            || box.left >= innerWidth || box.top >= innerHeight) return null;
+        if (box.width <= 0 || box.height <= 0 || (inView && (box.right <= 0 || box.bottom <= 0
+            || box.left >= innerWidth || box.top >= innerHeight))) return null;
         const labelledBy = node.getAttribute('aria-labelledby');
         const label = text(labelledBy
             ? labelledBy.split(/\s+/).map(id => document.getElementById(id)?.textContent ?? '').join(' ')
@@ -107,10 +108,10 @@ function captureControls(fields: string) {
         if (state) entries.push({ node, state });
     }
     // Re-check a reference against the node it was captured from, without dispatching anything.
-    function current(index: number) {
+    function current(index: number, inView = true) {
         const entry = entries[index];
         if (document !== documentAtCapture || location.href !== url || !entry) return null;
-        const state = describe(entry.node);
+        const state = describe(entry.node, inView);
         if (!state || !state.enabled || state.container !== entry.state.container
             || state.form !== entry.state.form || state.identity !== entry.state.identity) return null;
         return { entry, state };
@@ -119,10 +120,11 @@ function captureControls(fields: string) {
         truncated,
         controls: entries.map(({ state }) => ({ role: state.role, label: state.label, context: state.context, enabled: state.enabled,
             ...(state.value !== undefined ? { value: state.value } : {}), ...(state.options ? { options: state.options } : {}), box: state.box })),
-        // Scrolls a still-current control fully into view, including through enclosing frames.
-        // 'nearest' leaves a fully visible control where it is.
+        // Scrolls a still-current control fully into view, including through enclosing frames, even if an
+        // earlier action in the batch scrolled it away. 'nearest' leaves a fully visible control where it is.
+        // The in-view checks run afterward, before any input.
         reveal(index: number) {
-            current(index)?.entry.node.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+            current(index, false)?.entry.node.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
         },
         point(index: number) {
             const resolved = current(index);

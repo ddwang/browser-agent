@@ -524,6 +524,27 @@ test('a form in an iframe whose submit button straddles the fold is filled and s
     } finally { await agent.stop(); }
 });
 
+test('a retained ref that an earlier batch action scrolled offscreen is revealed and used', async () => {
+    const { agent, page } = await fixture(`<button id="top">Top</button><label>Upper <input id="upper" type="date" style="height:20px"></label>
+        <div style="height:700px"></div><label>Lower <input id="lower" type="date" style="height:60px"></label><div style="height:2000px"></div>`);
+    try {
+        let calls = 0;
+        agent.models.partialAct = async ctx => {
+            const snapshot = controls(ctx);
+            const ref = (label: string) => snapshot.controls.find(item => item.label === label)!.ref;
+            if (++calls === 1) return plan({ variant: 'browser:fill', ref: ref('Lower'), value: '2026-10-02' },
+                { variant: 'browser:fill', ref: ref('Upper'), value: '2026-10-01' },
+                { variant: 'mouse:scroll', x: 500, y: 400, deltaX: 0, deltaY: 900 },
+                { variant: 'browser:click', ref: ref('Top') });
+            assert.ok(!JSON.stringify(ctx.observationContent).includes('target_unavailable'));
+            return done();
+        };
+        await agent.act('Set both dates, then open Top');
+        assert.deepEqual([await page.locator('#upper').inputValue(), await page.locator('#lower').inputValue()], ['2026-10-01', '2026-10-02']);
+        assert.deepEqual(await clicks(page), ['top']);
+    } finally { await agent.stop(); }
+});
+
 test('refs stay usable for the whole batch, after clicks and other actions, and expire when the next plan starts', async () => {
     const { agent, page } = await fixture('<label>Due <input id="due" type="date" value="2026-09-29"></label><button id="target">Open</button><input id="input">');
     try {

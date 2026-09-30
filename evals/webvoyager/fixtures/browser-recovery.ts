@@ -42,7 +42,9 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch(request) {
     if (path === '/sign-in') return new Response(`<p>Test credentials: mira.lane / synthetic-only / 246810</p>
         <label>User ID <input id="user" autocomplete="off"></label><label>Password <input id="pass" type="password"></label>
         <label>Verification code <input id="code" inputmode="numeric" autocomplete="one-time-code"></label><label>Notes <input id="notes"></label>
-        <iframe id="frame" srcdoc="<label>Password <input id='inner' type='password'></label>"></iframe>`, { headers: { 'content-type': 'text/html' } });
+        <iframe id="frame" srcdoc="<label>Password <input id='inner' type='password'></label>"></iframe>
+        <label>Search <input id="hop" oninput="pass.focus()"></label><div id="vault" style="display:inline-block"></div>
+        <script>vault.attachShadow({ mode: 'closed' }).innerHTML = '<input type="password" oninput="this.getRootNode().host.dataset.value = this.value">';</script>`, { headers: { 'content-type': 'text/html' } });
     const limited = path === '/limited' || (path === '/cooldown' && cooldownRequests++ === 0);
     const html = limited ? '<h1>Too many requests</h1>'
         : path === '/subscription' ? '<h1>Subscribe to Example to continue</h1>'
@@ -165,6 +167,19 @@ test('host-only authentication stops typing into password and one-time-code fiel
                 await page.locator('#code').inputValue(), await page.frameLocator('#frame').locator('#inner').inputValue()];
             // The user ID is an ordinary text field, so it's typed before the tab reaches the password.
             assert.deepEqual(values, hostOnlyAuthentication ? ['mira.lane', '', '', ''] : ['mira.lane', 'synthetic-only', '246810', 'synthetic-only']);
+            await page.locator('#pass').fill('');
+            // A page handler moves focus into the password after the first character.
+            const hop = type('#hop', 'abcdef');
+            if (hostOnlyAuthentication) await assert.rejects(hop, (error: unknown) => error instanceof BrowserBlockedError && error.block.reason === 'authentication');
+            else await hop;
+            assert.deepEqual([await page.locator('#hop').inputValue(), await page.locator('#pass').inputValue()],
+                ['a', hostOnlyAuthentication ? '' : 'bcdef'], 'no character reaches the password while guarded');
+            // A password in a closed shadow root can't be inspected, so text bound for it is cancelled.
+            await page.locator('#vault').click();
+            const hidden = agent.exec({ variant: 'keyboard:type', content: 'synthetic-only' }, agent.memory);
+            if (hostOnlyAuthentication) await assert.rejects(hidden, (error: unknown) => error instanceof BrowserBlockedError && error.block.reason === 'authentication');
+            else await hidden;
+            assert.equal(await page.locator('#vault').getAttribute('data-value'), hostOnlyAuthentication ? null : 'synthetic-only');
         } finally { await connector.onStop(); }
     }
 });
