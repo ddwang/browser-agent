@@ -324,7 +324,7 @@ test('missed clicks report the panel and a corrected click reports the pre-dispa
 test('custom controls, shadow roots, frames, and unavailable inspection preserve click dispatch', async () => {
     const { agent, connector, page } = await fixture();
     try {
-        for (const kind of ['custom', 'shadow', 'frame', 'unavailable']) {
+        for (const kind of ['custom', 'shadow', 'frame', 'transformed-frame', 'unavailable']) {
             await page.setContent('<div id="mount"></div><output id="count">0</output>');
             await page.evaluate(kind => {
                 const mount = document.querySelector('#mount')!;
@@ -335,17 +335,19 @@ test('custom controls, shadow roots, frames, and unavailable inspection preserve
                 target.setAttribute('role', kind === 'custom' ? 'SECRET_ROLE' : 'button');
                 target.addEventListener('click', () => { count.textContent = '1'; });
                 if (kind === 'shadow') mount.attachShadow({ mode: 'open' }).append(target);
-                else if (kind === 'frame') {
+                else if (kind.endsWith('frame')) {
                     const frame = document.createElement('iframe');
-                    frame.style.cssText = 'position:fixed;inset:0;width:400px;height:300px;border:0';
+                    frame.style.cssText = 'position:fixed;inset:0;width:400px;height:300px;border:0'
+                        + (kind === 'transformed-frame' ? ';transform:scale(1);transform-origin:0 0' : '');
                     mount.append(frame); frame.contentDocument!.body.append(target);
                 } else mount.append(target);
                 if (kind === 'unavailable') document.elementFromPoint = () => { throw new Error('SECRET_ERROR'); };
             }, kind);
             await agent.exec({ variant: 'mouse:click', x: 100, y: 75 }, undefined, { deadline: Date.now() + 5000 });
             const click = agent.operation!.lastClick!;
+            // A click inside a frame reports the frame's target; a transformed frame's offsets are unknown.
             assert.deepEqual(click.hit, kind === 'custom' ? { tag: null, role: null }
-                : kind === 'shadow' ? { tag: 'button', role: 'button' } : null);
+                : kind === 'shadow' || kind === 'frame' ? { tag: 'button', role: 'button' } : null, kind);
             assert.equal(click.screenshot, null, 'no screenshot from a prior operation can be attributed to this click');
             assert.equal(await page.locator('#count').innerText(), '1');
             assert.ok(!JSON.stringify(click).includes('SECRET'));

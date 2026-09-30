@@ -10,6 +10,23 @@ import { Image } from '@/memory/image';
 import EventEmitter from "eventemitter3";
 import { checkOperation, currentOperation, drainAll, measureOperation, operationSleep, type Operation, type BrowserClickDiagnostics } from '@/common/operation';
 import { BrowserBlockedError } from './recovery';
+import { frameArea, frameVisibleAt, UNCLIPPED } from './groundedControls';
+
+// The element at a point in one document, through open shadow roots. frame means the point lands in a child frame.
+function inspectPoint({ x, y }: { x: number, y: number }) {
+    let element = document.elementFromPoint(x, y);
+    for (let depth = 0; element?.shadowRoot && depth < 16; depth++) {
+        const child = element.shadowRoot.elementFromPoint(x, y);
+        if (child === element) break;
+        element = child;
+    }
+    const frame = !!element?.matches('iframe, frame');
+    return {
+        viewport: { width: innerWidth, height: innerHeight },
+        frame,
+        hit: element && !frame && !element.shadowRoot ? { tag: element.localName.slice(0, 32), role: element.getAttribute('role')?.slice(0, 256) ?? null } : null,
+    };
+}
 // Focused credential fields. Patchright's selector engine also matches inside closed shadow roots.
 const FOCUSED_CREDENTIAL_FIELD = ['input[type="password" i]', '[autocomplete~="one-time-code" i]',
     '[autocomplete~="current-password" i]', '[autocomplete~="new-password" i]'].map(field => `${field}:focus`).join(',');
@@ -327,21 +344,18 @@ export class WebHarness { // implements StateComponent
         let hit: BrowserClickDiagnostics['hit'] = null;
         if (operation) {
             try {
-                const state = await page.evaluate(({ x, y }) => {
-                    let element = document.elementFromPoint(x, y);
-                    for (let depth = 0; element?.shadowRoot && depth < 16; depth++) {
-                        const child = element.shadowRoot.elementFromPoint(x, y);
-                        if (child === element) break;
-                        element = child;
-                    }
-                    // A frame element is not evidence about the target in its document.
-                    if (element?.matches('iframe, frame') || element?.shadowRoot) element = null;
-                    return {
-                        viewport: { width: innerWidth, height: innerHeight },
-                        hit: element ? { tag: element.localName.slice(0, 32), role: element.getAttribute('role')?.slice(0, 256) ?? null } : null,
-                    };
-                }, { x, y });
+                let state = await page.evaluate(inspectPoint, { x, y });
                 if (!viewport && Number.isFinite(state.viewport.width) && Number.isFinite(state.viewport.height)) viewport = state.viewport;
+                // Follow the point into the frame that receives it. A transformed or hidden frame stays unknown.
+                let frame = page.mainFrame();
+                for (let depth = 0; state.frame && depth < 8; depth++) {
+                    let next: typeof frame | undefined;
+                    for (const child of frame.childFrames()) if (await frameVisibleAt(child, x, y)) { next = child; break; }
+                    const area = next && await frameArea(next, UNCLIPPED);
+                    if (!next || !area) { state = { ...state, hit: null, frame: false }; break; }
+                    state = await next.evaluate(inspectPoint, { x: x - area.dx, y: y - area.dy });
+                    frame = next;
+                }
                 if (state.hit) hit = {
                     tag: clickTags.includes(state.hit.tag) ? state.hit.tag : null,
                     role: state.hit.role?.split(/\s+/).find(role => clickRoles.includes(role)) ?? null,

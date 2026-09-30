@@ -120,11 +120,14 @@ function captureControls(fields: string) {
         truncated,
         controls: entries.map(({ state }) => ({ role: state.role, label: state.label, context: state.context, enabled: state.enabled,
             ...(state.value !== undefined ? { value: state.value } : {}), ...(state.options ? { options: state.options } : {}), box: state.box })),
-        // Scrolls a still-current control fully into view, including through enclosing frames, even if an
-        // earlier action in the batch scrolled it away. 'nearest' leaves a fully visible control where it is.
-        // The in-view checks run afterward, before any input.
+        // The still-current control's box in this frame, wherever it has scrolled.
+        box(index: number) {
+            return current(index, false)?.state.box ?? null;
+        },
+        // Centers the control, through enclosing frames, so content it reveals just below or above
+        // is also in view. The in-view checks run afterward, before any input.
         reveal(index: number) {
-            current(index, false)?.entry.node.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+            current(index, false)?.entry.node.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
         },
         point(index: number) {
             const resolved = current(index);
@@ -178,10 +181,10 @@ type Capture = ReturnType<typeof captureControls>;
 type Rect = { x: number; y: number; width: number; height: number };
 type Entry = { frame: Frame; handle: JSHandle<Capture>; index: number; role: string; ambiguous?: boolean };
 // Large enough to hold any frame, so offsets are computed without clipping.
-const UNCLIPPED = { x: -1e9, y: -1e9, width: 2e9, height: 2e9 };
+export const UNCLIPPED = { x: -1e9, y: -1e9, width: 2e9, height: 2e9 };
 
 // Where a frame's content box sits in main-viewport coordinates, clipped to what is visible.
-async function frameArea(frame: Frame, viewport: Rect): Promise<Rect & { dx: number; dy: number } | null> {
+export async function frameArea(frame: Frame, viewport: Rect): Promise<Rect & { dx: number; dy: number } | null> {
     const parent = frame.parentFrame();
     if (!parent) return { ...viewport, dx: 0, dy: 0 };
     const outer = await frameArea(parent, viewport);
@@ -214,7 +217,7 @@ async function frameArea(frame: Frame, viewport: Rect): Promise<Rect & { dx: num
 }
 
 // Each ancestor frame must show its iframe at the point; another element covering it would take the click.
-async function frameVisibleAt(frame: Frame, x: number, y: number): Promise<boolean> {
+export async function frameVisibleAt(frame: Frame, x: number, y: number): Promise<boolean> {
     const parent = frame.parentFrame();
     if (!parent) return true;
     const owner = await frame.frameElement().catch(() => null);
@@ -306,11 +309,18 @@ export class GroundedControls {
     }
 
     // Scrolling changes no value, so a failure here rejects the ref without input.
+    // Scrolls only a control that isn't fully visible, including one an earlier batch action scrolled away.
     private async reveal(harness: WebHarness, snapshot: Snapshot, entry: Entry): Promise<boolean> {
         checkOperation();
         if (!this.snapshots.includes(snapshot) || harness.page !== snapshot.page) return false;
-        try { await entry.handle.evaluate((state, index) => state.reveal(index), entry.index); }
-        catch { checkOperation(); return false; }
+        try {
+            const size = harness.page.viewportSize() ?? await harness.page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+            const [area, box] = await Promise.all([frameArea(entry.frame, { x: 0, y: 0, ...size }),
+                entry.handle.evaluate((state, index) => state.box(index), entry.index)]);
+            const visible = area && box && area.dx + box.x >= area.x && area.dy + box.y >= area.y
+                && area.dx + box.x + box.width <= area.x + area.width && area.dy + box.y + box.height <= area.y + area.height;
+            if (!visible) await entry.handle.evaluate((state, index) => state.reveal(index), entry.index);
+        } catch { checkOperation(); return false; }
         checkOperation();
         return true;
     }
