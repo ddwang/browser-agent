@@ -543,25 +543,27 @@ test('a form in an iframe whose submit button straddles the fold is filled and s
     } finally { await agent.stop(); }
 });
 
-test('a control clipped by a scroll container, though inside the viewport, is scrolled into view', async () => {
-    // Each target is partly below the 100 px pane's visible edge but wholly inside the page viewport.
-    const { agent, page } = await fixture(`<div id="pane" style="height:100px;overflow:auto"><div style="height:90px"></div>
-        <button id="clipped" style="height:40px">Clipped</button><div style="height:60px"></div>
-        <label>Due <input id="due" type="date" style="height:40px"></label><div style="height:200px"></div></div>`);
+test('scroll containers decide what is listed, and a partly clipped control is scrolled into view', async () => {
+    // Each target is partly below its 100 px pane's visible edge but wholly inside the page viewport.
+    const pane = (id: string, target: string) => `<div id="${id}" style="height:100px;overflow:auto"><div style="height:90px"></div>${target}<div style="height:300px"></div></div>`;
+    const { agent, page } = await fixture(pane('buttons', '<button id="clipped" style="height:40px">Clipped</button><div style="height:100px"></div><button id="hidden">Hidden</button>')
+        + pane('dates', '<label>Due <input id="due" type="date" style="height:40px"></label>'));
     try {
         let calls = 0;
         agent.models.partialAct = async ctx => {
             const snapshot = controls(ctx);
             const ref = (label: string) => snapshot.controls.find(item => item.label === label)!.ref;
-            if (++calls === 1) return plan({ variant: 'browser:click', ref: ref('Clipped') });
-            if (calls === 2) return plan({ variant: 'browser:fill', ref: ref('Due'), value: '2026-10-01' });
+            if (++calls === 1) {
+                assert.ok(!snapshot.controls.some(item => item.label === 'Hidden'), 'a control scrolled out of its pane is not listed');
+                return plan({ variant: 'browser:click', ref: ref('Clipped') }, { variant: 'browser:fill', ref: ref('Due'), value: '2026-10-01' });
+            }
             assert.ok(!JSON.stringify(ctx.observationContent).includes('target_unavailable'));
             return done();
         };
         await agent.act('Open Clipped, then set Due');
         assert.deepEqual(await clicks(page), ['clipped']);
         assert.equal(await page.locator('#due').inputValue(), '2026-10-01');
-        assert.ok(await page.locator('#pane').evaluate(node => node.scrollTop) > 0);
+        for (const id of ['#buttons', '#dates']) assert.ok(await page.locator(id).evaluate(node => node.scrollTop) > 0, id);
     } finally { await agent.stop(); }
 });
 

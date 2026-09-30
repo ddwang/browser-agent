@@ -19,8 +19,8 @@ const REJECTIONS = { target_unavailable: GROUNDED_INPUT_REJECTED, option_unavail
 // Single-choice native form controls whose pickers render outside the page screenshot.
 const FIELDS = 'select:not([multiple]),input[type="date"],input[type="time"],input[type="datetime-local"],input[type="month"],input[type="week"]';
 
-/** A deliberately small, current-viewport subset of one frame; this is not an accessibility tree. */
-function captureControls(fields: string) {
+/** A deliberately small, currently visible subset of one frame; this is not an accessibility tree. */
+async function captureControls(fields: string) {
     const documentAtCapture = document;
     const url = location.href;
     const visibility: CheckVisibilityOptions = { checkOpacity: true, checkVisibilityCSS: true };
@@ -31,6 +31,18 @@ function captureControls(fields: string) {
         + '[role~="combobox"],[role~="listbox"],[role~="textbox"],[role~="searchbox"],'
         + '[role~="slider"],[role~="spinbutton"],[role~="scrollbar"],[role~="tab"],[role~="treeitem"]';
     const text = (value: string | null | undefined) => (value ?? '').replace(/\s+/g, ' ').trim();
+    // The browser's visible fraction of each node, clipped by scroll containers, enclosing frames, and the
+    // viewport. A node with no answer within 1 s, as in an unrendered page, is missing from the map.
+    const visibleRatios = (targets: Element[]) => new Promise<Map<Element, number>>(resolve => {
+        const ratios = new Map<Element, number>();
+        const observer = new IntersectionObserver(records => {
+            for (const record of records) ratios.set(record.target, record.intersectionRatio);
+            if (ratios.size === targets.length) { observer.disconnect(); resolve(ratios); }
+        });
+        targets.forEach(target => observer.observe(target));
+        if (!targets.length) resolve(ratios);
+        setTimeout(() => { observer.disconnect(); resolve(ratios); }, 1000);
+    });
     // Read form attributes through the prototype: a control named "action" would shadow form.action.
     const formProperty = <K extends keyof HTMLFormElement>(form: HTMLFormElement, key: K) =>
         Object.getOwnPropertyDescriptor(HTMLFormElement.prototype, key)!.get!.call(form) as HTMLFormElement[K];
@@ -44,8 +56,8 @@ function captureControls(fields: string) {
         const group = option.parentElement instanceof HTMLOptGroupElement ? option.parentElement : null;
         return !option.disabled && !concealed(option) && !(group && (group.disabled || concealed(group)));
     });
-    // inView: false checks identity and eligibility regardless of where the node has scrolled.
-    function describe(node: Element, inView = true) {
+    // Identity and eligibility, wherever the node has scrolled; visibility is checked separately.
+    function describe(node: Element) {
         const field = node.matches(fields) ? node as HTMLSelectElement | HTMLInputElement : null;
         const submit = node instanceof HTMLInputElement && node.type === 'submit' ? node : null;
         if (!(field || submit || node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement)
@@ -54,9 +66,7 @@ function captureControls(fields: string) {
         if (node instanceof HTMLButtonElement && node.type === 'reset') return null;
         if (node instanceof HTMLAnchorElement && !/^https?:$/.test(node.protocol)) return null;
         const box = node.getBoundingClientRect();
-        // At least partly in view; actions scroll a control fully into view first.
-        if (box.width <= 0 || box.height <= 0 || (inView && (box.right <= 0 || box.bottom <= 0
-            || box.left >= innerWidth || box.top >= innerHeight))) return null;
+        if (box.width <= 0 || box.height <= 0) return null;
         const labelledBy = node.getAttribute('aria-labelledby');
         const label = text(labelledBy
             ? labelledBy.split(/\s+/).map(id => document.getElementById(id)?.textContent ?? '').join(' ')
@@ -101,17 +111,16 @@ function captureControls(fields: string) {
         acceptNode: node => (node as Element).matches(`a[href],button,input[type="submit"],${fields}`) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP,
     }); // Does not cross frames or shadow roots; stop collecting at the first match beyond the cap.
     while (nodes.length <= 512 && walker.nextNode()) nodes.push(walker.currentNode as Element);
-    const entries: { node: Element; state: NonNullable<ReturnType<typeof describe>> }[] = [];
     const truncated = nodes.length > 512;
-    if (!truncated) for (const node of nodes) {
-        const state = describe(node);
-        if (state) entries.push({ node, state });
-    }
+    const described = truncated ? [] : nodes.flatMap(node => { const state = describe(node); return state ? [{ node, state }] : []; });
+    // List only controls at least partly visible; actions scroll a control fully into view first.
+    const ratios = await visibleRatios(described.map(({ node }) => node));
+    const entries = described.filter(({ node }) => (ratios.get(node) ?? 1) > 0);
     // Re-check a reference against the node it was captured from, without dispatching anything.
-    function current(index: number, inView = true) {
+    function current(index: number) {
         const entry = entries[index];
         if (document !== documentAtCapture || location.href !== url || !entry) return null;
-        const state = describe(entry.node, inView);
+        const state = describe(entry.node);
         if (!state || !state.enabled || state.container !== entry.state.container
             || state.form !== entry.state.form || state.identity !== entry.state.identity) return null;
         return { entry, state };
@@ -119,19 +128,13 @@ function captureControls(fields: string) {
     return {
         truncated,
         controls: entries.map(({ state }) => ({ role: state.role, label: state.label, context: state.context, enabled: state.enabled,
-            ...(state.value !== undefined ? { value: state.value } : {}), ...(state.options ? { options: state.options } : {}), box: state.box })),
+            ...(state.value !== undefined ? { value: state.value } : {}), ...(state.options ? { options: state.options } : {}) })),
         // Centers a still-current control that isn't fully visible, so content it reveals just below or
         // above is also in view. The browser's own visibility accounts for scroll containers, frames, and
         // the viewport. The in-view checks run afterward.
         async reveal(index: number) {
-            const node = current(index, false)?.entry.node;
-            if (!node) return;
-            const ratio = await new Promise<number>(resolve => {
-                const observer = new IntersectionObserver(([entry]) => { observer.disconnect(); resolve(entry.intersectionRatio); });
-                observer.observe(node);
-                setTimeout(() => { observer.disconnect(); resolve(0); }, 1000); // Unrendered: scroll, as before.
-            });
-            if (ratio < 1) node.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+            const node = current(index)?.entry.node;
+            if (node && ((await visibleRatios([node])).get(node) ?? 0) < 1) node.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
         },
         point(index: number) {
             const resolved = current(index);
@@ -181,7 +184,7 @@ function captureControls(fields: string) {
     };
 }
 
-type Capture = ReturnType<typeof captureControls>;
+type Capture = Awaited<ReturnType<typeof captureControls>>;
 type Rect = { x: number; y: number; width: number; height: number };
 type Entry = { frame: Frame; handle: JSHandle<Capture>; index: number; role: string; ambiguous?: boolean };
 // Large enough to hold any frame, so offsets are computed without clipping.
@@ -272,8 +275,8 @@ export class GroundedControls {
         const prefix = randomUUID();
         this.snapshots.push({ handles, entries, page, operation, prefix });
         for (const frame of page.frames()) {
-            const area = await frameArea(frame, viewport).catch(() => null);
-            if (!area) continue;
+            // Frames that are hidden, transformed, or entirely out of view aren't grounded.
+            if (!await frameArea(frame, viewport).catch(() => null)) continue;
             const handle = await frame.evaluateHandle(captureControls, FIELDS).catch(() => null);
             checkOperation();
             if (!handle) continue;
@@ -281,12 +284,7 @@ export class GroundedControls {
             const data = await handle.evaluate(({ controls, truncated }) => ({ controls, truncated })).catch(() => null);
             if (!data) continue;
             truncated ||= data.truncated;
-            data.controls.forEach(({ box, ...control }, index) => {
-                const x = area.dx + box.x, y = area.dy + box.y;
-                // Only controls at least partly inside the frame's visible area of the main viewport.
-                if (x + box.width <= area.x || y + box.height <= area.y || x >= area.x + area.width || y >= area.y + area.height) return;
-                candidates.push({ frame, handle, index, control });
-            });
+            data.controls.forEach((control, index) => candidates.push({ frame, handle, index, control }));
         }
         checkOperation();
         // Count descriptions before limiting the list, so truncation can't hide a duplicate.
