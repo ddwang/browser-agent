@@ -43,7 +43,10 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch(request) {
         <label>User ID <input id="user" autocomplete="off"></label><label>Password <input id="pass" type="password"></label>
         <label>Verification code <input id="code" inputmode="numeric" autocomplete="one-time-code"></label><label>Notes <input id="notes"></label>
         <iframe id="frame" srcdoc="<label>Password <input id='inner' type='password'></label>"></iframe>
-        <label>Search <input id="hop" oninput="pass.focus()"></label><div id="vault" style="display:inline-block"></div>
+        <label>Search <input id="hop" oninput="pass.focus()"></label><label>Name <input id="drift" onfocus="setTimeout(() => pass.focus(), 150)"></label>
+        <label>Lookup <input id="spawn" oninput="if (this.value.length === 1) { const frame = document.createElement('iframe'); frame.id = 'late';
+            frame.srcdoc = '<input type=password oninput=&quot;parent.document.body.dataset.late = this.value&quot;>';
+            frame.onload = () => frame.contentDocument.querySelector('input').focus(); document.body.append(frame); }"></label><div id="vault" style="display:inline-block"></div>
         <div id="editableVault" contenteditable="true" style="display:inline-block"></div><div id="editor" contenteditable="true" style="min-width:100px">Draft: </div>
         <script>for (const host of [vault, editableVault]) host.attachShadow({ mode: 'closed' }).innerHTML = '<input type="password" oninput="this.getRootNode().host.dataset.value = this.value">';</script>`, { headers: { 'content-type': 'text/html' } });
     const limited = path === '/limited' || (path === '/cooldown' && cooldownRequests++ === 0);
@@ -175,6 +178,19 @@ test('host-only authentication stops typing into password and one-time-code fiel
             else await hop;
             assert.deepEqual([await page.locator('#hop').inputValue(), await page.locator('#pass').inputValue()],
                 ['a', hostOnlyAuthentication ? '' : 'bcdef'], 'no character reaches the password while guarded');
+            // Focus moves to the password during the pacing delay before a non-US character, which the driver inserts directly.
+            await page.locator('#pass').fill('');
+            const drift = type('#drift', 'é');
+            if (hostOnlyAuthentication) await assert.rejects(drift, (error: unknown) => error instanceof BrowserBlockedError && error.block.reason === 'authentication');
+            else await drift;
+            assert.equal(await page.locator('#pass').inputValue(), hostOnlyAuthentication ? '' : 'é');
+            await page.locator('#pass').fill('');
+            // A page creates an iframe mid-typing and moves focus to its password.
+            const spawn = type('#spawn', 'abcdefghijklmnopqrstuvwxyz');
+            if (hostOnlyAuthentication) await assert.rejects(spawn, (error: unknown) => error instanceof BrowserBlockedError && error.block.reason === 'authentication');
+            else await spawn;
+            const late = await page.locator('body').getAttribute('data-late');
+            assert.ok(hostOnlyAuthentication ? late === null : !!late, `the late frame's password received ${late}`);
             // A password in a closed shadow root can't be inspected, so text bound for it is cancelled,
             // including when the host is itself contenteditable.
             for (const host of ['#vault', '#editableVault']) {

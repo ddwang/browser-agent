@@ -10,36 +10,9 @@ import { Image } from '@/memory/image';
 import EventEmitter from "eventemitter3";
 import { checkOperation, currentOperation, drainAll, measureOperation, operationSleep, type Operation, type BrowserClickDiagnostics } from '@/common/operation';
 import { BrowserBlockedError } from './recovery';
-import { randomUUID } from 'node:crypto';
-
-const CREDENTIAL_FIELDS = 'input[type="password" i],[autocomplete~="one-time-code" i],[autocomplete~="current-password" i],[autocomplete~="new-password" i]';
-
-// Runs in each frame. While armed, it cancels text insertion into a credential field, or into a
-// recipient it can't inspect, such as an input in a closed shadow root. Returns whether it cancelled any.
-function credentialGuard([key, fields, arm]: [string, string, boolean]): boolean {
-    const scope = window as unknown as Record<string, { armed: boolean; blocked: boolean }>;
-    let state = scope[key];
-    if (!state) {
-        state = { armed: false, blocked: false };
-        Object.defineProperty(scope, key, { value: state });
-        window.addEventListener('beforeinput', event => {
-            if (!state.armed) return;
-            const target = event.composedPath()[0];
-            // Text bound for an input has no target ranges. An editable element that reports none is a
-            // shadow host hiding the real recipient, such as a password in a closed shadow root.
-            const editable = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
-                || (target instanceof HTMLElement && target.isContentEditable && event.getTargetRanges().length > 0);
-            if (editable && !(target as Element).matches(fields)) return;
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            state.blocked = true;
-        }, true);
-    }
-    const blocked = state.blocked;
-    state.armed = arm;
-    state.blocked = false;
-    return blocked;
-}
+// Focused credential fields. Patchright's selector engine also matches inside closed shadow roots.
+const FOCUSED_CREDENTIAL_FIELD = ['input[type="password" i]', '[autocomplete~="one-time-code" i]',
+    '[autocomplete~="current-password" i]', '[autocomplete~="new-password" i]'].map(field => `${field}:focus`).join(',');
 //import { StateComponent } from "@/facets";
 
 
@@ -210,8 +183,13 @@ export class WebHarness { // implements StateComponent
                 const chunkProportion = chunk.length / totalTextLength;
                 const chunkDelay = totalTextDelay * chunkProportion;
                 const chunkCharDelay = chunkDelay / chunk.length;
-                if (this.options.hostOnlyAuthentication) await this.typeOutsideCredentials(chunk, chunkCharDelay);
-                else await this.page.keyboard.type(chunk, {delay: chunkCharDelay});
+                if (!this.options.hostOnlyAuthentication) await this.page.keyboard.type(chunk, {delay: chunkCharDelay});
+                // Host-only authentication: pace first, then check focus immediately before sending each character.
+                else for (const character of chunk) {
+                    await operationSleep(chunkCharDelay);
+                    await this.refuseCredentialField();
+                    await this.page.keyboard.type(character);
+                }
             }
         }
     }
@@ -438,31 +416,12 @@ export class WebHarness { // implements StateComponent
         //await this.visualizer.removeActionVisuals();
     }
 
-    private readonly credentialGuardKey = `__magnitudeCredentialGuard_${randomUUID()}`;
-
-    /** Types a chunk while every frame cancels text bound for a credential field, then stops if any was cancelled. */
-    private async typeOutsideCredentials(chunk: string, delay: number): Promise<void> {
-        const arm = async (armed: boolean) => (await Promise.all(this.page.frames().map(frame =>
-            frame.evaluate(credentialGuard, [this.credentialGuardKey, CREDENTIAL_FIELDS, armed] as [string, string, boolean]).catch(() => false)))).includes(true);
-        const blocked = () => new BrowserBlockedError({ reason: 'authentication',
-            evidence: 'Typing stopped: the field takes a password or one-time code, and the host reserves authentication.' });
-        // Stop before sending any key when focus is already in a credential field; follow open shadow roots.
-        const focused = await Promise.all(this.page.frames().map(frame => frame.evaluate(fields => {
-            if (!document.hasFocus()) return false;
-            let element = document.activeElement;
-            while (element?.shadowRoot?.activeElement) element = element.shadowRoot.activeElement;
-            return !!element?.matches(fields);
-        }, CREDENTIAL_FIELDS).catch(() => false)));
-        if (focused.includes(true)) throw blocked();
+    /** Stops the operation when the focused field, in any frame, takes a password or one-time code. */
+    private async refuseCredentialField(): Promise<void> {
+        const focused = await Promise.all(this.page.frames().map(frame => frame.locator(FOCUSED_CREDENTIAL_FIELD).count().catch(() => 0)));
         checkOperation();
-        let cancelled = false;
-        await arm(true);
-        try {
-            await this.page.keyboard.type(chunk, { delay });
-        } finally {
-            cancelled = await arm(false);
-        }
-        if (cancelled) throw blocked();
+        if (focused.some(Boolean)) throw new BrowserBlockedError({ reason: 'authentication',
+            evidence: 'Typing stopped: the focused field takes a password or one-time code, and the host reserves authentication.' });
     }
 
     async type({ content }: { content: string }) {
