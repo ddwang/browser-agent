@@ -11,6 +11,6 @@ test('grounded controls use current nodes and preserve execution guarantees', as
             new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
         ]);
         expect({ code, stderr, stdout: code === 0 ? undefined : stdout }).toEqual({ code: 0, stderr: '', stdout: undefined });
-        expect(stdout.match(/^PASS:/gm)?.length).toBe(51);
+        expect(stdout.match(/^PASS:/gm)?.length).toBe(52);
     } finally { clearTimeout(deadline); }
 }, 185_000);

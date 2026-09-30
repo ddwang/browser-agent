@@ -120,14 +120,18 @@ function captureControls(fields: string) {
         truncated,
         controls: entries.map(({ state }) => ({ role: state.role, label: state.label, context: state.context, enabled: state.enabled,
             ...(state.value !== undefined ? { value: state.value } : {}), ...(state.options ? { options: state.options } : {}), box: state.box })),
-        // The still-current control's box in this frame, wherever it has scrolled.
-        box(index: number) {
-            return current(index, false)?.state.box ?? null;
-        },
-        // Centers the control, through enclosing frames, so content it reveals just below or above
-        // is also in view. The in-view checks run afterward, before any input.
-        reveal(index: number) {
-            current(index, false)?.entry.node.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+        // Centers a still-current control that isn't fully visible, so content it reveals just below or
+        // above is also in view. The browser's own visibility accounts for scroll containers, frames, and
+        // the viewport. The in-view checks run afterward.
+        async reveal(index: number) {
+            const node = current(index, false)?.entry.node;
+            if (!node) return;
+            const ratio = await new Promise<number>(resolve => {
+                const observer = new IntersectionObserver(([entry]) => { observer.disconnect(); resolve(entry.intersectionRatio); });
+                observer.observe(node);
+                setTimeout(() => { observer.disconnect(); resolve(0); }, 1000); // Unrendered: scroll, as before.
+            });
+            if (ratio < 1) node.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
         },
         point(index: number) {
             const resolved = current(index);
@@ -309,18 +313,11 @@ export class GroundedControls {
     }
 
     // Scrolling changes no value, so a failure here rejects the ref without input.
-    // Scrolls only a control that isn't fully visible, including one an earlier batch action scrolled away.
     private async reveal(harness: WebHarness, snapshot: Snapshot, entry: Entry): Promise<boolean> {
         checkOperation();
         if (!this.snapshots.includes(snapshot) || harness.page !== snapshot.page) return false;
-        try {
-            const size = harness.page.viewportSize() ?? await harness.page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
-            const [area, box] = await Promise.all([frameArea(entry.frame, { x: 0, y: 0, ...size }),
-                entry.handle.evaluate((state, index) => state.box(index), entry.index)]);
-            const visible = area && box && area.dx + box.x >= area.x && area.dy + box.y >= area.y
-                && area.dx + box.x + box.width <= area.x + area.width && area.dy + box.y + box.height <= area.y + area.height;
-            if (!visible) await entry.handle.evaluate((state, index) => state.reveal(index), entry.index);
-        } catch { checkOperation(); return false; }
+        try { await entry.handle.evaluate((state, index) => state.reveal(index), entry.index); }
+        catch { checkOperation(); return false; }
         checkOperation();
         return true;
     }

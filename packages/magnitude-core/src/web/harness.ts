@@ -352,7 +352,7 @@ export class WebHarness { // implements StateComponent
                     let next: typeof frame | undefined;
                     for (const child of frame.childFrames()) if (await frameVisibleAt(child, x, y)) { next = child; break; }
                     const area = next && await frameArea(next, UNCLIPPED);
-                    if (!next || !area) { state = { ...state, hit: null, frame: false }; break; }
+                    if (!next || !area) break; // hit is already null for a frame target
                     state = await next.evaluate(inspectPoint, { x: x - area.dx, y: y - area.dy });
                     frame = next;
                 }
