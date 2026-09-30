@@ -25,8 +25,10 @@ function credentialGuard([key, fields, arm]: [string, string, boolean]): boolean
         window.addEventListener('beforeinput', event => {
             if (!state.armed) return;
             const target = event.composedPath()[0];
+            // Text bound for an input has no target ranges. An editable element that reports none is a
+            // shadow host hiding the real recipient, such as a password in a closed shadow root.
             const editable = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
-                || (target instanceof HTMLElement && target.isContentEditable);
+                || (target instanceof HTMLElement && target.isContentEditable && event.getTargetRanges().length > 0);
             if (editable && !(target as Element).matches(fields)) return;
             event.preventDefault();
             event.stopImmediatePropagation();
