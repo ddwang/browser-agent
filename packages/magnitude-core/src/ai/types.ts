@@ -14,6 +14,9 @@ export interface TimeoutPolicy {
     maxRetries?: number;
 }
 
+/** The published name for the planner's policy, kept for existing imports. */
+export type PlannerOptions = TimeoutPolicy;
+
 // Approximately mirrors https://docs.boundaryml.com/ref/llm-client-providers
 export type LLMClient = (AnthropicClient | ClaudeCodeClient | BedrockClient | GoogleAIClient | GoogleVertexClient | OpenAIClient | BasetenClient | OpenAIGenericClient | AzureOpenAIClient) &
     { roles?: BrowserAgentRole[] };
