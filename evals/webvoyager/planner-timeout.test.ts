@@ -11,6 +11,6 @@ test('planner budgets abort native requests, bound retries, and correlate lifecy
             new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
         ]);
         expect({ code, stderr, stdout: code ? stdout : '' }).toEqual({ code: 0, stderr: '', stdout: '' });
-        expect(stdout.match(/^PASS:/gm)).toHaveLength(38);
+        expect(stdout.match(/^PASS:/gm)).toHaveLength(42);
     } finally { clearTimeout(timer); }
 }, 35_000);

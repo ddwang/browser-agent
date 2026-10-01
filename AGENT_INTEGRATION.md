@@ -153,7 +153,7 @@ There is no default deadline or finite action budget. Configure both. `maxAction
 
 `recovery.noProgress` is opt-in. It detects repeated unchanged or previously seen states, but is a heuristic, not a timeout. Canvas or iframe workflows can need a different setting. Keep the deadline and action budget even when this guard is enabled.
 
-To bound each `act()` planner invocation, optionally set `planner: { timeoutMs: 30_000, maxRetries: 1 }` when creating the agent. This example budget includes native provider retries and format correction; one timeout retry is allowed after the previous invocation settles. Choose the budget for your model and workflow—long reasoning responses can be legitimate. The operation deadline still bounds the whole task. Omit `planner` to preserve existing timeout-free planner behavior. See [planner budgets](docs/advanced/cancellation.mdx#planner-request-budgets) for retry and drainage semantics.
+To bound each `act()` planner invocation, optionally set `planner: { timeoutMs: 30_000, maxRetries: 1 }` when creating the agent. This example budget includes native provider retries and format correction; one timeout retry is allowed after the previous invocation settles. Choose the budget for your model and workflow—long reasoning responses can be legitimate. The operation deadline still bounds the whole task. Omit `planner` to preserve existing timeout-free planner behavior. To bound each `extract()` model call the same way, set `extract: { timeoutMs: 40_000, maxRetries: 1 }`. See [planner budgets](docs/advanced/cancellation.mdx#planner-request-budgets) for retry and drainage semantics, which both options share.
 
 Import error classes from `@ddwang/magnitude-core` and map them to your host's existing tool outcomes:
 
@@ -162,6 +162,7 @@ Import error classes from `@ddwang/magnitude-core` and map them to your host's e
 | `OperationCancelledError` | Report cancellation; do not assume an already-dispatched action was undone. |
 | `OperationDeadlineError` | Report the deadline; preserve uncertainty about side effects. |
 | `PlannerTimeoutError` | The configured planner timeout retries were exhausted. This is a local request budget, not proof of a provider or website rate limit. |
+| `ExtractTimeoutError` | The configured `extract` timeout retries were exhausted. As with the planner, this is a local request budget. |
 | `AgentBusyError` | The session has pending work. Queue or reject the request instead of issuing another action. |
 | `ActionLimitError` | Report the action limit with available evidence. Do not automatically restart the task. |
 | `BrowserBlockedError` | Inspect `block.reason`: `rate_limit`, `authentication`, `subscription`, or `no_progress`. Respect `block.retryAt` when present. |

@@ -5,7 +5,8 @@ import { z } from 'zod';
 import { Agent } from '../../../packages/magnitude-core/src/agent';
 import { createAction } from '../../../packages/magnitude-core/src/actions';
 import { ModelHarness } from '../../../packages/magnitude-core/src/ai/modelHarness';
-import { AgentBusyError, OperationCancelledError, OperationDeadlineError, PlannerTimeoutError } from '../../../packages/magnitude-core/src/agent/errors';
+import { AgentBusyError, ExtractTimeoutError, OperationCancelledError, OperationDeadlineError, PlannerTimeoutError } from '../../../packages/magnitude-core/src/agent/errors';
+import { Image } from '../../../packages/magnitude-core/src/memory/image';
 import type { OperationDiagnostics } from '../../../packages/magnitude-core/src/common/operation';
 import type { PlannerResponse } from '../../../packages/magnitude-core/src/ai/plannerResponse';
 
@@ -17,6 +18,9 @@ for (const timeoutMs of [0, -1, 1.5, NaN, Infinity, 2_147_483_648]) {
 }
 for (const maxRetries of [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
     assert.throws(() => new Agent({ llm: fixtureLlm, telemetry: false, planner: { timeoutMs: 10, maxRetries } }), /planner.maxRetries/);
+}
+for (const timeoutMs of [0, 1.5]) {
+    assert.throws(() => new Agent({ llm: fixtureLlm, telemetry: false, extract: { timeoutMs } }), /extract.timeoutMs/);
 }
 console.log('PASS: planner policy validates request budgets and retry counts');
 
@@ -208,4 +212,49 @@ for (const provider of ['anthropic', 'openai', 'baseten'] as const) {
         } finally { release.resolve(); await agent.stop(); server.stop(true); }
     }
 
+}
+
+// extract() under its own policy: a stalled request is aborted, drains, and is retried once by default.
+const pixel = Image.fromBase64('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=');
+for (const provider of ['anthropic', 'baseten'] as const) for (const scenario of ['retry', 'exhaust'] as const) {
+    let requests = 0;
+    const release = Promise.withResolvers<void>();
+    const server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request) {
+        await request.json();
+        if (++requests === 1 || scenario === 'exhaust') await release.promise;
+        const content = JSON.stringify({ subject: 'Previous appointment instructions' });
+        return Response.json(provider === 'anthropic' ? {
+            id: 'fixture', type: 'message', role: 'assistant', model: 'fixture',
+            content: [{ type: 'text', text: content }], stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 },
+        } : {
+            id: 'fixture', object: 'chat.completion', created: 1, model: 'fixture',
+            choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        });
+    } });
+    class FixtureHarness extends ModelHarness {
+        protected createClientRegistry(options: Record<string, unknown>) {
+            const registry = new ClientRegistry();
+            registry.addLlmClient('Fixture', provider === 'baseten' ? 'openai-generic' : provider,
+                { ...options, base_url: `http://127.0.0.1:${server.port}` }, 'DefaultRetryPolicy');
+            registry.setPrimary('Fixture'); return registry;
+        }
+    }
+    const llm = { provider, options: { model: 'fixture', apiKey: 'unused' } };
+    const extract = { timeoutMs: 200, ...(scenario === 'exhaust' ? { maxRetries: 0 } : {}) };
+    const harness = new FixtureHarness({ llm, extract });
+    await harness.setup();
+    const agent = new Agent({ llm, extract, telemetry: false });
+    const run = () => (agent as unknown as { runOperation: <T>(options: object, fn: () => Promise<T>, kind: string) => Promise<T> })
+        .runOperation({}, () => harness.extract('Return the subject', z.object({ subject: z.string() }), pixel, 'Previous appointment instructions'), 'extract');
+    try {
+        if (scenario === 'retry') assert.deepEqual(await run(), { subject: 'Previous appointment instructions' });
+        else await assert.rejects(run(), error => error instanceof ExtractTimeoutError && error.timeoutMs === 200 && error.options.variant === 'extract_timeout');
+        release.resolve();
+        await agent.whenIdle();
+        assert.equal(requests, scenario === 'retry' ? 2 : 1);
+        assert.equal(agent.operation!.plannerCalls, undefined, 'extract is not recorded as a planner call');
+        assert.equal(agent.operation!.providerAttempts!.length, requests);
+        console.log(`PASS: ${provider} extract ${scenario === 'retry' ? 'recovers from a stalled request' : 'reports ExtractTimeoutError'}`);
+    } finally { release.resolve(); await agent.stop(); server.stop(true); }
 }

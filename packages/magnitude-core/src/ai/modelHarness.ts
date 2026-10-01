@@ -7,7 +7,7 @@ import { BamlAsyncClient } from "./baml_client/async_client";
 import logger from "@/logger";
 import { Logger } from 'pino';
 import { BugDetectedFailure, MisalignmentFailure } from "@/common";
-import { LLMClient, ModelUsage, type PlannerOptions } from "@/ai/types";
+import { LLMClient, ModelUsage, type TimeoutPolicy } from "@/ai/types";
 import { TabState } from "@/web/tabs";
 import { ActionDefinition } from "@/actions";
 import TypeBuilder from "./baml_client/type_builder";
@@ -21,11 +21,12 @@ import { anthropicOutputFormat, BASETEN_ENFORCED, plannerSchema, usesStructuredO
 import { ModelResponseError } from './modelResponseError';
 import { DEFAULT_BASETEN_MODEL } from './baseten';
 import { beginOperationPhase, checkOperation, currentOperation, operationOptions, type PlannerCallDiagnostics } from '@/common/operation';
-import { OperationDeadlineError, PlannerTimeoutError } from '@/agent/errors';
+import { ExtractTimeoutError, OperationDeadlineError, PlannerTimeoutError } from '@/agent/errors';
 
 interface ModelHarnessOptions {
     llm: LLMClient;
-    planner?: PlannerOptions;
+    planner?: TimeoutPolicy;
+    extract?: TimeoutPolicy;
 }
 
 // export interface ModelUsage {
@@ -57,17 +58,20 @@ export class ModelHarness {
     };
 
     constructor(options: ModelHarnessOptions) {
-        if (options.planner) {
-            if (!Number.isInteger(options.planner.timeoutMs) || options.planner.timeoutMs <= 0 || options.planner.timeoutMs > 2_147_483_647) {
-                throw new TypeError('planner.timeoutMs must be an integer between 1 and 2147483647');
+        for (const name of ['planner', 'extract'] as const) {
+            const policy = options[name];
+            if (!policy) continue;
+            if (!Number.isInteger(policy.timeoutMs) || policy.timeoutMs <= 0 || policy.timeoutMs > 2_147_483_647) {
+                throw new TypeError(`${name}.timeoutMs must be an integer between 1 and 2147483647`);
             }
-            if (!Number.isSafeInteger(options.planner.maxRetries ?? 1) || (options.planner.maxRetries ?? 1) < 0) {
-                throw new TypeError('planner.maxRetries must be a non-negative safe integer');
+            if (!Number.isSafeInteger(policy.maxRetries ?? 1) || (policy.maxRetries ?? 1) < 0) {
+                throw new TypeError(`${name}.maxRetries must be a non-negative safe integer`);
             }
         }
         this.options = {
             llm: options.llm,
             planner: options.planner && { ...options.planner },
+            extract: options.extract && { ...options.extract },
         };
 
         this.logger = logger.child({ name: 'llm' });
@@ -311,50 +315,65 @@ export class ModelHarness {
         data: MultiMediaContentPart[],
         actionVocabulary: ActionDefinition<T>[]
     ): Promise<PlannerResponse> {
-        const policy = this.options.planner;
+        return this.withTimeout(this.options.planner, timeoutMs => new PlannerTimeoutError(timeoutMs),
+            (checkRequest, callId) => this.partialActAttempt(context, task, data, actionVocabulary, checkRequest, callId), true);
+    }
+
+    /**
+     * Runs one model call under an optional timeout policy: abort at timeoutMs, wait for the request to
+     * settle, then retry up to maxRetries times. Caller cancellation and deadlines take precedence.
+     * Planner calls are also recorded in the operation's plannerCalls.
+     */
+    private async withTimeout<T>(
+        policy: TimeoutPolicy | undefined,
+        timeoutError: (timeoutMs: number) => Error,
+        call: (checkRequest: () => AbortSignal, callId?: string) => Promise<T>,
+        plannerCall = false,
+    ): Promise<T> {
         for (let attempt = 1; ; attempt++) {
             checkOperation();
             const operation = currentOperation();
             const controller = new AbortController();
+            const timeout = policy && timeoutError(policy.timeoutMs);
             const abortFromParent = () => controller.abort(operation!.signal.reason);
             const started = performance.now();
             const checkRequest = () => {
                 checkOperation();
                 // Synchronous validation can occupy the event loop past the
                 // timer's due time, on either success or failure.
-                if (policy && performance.now() - started >= policy.timeoutMs) controller.abort(new PlannerTimeoutError(policy.timeoutMs));
+                if (policy && performance.now() - started >= policy.timeoutMs) controller.abort(timeout);
                 controller.signal.throwIfAborted();
                 return controller.signal;
             };
             let timer: ReturnType<typeof setTimeout> | undefined;
-            const callId = operation?.startPlannerCall({
+            const callId = plannerCall ? operation?.startPlannerCall({
                 attempt, provider: this.options.llm.provider,
                 model: ((this.options.llm.options as { model?: string }).model ?? 'unknown').slice(0, 200),
                 ...(policy ? { timeoutMs: policy.timeoutMs } : {}),
-            });
-            const abortOutcome = () => controller.signal.reason instanceof PlannerTimeoutError ? 'timeout'
+            }) : undefined;
+            const abortOutcome = () => controller.signal.reason === timeout ? 'timeout'
                 : controller.signal.reason instanceof OperationDeadlineError ? 'deadline' : 'cancelled';
             controller.signal.addEventListener('abort', () => {
                 if (callId) operation!.updatePlannerCall(callId, abortOutcome(), 'draining');
             }, { once: true });
             operation?.signal.addEventListener('abort', abortFromParent, { once: true });
             if (operation?.signal.aborted) abortFromParent();
-            if (policy) timer = setTimeout(() => controller.abort(new PlannerTimeoutError(policy.timeoutMs)), policy.timeoutMs);
+            if (policy) timer = setTimeout(() => controller.abort(timeout), policy.timeoutMs);
             let outcome: NonNullable<PlannerCallDiagnostics['outcome']> = 'failed';
             try {
                 checkRequest();
                 // Await native settlement, not a Promise.race: a timeout must
                 // never release ownership or overlap a still-running request.
-                let plan: PlannerResponse;
-                try { plan = await this.partialActAttempt(context, task, data, actionVocabulary, checkRequest, callId); }
+                let result: T;
+                try { result = await call(checkRequest, callId); }
                 finally { checkRequest(); }
                 outcome = 'succeeded';
-                return plan;
+                return result;
             } catch (error) {
                 checkOperation();
                 if (!controller.signal.aborted) throw error;
                 outcome = abortOutcome();
-                if (!(controller.signal.reason instanceof PlannerTimeoutError) || attempt > (policy?.maxRetries ?? 1)) {
+                if (controller.signal.reason !== timeout || attempt > (policy?.maxRetries ?? 1)) {
                     throw controller.signal.reason;
                 }
             } finally {
@@ -448,13 +467,14 @@ export class ModelHarness {
 
         const clientRegistry = this.clientForSchema(schema instanceof z.ZodObject ? schema : z.object({ data: schema }));
         const bamlScreenshot = await screenshot.toBaml();
-        const resp = await this._withUsage(collector => this.baml.ExtractData(
-            instructions,
-            bamlScreenshot,
-            domContent,
-            this.options.llm.provider === 'claude-code',
-            { tb, collector, clientRegistry, signal: operationOptions().signal }
-        ));
+        const resp = await this.withTimeout(this.options.extract, timeoutMs => new ExtractTimeoutError(timeoutMs),
+            checkRequest => this._withUsage(collector => this.baml.ExtractData(
+                instructions,
+                bamlScreenshot,
+                domContent,
+                this.options.llm.provider === 'claude-code',
+                { tb, collector, clientRegistry, signal: checkRequest() }
+            )));
 
         return schema.parse(schema instanceof z.ZodObject ? resp : resp.data);
     }
