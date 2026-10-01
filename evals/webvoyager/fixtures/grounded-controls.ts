@@ -112,6 +112,19 @@ test('controls inside same-origin and cross-origin frames are listed in page coo
     } finally { await agent.stop(); }
 });
 
+test('click feedback reports the target inside a cross-origin frame', async () => {
+    const { agent, connector, page, context } = await fixture();
+    await context.unroute('**/*');
+    try {
+        await connector.getHarness().navigate(`${base}/framed`);
+        const box = (await page.frameLocator('#cross').locator('#inner').boundingBox())!;
+        agent.models.partialAct = async () => done();
+        await agent.exec({ variant: 'mouse:click', x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) });
+        assert.deepEqual(agent.operation?.lastClick?.hit, { tag: 'button', role: null });
+        assert.equal(await page.frameLocator('#cross').locator('body').getAttribute('data-clicked'), 'yes');
+    } finally { await agent.stop(); }
+});
+
 test('a frame covered by another element rejects its references before clicking', async () => {
     const { agent, connector, page } = await fixture();
     try {
@@ -485,18 +498,24 @@ test('a changed submission destination invalidates submit refs, including a chan
 });
 
 test('a partly visible control is listed and scrolled into view before a click', async () => {
-    const { agent, page } = await fixture('<div style="height:740px"></div><button id="low" style="height:60px">Low</button><div style="height:1200px"></div>');
+    const { agent, page } = await fixture('<button id="top">Top</button><div style="height:720px"></div><button id="low" style="height:60px">Low</button><div style="height:1200px"></div>');
     try {
         let calls = 0;
         agent.models.partialAct = async ctx => {
-            const low = controls(ctx).controls.find(item => item.label === 'Low');
-            if (++calls === 1) { assert.ok(low, 'the button straddling the fold is listed'); return plan({ variant: 'browser:click', ref: low!.ref }); }
+            const ref = (label: string) => controls(ctx).controls.find(item => item.label === label)?.ref;
+            if (++calls === 1) return plan({ variant: 'browser:click', ref: ref('Top')! });
+            if (calls === 2) {
+                assert.equal(await page.evaluate(() => scrollY), 0, 'a fully visible control is not scrolled');
+                assert.ok(ref('Low'), 'the button straddling the fold is listed');
+                return plan({ variant: 'browser:click', ref: ref('Low')! });
+            }
             return done();
         };
-        await agent.act('Click Low');
-        assert.deepEqual(await clicks(page), ['low']);
+        await agent.act('Click Top, then Low');
+        assert.deepEqual(await clicks(page), ['top', 'low']);
         const box = (await page.locator('#low').boundingBox())!;
-        assert.ok(box.y + box.height <= 768, 'the click scrolled the whole button into view');
+        // Centered, so content it reveals just below stays in view.
+        assert.ok(Math.abs(box.y + box.height / 2 - 384) < 5, `the button is centered, at ${box.y}`);
     } finally { await agent.stop(); }
 });
 
@@ -521,6 +540,30 @@ test('a form in an iframe whose submit button straddles the fold is filled and s
         await agent.act('Find video visits from January 1 through September 30, 2026');
         assert.equal(calls, 2);
         assert.equal(await frame.locator('body').getAttribute('data-submitted'), JSON.stringify(['video', '2026-01-01', '2026-09-30']));
+    } finally { await agent.stop(); }
+});
+
+test('scroll containers decide what is listed, and a partly clipped control is scrolled into view', async () => {
+    // Each target is partly below its 100 px pane's visible edge but wholly inside the page viewport.
+    const pane = (id: string, target: string) => `<div id="${id}" style="height:100px;overflow:auto"><div style="height:90px"></div>${target}<div style="height:300px"></div></div>`;
+    const { agent, page } = await fixture(pane('buttons', '<button id="clipped" style="height:40px">Clipped</button><div style="height:100px"></div><button id="hidden">Hidden</button>')
+        + pane('dates', '<label>Due <input id="due" type="date" style="height:40px"></label>'));
+    try {
+        let calls = 0;
+        agent.models.partialAct = async ctx => {
+            const snapshot = controls(ctx);
+            const ref = (label: string) => snapshot.controls.find(item => item.label === label)!.ref;
+            if (++calls === 1) {
+                assert.ok(!snapshot.controls.some(item => item.label === 'Hidden'), 'a control scrolled out of its pane is not listed');
+                return plan({ variant: 'browser:click', ref: ref('Clipped') }, { variant: 'browser:fill', ref: ref('Due'), value: '2026-10-01' });
+            }
+            assert.ok(!JSON.stringify(ctx.observationContent).includes('target_unavailable'));
+            return done();
+        };
+        await agent.act('Open Clipped, then set Due');
+        assert.deepEqual(await clicks(page), ['clipped']);
+        assert.equal(await page.locator('#due').inputValue(), '2026-10-01');
+        for (const id of ['#buttons', '#dates']) assert.ok(await page.locator(id).evaluate(node => node.scrollTop) > 0, id);
     } finally { await agent.stop(); }
 });
 
