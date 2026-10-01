@@ -6,13 +6,16 @@
 export type BrowserAgentRole= 'act' | 'extract' | 'query';
 export const allBrowserAgentRoles: BrowserAgentRole[] = ['act', 'extract', 'query'] as const;
 
-/** Optional request budget for act() planning, not extraction or query. */
-export interface PlannerOptions {
-    /** Includes transport retries and format correction within one planner invocation. */
+/** Optional request budget for one model call, used for act() planning and for extract(). */
+export interface TimeoutPolicy {
+    /** Includes transport retries and format correction within one invocation. */
     timeoutMs: number;
     /** Retries after timeout, once the previous invocation settles. Default: 1. */
     maxRetries?: number;
 }
+
+/** The published name for the planner's policy, kept for existing imports. */
+export type PlannerOptions = TimeoutPolicy;
 
 // Approximately mirrors https://docs.boundaryml.com/ref/llm-client-providers
 export type LLMClient = (AnthropicClient | ClaudeCodeClient | BedrockClient | GoogleAIClient | GoogleVertexClient | OpenAIClient | BasetenClient | OpenAIGenericClient | AzureOpenAIClient) &

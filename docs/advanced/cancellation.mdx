@@ -49,6 +49,8 @@ await agent.act('Complete the requested workflow', { deadline: Date.now() + 90_0
 
 These numbers are examples, not recommended limits for every model. `timeoutMs` must be an integer from 1 through 2,147,483,647. `maxRetries` is a non-negative safe integer and defaults to 1; set it to 0 to fail on the first timeout. Omit `planner` to keep the existing behavior without a per-invocation timeout. The option applies only to `act()` planning, not `query()`, `extract()`, browser actions, or startup.
 
+To bound `extract()` model calls, set `extract` with the same fields, for example `extract: { timeoutMs: 40_000, maxRetries: 1 }`. It follows the same abort, drain, and retry rules below and throws `ExtractTimeoutError` when its retries are exhausted. Extract calls appear in `providerAttempts`, not in `plannerCalls`. Omit `extract` to keep extraction without a per-call timeout.
+
 One budget covers an entire planner invocation, including native provider retries and the existing format-correction retry. When it expires, Magnitude aborts that invocation and discards its output. It retries with the same observations only after the previous invocation settles. Native retry and format-validation rules remain in effect, but configuring `planner` disables the legacy outer retries for selected planner error strings so they cannot multiply the configured timeout retries. Errors other than local timeouts do not receive an additional timeout-policy retry.
 
 Every retry remains subject to the operation's original deadline and cancellation signal. A caller cancellation or expired operation deadline takes precedence over the planner timeout and prevents further requests or actions. Exhausting the timeout retries throws `PlannerTimeoutError`, with `timeoutMs` and operation diagnostics. Notes and actions from a timed-out response are not applied; previously completed work remains intact.
@@ -155,6 +157,7 @@ Import these errors from `@ddwang/magnitude-core`:
 | `OperationCancelledError` | The caller cancelled, or `stop()` cancelled the operation. `cause` contains the supplied reason. |
 | `OperationDeadlineError` | The operation reached its `deadline`. |
 | `PlannerTimeoutError` | All configured planner timeout attempts settled without an accepted plan. `timeoutMs` is the per-invocation budget. |
+| `ExtractTimeoutError` | All configured `extract` timeout attempts settled without a response. `timeoutMs` is the per-call budget. |
 | `AgentBusyError` | Another operation is active or draining, or a lifecycle transition is pending. |
 | `ActionLimitError` | The existing action budget was exhausted. |
 | `BrowserBlockedError` | Browser recovery stopped execution. Inspect `block.reason`, `block.evidence`, and optional `block.retryAt`. |

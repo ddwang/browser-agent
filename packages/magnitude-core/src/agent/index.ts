@@ -7,7 +7,7 @@ import { ModelHarness } from "@/ai/modelHarness";
 import { AgentEvents } from "@/common/events";
 import { AgentConnector } from '@/connectors';
 import { Observation, RenderableContent } from '@/memory/observation';
-import { LLMClient, type PlannerOptions } from "@/ai/types";
+import { LLMClient, type TimeoutPolicy } from "@/ai/types";
 import { ActionLimitError, AgentBusyError, AgentError, PlannerTimeoutError } from "@/agent/errors";
 import {
     Operation, attachOperationDiagnostics, checkOperation, currentOperation, measureOperation,
@@ -36,7 +36,9 @@ export interface AgentOptions {
     telemetry?: boolean;
     maxActions?: number;
     /** Omitted preserves existing planner retry behavior without a per-call timeout. */
-    planner?: PlannerOptions;
+    planner?: TimeoutPolicy;
+    /** Omitted runs extract() without a per-call timeout. */
+    extract?: TimeoutPolicy;
     //executor?: GroundingClient;
 }
 
@@ -49,7 +51,7 @@ export interface ActOptions extends OperationOptions {
 
 // Options for the startAgent helper function
 
-const DEFAULT_CONFIG: Required<Omit<AgentOptions, 'actions' | 'planner'> & { actions: ActionDefinition<any>[] }> = {
+const DEFAULT_CONFIG: Required<Omit<AgentOptions, 'actions' | 'planner' | 'extract'> & { actions: ActionDefinition<any>[] }> = {
     actions: [...taskActions], // Default to taskActions; other actions come from connectors
     connectors: [],
     llm: {
@@ -144,7 +146,7 @@ export class Agent {
         }
 
         //this.model = new ModelHarness({ llm: this.options.llm });
-        this.models = new MultiModelHarness(llms, this.options.planner);
+        this.models = new MultiModelHarness(llms, { planner: this.options.planner, extract: this.options.extract });
         this.models.events.on('tokensUsed', (usage) => this.events.emit('tokensUsed', usage), this);
         this.doneActing = false;
         this._paused = false;

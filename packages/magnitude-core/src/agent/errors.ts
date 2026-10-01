@@ -82,6 +82,13 @@ export class PlannerTimeoutError extends AgentError {
     }
 }
 
+export class ExtractTimeoutError extends AgentError {
+    constructor(public readonly timeoutMs: number) {
+        super(`Extract call exceeded its ${timeoutMs} ms request budget`, { variant: 'extract_timeout' });
+        this.name = 'ExtractTimeoutError';
+    }
+}
+
 // // Agent will only throw these types of errors
 
 // import { ActionIngredient } from "./recipe/types";

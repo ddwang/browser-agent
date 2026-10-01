@@ -1,6 +1,6 @@
 import { MultiMediaContentPart } from "@/memory/rendering";
 import { ModelHarness, ModelHarnessEvents } from "./modelHarness";
-import { allBrowserAgentRoles, BrowserAgentRole, LLMClient, type PlannerOptions } from "./types";
+import { allBrowserAgentRoles, BrowserAgentRole, LLMClient, type TimeoutPolicy } from "./types";
 import { ActionDefinition } from "@/actions";
 import { AgentContext } from "./baml_client";
 import { Image } from '@/memory/image';
@@ -20,11 +20,11 @@ export class MultiModelHarness {
 
     public readonly events: EventEmitter<ModelHarnessEvents> = new EventEmitter();
 
-    constructor(clients: LLMClient[], planner?: PlannerOptions) {
+    constructor(clients: LLMClient[], policies: { planner?: TimeoutPolicy; extract?: TimeoutPolicy } = {}) {
         // Sort by specificity (from least specific to most specific)
         const sortedClients = [...clients].sort((a, b) => (b.roles ? b.roles.length : 9999) - (a.roles ? a.roles.length : 9999));
         for (const client of sortedClients) {
-            const harness = new ModelHarness({ llm: client, planner });
+            const harness = new ModelHarness({ llm: client, ...policies });
             this.uniqueModels.push(harness);
             if (client.roles) {
                 for (const role of client.roles) {
