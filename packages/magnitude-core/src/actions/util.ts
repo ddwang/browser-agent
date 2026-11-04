@@ -225,36 +225,24 @@ class SchemaAdder {
             }
         }
 
-        if (jsonSchema.anyOf) {
-            if (!Array.isArray(jsonSchema.anyOf)) {
-                throw new Error("'anyOf' property must be an array of schema objects.");
+        const union = jsonSchema.anyOf ?? jsonSchema.oneOf;
+        if (union) {
+            if (!Array.isArray(union)) {
+                throw new Error("Union alternatives must be an array of schema objects.");
             }
-            if (!jsonSchema.anyOf.every(s => typeof s === 'object' && s !== null)) {
-                throw new Error("'anyOf' array must contain valid schema objects.");
+            if (!union.every(s => typeof s === 'object' && s !== null)) {
+                throw new Error("Union alternatives must contain valid schema objects.");
             }
-            if (jsonSchema.anyOf.length === 0) {
-                console.warn("'anyOf' is an empty array. Defaulting to string (Python script has no specific handling).");
+            if (union.length === 0) {
+                console.warn("Union alternatives are empty. Defaulting to string (Python script has no specific handling).");
                 return this.tb.string();
             }
-            return this.tb.union(jsonSchema.anyOf.map(subSchema => this.parse(subSchema as JsonSchema)));
+            return this.tb.union(union.map(subSchema => this.parse(subSchema)));
         }
 
         const additionalProperties = jsonSchema.additionalProperties;
-        if (additionalProperties && typeof additionalProperties === 'object' && (additionalProperties as JsonSchema).anyOf) {
-            const apSchema = additionalProperties as JsonSchema;
-            const anyOfInAp = apSchema.anyOf;
-            if (!Array.isArray(anyOfInAp)) {
-                throw new Error("'anyOf' in 'additionalProperties' must be an array of schema objects.");
-            }
-            if (!anyOfInAp.every(s => typeof s === 'object' && s !== null)) {
-                throw new Error("'anyOf' in 'additionalProperties' must contain valid schema objects.");
-            }
-            if (anyOfInAp.length === 0) {
-                console.warn("'anyOf' in 'additionalProperties' is empty. Defaulting map value to string.");
-                return this.tb.map(this.tb.string(), this.tb.string());
-            }
-            const valueType = this.tb.union(anyOfInAp.map(subSchema => this.parse(subSchema as JsonSchema)));
-            return this.tb.map(this.tb.string(), valueType);
+        if (additionalProperties && typeof additionalProperties === 'object' && (additionalProperties.anyOf || additionalProperties.oneOf)) {
+            return this.tb.map(this.tb.string(), this.parse(additionalProperties));
         }
 
         const type = jsonSchema.type;
@@ -311,8 +299,26 @@ function convertJsonSchemaToBaml(tb: TypeBuilder, jsonSchema: JsonSchema): Field
 }
 
 export function convertZodToBaml(tb: TypeBuilder, schema: Schema) {
-    const jsonSchema = z.toJSONSchema(schema, { target: "draft-7", io: "input" });
+    const jsonSchema = convertZodToJsonSchema(schema);
     return convertJsonSchemaToBaml(tb, jsonSchema);
+}
+
+export function convertZodToJsonSchema(schema: Schema): JsonSchema {
+    return z.toJSONSchema(schema, {
+        target: "draft-7",
+        io: "input",
+        unrepresentable: ({ zodSchema }) => {
+            const def = zodSchema._zod.def;
+            if (def.type === 'date' && def.coerce) return { type: 'string', format: 'date-time' };
+            if (def.type === 'bigint' && def.coerce) return { type: 'integer' };
+            return 'throw';
+        },
+        override: ({ zodSchema, jsonSchema }) => {
+            if (zodSchema instanceof z.ZodObject && zodSchema.def.catchall === undefined) {
+                jsonSchema.additionalProperties = false;
+            }
+        },
+    });
 }
 
 export function convertActionDefinitionsToBaml<T>(

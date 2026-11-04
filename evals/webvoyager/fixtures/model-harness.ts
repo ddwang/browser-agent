@@ -121,6 +121,55 @@ try {
         console.log('PASS: query and extraction unwrap primitive, array and transformed schemas exactly once');
     }
     {
+        const choice = z.discriminatedUnion('kind', [
+            z.object({ kind: z.literal('text'), text: z.string() }),
+            z.object({ kind: z.literal('count'), count: z.number().int() }),
+        ]);
+        const screenshot = new Image(sharp({ create: { width: 2, height: 2, channels: 3, background: '#123456' } }).png());
+        const date = '2026-11-04T00:00:00.000Z';
+        for (const structuredOutputs of [false, true]) {
+            for (const { schema, value, expected } of [
+                { schema: choice, value: { kind: 'text', text: 'observed' }, expected: { kind: 'text', text: 'observed' } },
+                { schema: choice, value: { kind: 'count', count: 42 }, expected: { kind: 'count', count: 42 } },
+                { schema: z.object({ choice }), value: { choice: { kind: 'text', text: 'observed' } }, expected: { choice: { kind: 'text', text: 'observed' } } },
+                { schema: z.array(choice), value: [{ kind: 'count', count: 42 }], expected: [{ kind: 'count', count: 42 }] },
+                { schema: z.record(z.string(), choice), value: { observed: { kind: 'count', count: 42 } }, expected: { observed: { kind: 'count', count: 42 } } },
+                { schema: z.coerce.date(), value: date, expected: new Date(date) },
+                { schema: z.coerce.bigint(), value: 42, expected: 42n },
+                { schema: z.coerce.date().transform(value => value.toISOString()), value: date, expected: date },
+                { schema: z.coerce.date().nullable(), value: null, expected: null },
+                { schema: z.object({ date: z.coerce.date().optional(), count: z.coerce.bigint() }), value: { date, count: 42 }, expected: { date: new Date(date), count: 42n } },
+            ]) {
+                const reply = { text: JSON.stringify(schema instanceof z.ZodObject ? value : { data: value }) };
+                const { harness } = await fixture([reply, reply], false, { structuredOutputs });
+                assert.deepEqual(await harness.query(context, 'Read the value.', schema), expected);
+                assert.deepEqual(await harness.extract('Read the value.', schema, screenshot, '<p>Fixture</p>'), expected);
+                assert.equal(requests.length, 2);
+            }
+        }
+        const choose = createAction({ name: 'choose', schema: choice, resolver: async () => {} });
+        for (const input of [{ kind: 'text', text: 'observed' }, { kind: 'count', count: 42 }]) {
+            const expected = { reasoning: 'Observed branch', memory_updates: [], actions: [{ variant: 'choose', input }] };
+            const { harness } = await fixture([{ text: JSON.stringify(expected) }]);
+            assert.deepEqual(await harness.partialAct(context, 'Record the observed branch.', [], [choose]), expected);
+        }
+        console.log('PASS: discriminated unions and coercing primitives survive real query and extraction parsing');
+    }
+    {
+        const screenshot = new Image(sharp({ create: { width: 2, height: 2, channels: 3, background: '#123456' } }).png());
+        for (const { schema, value } of [
+            { schema: z.coerce.date().min(new Date('2020-01-01')), value: '2010-01-01T00:00:00.000Z' },
+            { schema: z.coerce.bigint().min(10n), value: 9 },
+        ]) {
+            const reply = { text: JSON.stringify({ data: value }) };
+            const { harness } = await fixture([reply, reply]);
+            await assert.rejects(harness.query(context, 'Read the value.', schema), z.ZodError);
+            await assert.rejects(harness.extract('Read the value.', schema, screenshot, '<p>Fixture</p>'), z.ZodError);
+            assert.equal(requests.length, 2, 'original constraints reject the model response after inference');
+        }
+        console.log('PASS: original date and bigint constraints still reject invalid model responses');
+    }
+    {
         const { act, usage } = await fixture([{ text: valid }]);
         assert.deepEqual(await act(), plan);
         assert.equal(requests.length, 1);
