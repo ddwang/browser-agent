@@ -6,6 +6,32 @@ beforeEach(async () => {
     await BrowserProvider.reset();
 });
 
+test.each([
+    {
+        selection: 'channel',
+        options: { channel: 'magnitude-missing-channel' },
+        error: 'magnitude-missing-channel',
+    },
+    {
+        selection: 'executable path',
+        options: { executablePath: '/magnitude-missing-browser' },
+        error: "executable doesn't exist at /magnitude-missing-browser",
+    },
+    {
+        selection: 'executable path over channel',
+        options: { channel: 'magnitude-missing-channel', executablePath: '/magnitude-missing-browser' },
+        error: "executable doesn't exist at /magnitude-missing-browser",
+    },
+])('preserves an explicit $selection instead of falling back to Chrome', async ({ options, error }) => {
+    try {
+        await expect(BrowserProvider.getInstance().newContext({
+            launchOptions: { headless: true, ...options },
+        })).rejects.toThrow(error);
+    } finally {
+        await BrowserProvider.reset();
+    }
+});
+
 describe('BrowserProvider.reset()', () => {
     test('is idempotent when no instance exists', async () => {
         expect((globalThis as any).__magnitude__?.browserProvider).toBeUndefined();
@@ -23,11 +49,15 @@ describe('BrowserProvider.reset()', () => {
         expect((globalThis as any).__magnitude__.browserProvider).toBeUndefined();
     });
 
-    test('closes active browsers and clears singleton', async () => {
+    test.each([
+        { selection: 'omitted', options: {} },
+        { selection: 'undefined', options: { channel: undefined } },
+        { selection: 'explicit Chrome', options: { channel: 'chrome' } },
+    ])('closes active browsers and clears singleton ($selection channel)', async ({ options }) => {
         const instance = BrowserProvider.getInstance();
 
         // Create a context which launches a real browser
-        const context = await instance.newContext({ launchOptions: { headless: true } });
+        const context = await instance.newContext({ launchOptions: { headless: true, ...options } });
         const browser = context.browser();
         expect(browser).not.toBeNull();
         console.log(`BrowserProvider smoke: Chrome ${browser?.version()}`);
