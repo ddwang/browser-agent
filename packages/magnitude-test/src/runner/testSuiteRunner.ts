@@ -181,7 +181,7 @@ const createNodeTestWorker: CreateTestWorker = async (workerData) =>
             new URL(
                 import.meta.url.endsWith(".ts")
                     ? '../worker/readTest.ts'
-                    : './worker/readTest.js',
+                    : './worker/readTest.mjs',
                 import.meta.url
             ),
             {
@@ -299,7 +299,7 @@ const createBunTestWorker: CreateTestWorker = async (workerData) =>
                 new URL(
                     import.meta.url.endsWith(".ts")
                         ? '../worker/readTest.ts'
-                        : './worker/readTest.js',
+                        : './worker/readTest.mjs',
                     import.meta.url
                 ).pathname
             ],

@@ -309,11 +309,11 @@ export class ModelHarness {
         return usage;
     }
 
-    async partialAct<T>(
+    async partialAct(
         context: AgentContext,
         task: string,
         data: MultiMediaContentPart[],
-        actionVocabulary: ActionDefinition<T>[]
+        actionVocabulary: ActionDefinition<any>[]
     ): Promise<PlannerResponse> {
         return this.withTimeout(this.options.planner, timeoutMs => new PlannerTimeoutError(timeoutMs),
             (checkRequest, callId) => this.partialActAttempt(context, task, data, actionVocabulary, checkRequest, callId), true);
@@ -385,11 +385,11 @@ export class ModelHarness {
         }
     }
 
-    private async partialActAttempt<T>(
+    private async partialActAttempt(
         context: AgentContext,
         task: string,
         data: MultiMediaContentPart[],
-        actionVocabulary: ActionDefinition<T>[],
+        actionVocabulary: ActionDefinition<any>[],
         checkRequest: () => AbortSignal,
         callId?: string,
     ): Promise<PlannerResponse> {

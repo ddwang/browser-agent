@@ -4,6 +4,9 @@
 node_modules
 .pnp
 .pnp.js
+/package-lock.json
+/packages/magnitude-extract/bun.lock
+/packages/magnitude-test/examples/bun.lock
 
 # Local env files
 .env

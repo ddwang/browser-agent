@@ -89,11 +89,11 @@ export class BrowserAgent extends Agent {
         }, 'nav');
     }
 
-    async extract<T extends Schema>(instructions: string, schema: T, options: OperationOptions = {}): Promise<z.infer<T>> {
+    async extract<T extends Schema<ExtractedOutput>>(instructions: string, schema: T, options: OperationOptions = {}): Promise<z.infer<T>> {
         return this.runOperation(options, () => this._extract(instructions, schema), 'extract');
     }
 
-    private async _extract<T extends Schema>(instructions: string, schema: T): Promise<z.infer<T>> {
+    private async _extract<T extends Schema<ExtractedOutput>>(instructions: string, schema: T): Promise<z.infer<T>> {
         this.browserAgentEvents.emit('extractStarted', instructions, schema);
         const htmlContent = await retry(
             () => getVisiblePageContent(this.page),

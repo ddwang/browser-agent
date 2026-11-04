@@ -1,8 +1,29 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const llm = { provider: 'anthropic', options: { model: 'fixture', apiKey: 'unused' } };
+
+// Changesets publishes this Bun workspace with npm, which does not rewrite workspace: ranges.
+const packed = await mkdtemp(join(tmpdir(), 'magnitude-npm-smoke-'));
+try {
+    for (const name of ['magnitude-mcp', 'magnitude-test']) {
+        execFileSync('npm', ['pack', '--ignore-scripts', '--pack-destination', packed], {
+            cwd: fileURLToPath(new URL(`../packages/${name}/`, import.meta.url)), stdio: 'pipe',
+        });
+    }
+    for (const filename of await readdir(packed)) {
+        const manifest = JSON.parse(execFileSync('tar', ['-xOf', join(packed, filename), 'package/package.json'], { encoding: 'utf8' }));
+        assert.ok(manifest.dependencies['@ddwang/magnitude-core']);
+        for (const range of Object.values(manifest.dependencies)) assert.ok(!range.startsWith('workspace:'), `${manifest.name}: ${range}`);
+        console.log(`PASS: ${manifest.name} npm tarball has publishable dependency ranges`);
+    }
+} finally { await rm(packed, { recursive: true, force: true }); }
 
 // Exercise the built public API in both formats, without model or browser requests.
 for (const [format, load] of [

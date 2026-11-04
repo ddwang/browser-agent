@@ -55,9 +55,9 @@ const connector = {
         assert.equal(plans, 3);
         assert.equal(agent.memory, restored);
         assert.equal((await restored.toJSON()).instructions, expected ?? undefined);
-        agent.models.query = async context => {
+        agent.models.query = async (context, _query, schema) => {
             assert.equal(context.instructions, expected);
-            return 'verified';
+            return schema.parse('verified');
         };
         assert.equal(await agent.query('Inspect effective instructions', z.string()), 'verified');
         await agent.stop();
@@ -203,10 +203,10 @@ const connector = {
         return { reasoning: 'Save and finish.', memory_updates: [update], actions: [{ variant: 'task:done', evidence: 'Complete' }] };
     };
     await agent.act('Retain evidence');
-    agent.models.query = async context => {
+    agent.models.query = async (context, _query, schema) => {
         assert.deepEqual(context.connectorInstructions, [{ connectorId: 'fixture', instructions: 'Fixture instructions' }]);
         assert.match(JSON.stringify(context.observationContent), /Observed value: 437/);
-        return 'observed';
+        return schema.parse('observed');
     };
     assert.equal(await agent.query('Read saved data', z.string()), 'observed');
     assert.equal(await agent.query('Read full audit', z.string(), { history: 'full' }), 'observed');

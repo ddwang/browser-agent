@@ -1,7 +1,6 @@
-// Default import avoids Node 18/22's incomplete CJS named-export detection for Image.
 import baml, { type Image as BamlImage } from '@boundaryml/baml';
 import { StoredMedia } from './serde';
-import { Sharp } from 'sharp';
+import type { FormatEnum, Sharp } from 'sharp';
 import sharp from 'sharp';
 
 export type ImageMediaType = `image/${string}`;//'png' | 'jpeg';
@@ -37,8 +36,8 @@ export class Image {
         return new Image(sharp(Buffer.from(base64Data, 'base64')));
     }
 
-    async getFormat(): Promise<keyof sharp.FormatEnum> {
-        return (await this.encode()).format as keyof sharp.FormatEnum;
+    async getFormat(): Promise<keyof FormatEnum> {
+        return (await this.encode()).format as keyof FormatEnum;
     }
 
     private encode() {

@@ -24,7 +24,7 @@ export class ContentHandlers {
       const $el = $(element);
       const fieldType = $el.attr('type') || $el.prop('tagName')?.toLowerCase();
       const fieldName = $el.attr('name') || $el.attr('id') || $el.prev('label').text().trim() || 'field';
-      let fieldValue = '';
+      let fieldValue: string;
       
       switch (fieldType) {
         case 'checkbox':
@@ -59,7 +59,7 @@ export class ContentHandlers {
           const existingField = fields.find(f => f.fieldName === labelText);
           if (!existingField) {
             const fieldType = $input.attr('type') || $input.prop('tagName')?.toLowerCase();
-            let fieldValue = '';
+            let fieldValue: string;
             
             switch (fieldType) {
               case 'checkbox':

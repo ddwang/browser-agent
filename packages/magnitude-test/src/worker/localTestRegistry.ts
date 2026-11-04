@@ -3,7 +3,7 @@ import cuid2 from "@paralleldrive/cuid2";
 import { getTestWorkerData, postToParent, testFunctions, messageEmitter, TestWorkerIncomingMessage, hooks, testRegistry, testPromptStack } from "./util";
 import { TestCaseAgent } from "@/agent";
 import { TestResult, TestState, TestStateTracker } from "@/runner/state";
-import { buildDefaultBrowserAgentOptions } from "magnitude-core";
+import { buildDefaultBrowserAgentOptions } from "@ddwang/magnitude-core";
 import { sendTelemetry } from "@/runner/telemetry";
 
 // This module has to be separate so it only gets imported once after possible compilation by jiti.

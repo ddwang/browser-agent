@@ -28,8 +28,9 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "bun test",
-    "lint": "eslint \"src/**/*.ts\"",
-    "prepublishOnly": "bun run build"
+    "lint": "eslint src",
+    "prepublishOnly": "bun run build",
+    "check": "tsc --noEmit"
   },
   "keywords": [
     "dom",
@@ -42,17 +43,18 @@
   "license": "MIT",
   "dependencies": {
     "cheerio": "^1.0.0-rc.12",
-    "uuid": "^9.0.0"
+    "uuid": "^11.1.1"
   },
   "devDependencies": {
     "@types/bun": "^1.2.17",
     "@types/cheerio": "^1.0.0",
     "@types/node": "^20.0.0",
-    "@types/uuid": "^9.0.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
-    "eslint": "^8.0.0",
-    "tsup": "^8.5.0",
-    "typescript": "^5.0.0"
+    "@typescript-eslint/parser": "^8.72.1",
+    "eslint": "^10.14.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.0.0",
+    "@eslint/js": "^10.0.1",
+    "globals": "^16.5.0",
+    "@typescript-eslint/eslint-plugin": "^8.72.1"
   }
 }

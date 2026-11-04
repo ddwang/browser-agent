@@ -121,6 +121,80 @@ try {
         console.log('PASS: query and extraction unwrap primitive, array and transformed schemas exactly once');
     }
     {
+        const choice = z.discriminatedUnion('kind', [
+            z.object({ kind: z.literal('text'), text: z.string() }),
+            z.object({ kind: z.literal('count'), count: z.number().int() }),
+        ]);
+        const screenshot = new Image(sharp({ create: { width: 2, height: 2, channels: 3, background: '#123456' } }).png());
+        const date = '2026-11-04T00:00:00.000Z';
+        const fallbackCount = z.number().min(10).catch(ctx => ctx.input === 7 ? 42 : 0);
+        for (const structuredOutputs of [false, true]) {
+            for (const { schema, value, expected } of [
+                { schema: choice, value: { kind: 'text', text: 'observed' }, expected: { kind: 'text', text: 'observed' } },
+                { schema: choice, value: { kind: 'count', count: 42 }, expected: { kind: 'count', count: 42 } },
+                { schema: z.object({ choice }), value: { choice: { kind: 'text', text: 'observed' } }, expected: { choice: { kind: 'text', text: 'observed' } } },
+                { schema: z.array(choice), value: [{ kind: 'count', count: 42 }], expected: [{ kind: 'count', count: 42 }] },
+                { schema: z.record(z.string(), choice), value: { observed: { kind: 'count', count: 42 } }, expected: { observed: { kind: 'count', count: 42 } } },
+                { schema: z.coerce.date(), value: date, expected: new Date(date) },
+                { schema: z.coerce.bigint(), value: 42, expected: 42n },
+                { schema: z.coerce.bigint().default(42n), value: 7, expected: 7n },
+                { schema: z.coerce.bigint().catch(42n), value: 7, expected: 7n },
+                { schema: z.coerce.bigint().min(10n).catch(42n), value: 7, expected: 42n },
+                { schema: fallbackCount, value: 14, expected: 14 },
+                { schema: fallbackCount, value: 7, expected: 42 },
+                { schema: z.object({ count: fallbackCount }), value: { count: 7 }, expected: { count: 42 } },
+                { schema: z.array(fallbackCount), value: [7, 14], expected: [42, 14] },
+                { schema: z.object({ count: z.coerce.bigint().default(42n) }), value: { count: 7 }, expected: { count: 7n } },
+                { schema: z.object({ count: z.coerce.bigint().catch(42n) }), value: { count: 7 }, expected: { count: 7n } },
+                { schema: z.array(z.coerce.bigint().default(42n)), value: [7], expected: [7n] },
+                { schema: z.object({ counts: z.array(z.coerce.bigint()) }).catch({ counts: [42n] }), value: { counts: [7] }, expected: { counts: [7n] } },
+                { schema: z.coerce.date().transform(value => value.toISOString()), value: date, expected: date },
+                { schema: z.coerce.date().nullable(), value: null, expected: null },
+                { schema: z.object({ date: z.coerce.date().optional(), count: z.coerce.bigint() }), value: { date, count: 42 }, expected: { date: new Date(date), count: 42n } },
+            ]) {
+                const reply = { text: JSON.stringify(schema instanceof z.ZodObject ? value : { data: value }) };
+                const { harness } = await fixture([reply, reply], false, { structuredOutputs });
+                assert.deepEqual(await harness.query(context, 'Read the value.', schema), expected);
+                assert.deepEqual(await harness.extract('Read the value.', schema, screenshot, '<p>Fixture</p>'), expected);
+                assert.equal(requests.length, 2);
+            }
+        }
+        const choose = createAction({ name: 'choose', schema: choice, resolver: async () => {} });
+        for (const input of [{ kind: 'text', text: 'observed' }, { kind: 'count', count: 42 }]) {
+            const expected = { reasoning: 'Observed branch', memory_updates: [], actions: [{ variant: 'choose', input }] };
+            const { harness } = await fixture([{ text: JSON.stringify(expected) }]);
+            assert.deepEqual(await harness.partialAct(context, 'Record the observed branch.', [], [choose]), expected);
+        }
+        for (const structuredOutputs of [false, true]) {
+            for (const { schema, parsed } of [
+                { schema: z.coerce.bigint().catch(42n), parsed: 7n },
+                { schema: z.number().catch(ctx => ctx.input === 'unknown' ? 42 : 0), parsed: 7 },
+            ]) {
+                const count = createAction<number | bigint>({ name: 'count', schema, resolver: async () => {} });
+                const expected = { reasoning: 'Observed count', memory_updates: [], actions: [{ variant: 'count', input: 7 }] };
+                const { harness } = await fixture([{ text: JSON.stringify(expected) }], false, { structuredOutputs });
+                assert.deepEqual(await harness.partialAct(context, 'Record the count.', [], [count]), expected);
+                assert.equal(schema.parse(expected.actions[0].input), parsed);
+                assert.equal(requests.length, 1);
+            }
+        }
+        console.log('PASS: discriminated unions and coercing primitives survive real query and extraction parsing');
+    }
+    {
+        const screenshot = new Image(sharp({ create: { width: 2, height: 2, channels: 3, background: '#123456' } }).png());
+        for (const { schema, value } of [
+            { schema: z.coerce.date().min(new Date('2020-01-01')), value: '2010-01-01T00:00:00.000Z' },
+            { schema: z.coerce.bigint().min(10n), value: 9 },
+        ]) {
+            const reply = { text: JSON.stringify({ data: value }) };
+            const { harness } = await fixture([reply, reply]);
+            await assert.rejects(harness.query(context, 'Read the value.', schema), z.ZodError);
+            await assert.rejects(harness.extract('Read the value.', schema, screenshot, '<p>Fixture</p>'), z.ZodError);
+            assert.equal(requests.length, 2, 'original constraints reject the model response after inference');
+        }
+        console.log('PASS: original date and bigint constraints still reject invalid model responses');
+    }
+    {
         const { act, usage } = await fixture([{ text: valid }]);
         assert.deepEqual(await act(), plan);
         assert.equal(requests.length, 1);
@@ -180,7 +254,7 @@ try {
         const schema = z.object({ answer: z.boolean() });
         await assert.rejects(harness.query(context, 'Answer?', schema));
         assert.equal(usage.length, 1);
-        const screenshot = Image.fromBase64('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7mgAAAAASUVORK5CYII=');
+        const screenshot = new Image(sharp({ create: { width: 1, height: 1, channels: 3, background: '#000' } }).png());
         await assert.rejects(harness.extract('Answer?', schema, screenshot, '<p>Fixture</p>'));
         assert.equal(usage.length, 2);
         console.log('PASS: query and extraction parse failures are accounted');

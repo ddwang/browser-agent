@@ -88,10 +88,21 @@ test('reused nonrecursive definitions resolve without treating property names as
 
 test('unsupported data shapes retain prompt-only compatibility instead of changing their shape', () => {
     const recursive: z.ZodType<any> = z.lazy(() => z.object({ next: recursive.optional() }));
-    for (const schema of [z.record(z.string()), z.object({}).passthrough(), z.any(), recursive, z.tuple([z.string(), z.number()])]) {
+    for (const schema of [z.record(z.string(), z.string()), z.object({}).passthrough(), z.any(), recursive, z.tuple([z.string(), z.number()])]) {
         expect(anthropicOutputFormat(schema)).toBeUndefined();
     }
     expect(anthropicOutputFormat(z.object(Object.fromEntries(Array.from({ length: 25 }, (_, i) => [`field${i}`, z.string().optional()]))))).toBeUndefined();
+});
+
+test('transformed schemas describe model input and validate transformed output locally', () => {
+    const schema = z.object({ value: z.string().transform(value => value.length) });
+    expect(anthropicOutputFormat(schema)?.schema).toMatchObject({
+        type: 'object',
+        additionalProperties: false,
+        properties: { value: { type: 'string' } },
+        required: ['value'],
+    });
+    expect(schema.parse({ value: 'observed' })).toEqual({ value: 8 });
 });
 
 test('generated schemas stay stable across varied field names and action vocabularies', () => {

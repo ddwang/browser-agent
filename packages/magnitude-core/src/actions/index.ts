@@ -1,7 +1,7 @@
 import type { Agent } from "@/agent"
 import type { AgentMemory } from '@/memory/agentMemory';
 import { RenderableContent } from "@/memory/observation";
-import { z, Schema, ZodTypeAny } from "zod"
+import { z, Schema } from "zod"
 import type { OperationOptions } from '@/common/operation';
 
 export type ActionContext<T> = { input: T; agent: Agent; memory?: AgentMemory } & OperationOptions;
@@ -14,26 +14,19 @@ export interface ActionDefinition<T> {
     render: (action: T) => string
 }
 
-export function createAction<S extends ZodTypeAny>(
-    action: {
-        name: string;
-        description?: string;
-        schema?: S;
-        resolver: (context: ActionContext<z.infer<S>>) => Promise<void | RenderableContent>;
-        render?: (action: z.infer<S>) => string
+type ActionOptions<T> = Omit<ActionDefinition<T>, 'render'> & {
+    render?: ActionDefinition<T>['render'];
+};
+type EmptyActionOptions = Omit<ActionOptions<Record<string, never>>, 'schema'> & { schema?: undefined };
+
+export function createAction<T>(action: ActionOptions<T>): ActionDefinition<T>;
+export function createAction(action: EmptyActionOptions): ActionDefinition<Record<string, never>>;
+export function createAction<T>(action: ActionOptions<T> | EmptyActionOptions): ActionDefinition<T> | ActionDefinition<Record<string, never>> {
+    if (action.schema !== undefined) {
+        return { ...action, render: action.render ?? ((input: T) => JSON.stringify(input)) };
     }
-): ActionDefinition<z.infer<S>> {
-    // Just a helper for automatic schema typing
-    return {
-        name: action.name,
-        description: action.description,
-        schema: action.schema ?? z.object({}),
-        resolver: action.resolver,
-        render: action.render ?? ((action) => JSON.stringify(action))
-    };
+    return { ...action, schema: z.object({}), render: action.render ?? ((input: Record<string, never>) => JSON.stringify(input)) };
 }
-
-
 
 // 2. Create a helper type to extract the payload structure for a single action
 // This payload combines the 'name' (as a literal type) and the inferred schema.

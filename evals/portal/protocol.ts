@@ -40,9 +40,9 @@ export function checkHoldout(portal: string, allow: boolean, frozen?: string) {
 const probability = z.number().finite().min(0).max(1);
 const answerSchema = z.object({
     model: z.string().min(1),
-    answers: z.record(z.object({
+    answers: z.record(z.string(), z.object({
         type: z.literal('choice'), choice: z.string(),
-        probabilities: z.record(probability), confidence: probability,
+        probabilities: z.record(z.string(), probability), confidence: probability,
     })),
     usage: z.object({ input_tokens: z.number().int().nonnegative(), output_tokens: z.number().int().nonnegative() }).optional(),
 });

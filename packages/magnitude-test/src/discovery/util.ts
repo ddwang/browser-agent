@@ -90,7 +90,7 @@ export function readConfig(configPath: string): Promise<any> {
             new URL(
                 import.meta.url.endsWith(".ts")
                     ? '../worker/readConfig.ts'
-                    : './worker/readConfig.js',
+                    : './worker/readConfig.mjs',
                 import.meta.url
             ),
             {

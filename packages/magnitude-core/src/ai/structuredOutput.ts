@@ -1,8 +1,7 @@
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import { z, type Schema } from 'zod';
 import type { LLMClient } from './types';
 import type { ActionDefinition } from '@/actions';
-import { actionInputSchema } from '@/actions/util';
+import { actionInputSchema, convertZodToJsonSchema } from '@/actions/util';
 import { memoryUpdatesSchema } from './plannerResponse';
 import { DEFAULT_BASETEN_BASE_URL } from './baseten';
 
@@ -38,7 +37,9 @@ export function plannerSchema(vocabulary: ActionDefinition<any>[]): Schema {
 export const BASETEN_ENFORCED = new Set(['minimum', 'maximum', 'minItems', 'maxItems']);
 
 export function anthropicOutputFormat(schema: Schema, enforced: ReadonlySet<string> = new Set()): { type: 'json_schema'; schema: JsonSchema } | undefined {
-    const root = zodToJsonSchema(schema) as JsonSchema;
+    let root: JsonSchema;
+    try { root = convertZodToJsonSchema(schema); }
+    catch { return undefined; }
     const constraints = new Set(['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'maxLength', 'pattern', 'format', 'maxItems', 'uniqueItems']);
     const annotations = new Set(['$schema', 'definitions', '$defs', 'title', 'description', 'default']);
     let optionalCount = 0;

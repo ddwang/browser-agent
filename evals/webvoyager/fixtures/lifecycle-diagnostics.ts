@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { z } from 'zod';
 import { Agent } from '../../../packages/magnitude-core/src/agent';
-import { createAction } from '../../../packages/magnitude-core/src/actions';
+import { createAction, type ActionDefinition } from '../../../packages/magnitude-core/src/actions';
 import { AgentBusyError, OperationCancelledError } from '../../../packages/magnitude-core/src/agent/errors';
 import { checkOperation, measureOperation, type OperationDiagnostics } from '../../../packages/magnitude-core/src/common/operation';
 
@@ -9,7 +9,7 @@ const llm = { provider: 'anthropic' as const, options: { model: 'fixture', apiKe
 const deferred = () => Promise.withResolvers<void>();
 const tick = () => new Promise<void>(resolve => setTimeout(resolve, 5));
 const work = { variant: 'work', text: 'SECRET_TYPED_TEXT' };
-const action = (resolver: Parameters<typeof createAction>[0]['resolver']) => createAction({
+const action = (resolver: ActionDefinition<{ text: string }>['resolver']) => createAction({
     name: 'work', schema: z.object({ text: z.string() }), resolver,
 });
 
@@ -190,7 +190,7 @@ for (const frozen of [false, true]) {
 // Model/context timings come from execution, not task strings; operation kinds remain distinct.
 {
     const agent = new Agent({ llm, telemetry: false });
-    agent.models.query = async () => measureOperation('model', async () => 'answer');
+    agent.models.query = async (_context, _query, schema) => measureOperation('model', async () => schema.parse('answer'));
     await agent.query('SECRET_PROMPT', z.string());
     assert.equal(agent.operation?.kind, 'query');
     for (const phase of ['context', 'observations', 'model'] as const) assert.equal(agent.operation?.timings[phase]?.count, 1);

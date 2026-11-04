@@ -106,10 +106,10 @@ try {
                     return done();
                 };
                 // Test-only extraction stub reads the displayed DOM, not the control answer key.
-                agent.models.extract = async () => mode === 'empty-results' ? { hasResults: false } : {
+                agent.models.extract = async (_instructions, schema) => schema.parse(mode === 'empty-results' ? { hasResults: false } : {
                     patientName: 'Alex Morgan', collectionDate: '2026-09-10',
                     creatinine: Number((await agent.page.locator('.lab-value').first().innerText()).split(/\s/)[0]), unit: 'mg/dL',
-                };
+                });
             });
             assert.equal(report.status, mode === 'interrupted' ? 'interrupted' : 'completed');
             assert.equal(report.passed, mode !== 'interrupted' && !negative);
