@@ -38,10 +38,7 @@ async function fetchHTML(url: string): Promise<string> {
     
     return await response.text();
   } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Failed to fetch URL: ${error.message}`, { cause: error });
-    }
-    throw new Error('Failed to fetch URL: Unknown error', { cause: error });
+    throw new Error(`Failed to fetch URL: ${error instanceof Error ? error.message : 'Unknown error'}`, { cause: error });
   }
 }
 
