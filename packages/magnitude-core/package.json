@@ -35,7 +35,8 @@
     "build": "baml-cli generate && tsc --noEmit && tsup",
     "check": "tsc --noEmit",
     "cli": "bun ./src/cli.ts",
-    "pubdev": "bun run build && yalc publish --force --push"
+    "pubdev": "bun run build && yalc publish --force --push",
+    "prepack": "node ../../scripts/prepare-browser-package.mjs"
   },
   "author": {
     "name": "Magnitude",
@@ -65,10 +66,15 @@
     "object-hash": "^3.0.0",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",
-    "playwright": "npm:patchright@^1.63.0",
+    "playwright": "npm:patchright@1.64.3",
     "posthog-node": "^5.1.1",
     "sharp": "^0.35.5",
-    "zod": "^4.6.6"
+    "zod": "^4.6.6",
+    "patchright-core": "1.64.3"
   },
-  "type": "module"
+  "type": "module",
+  "bundledDependencies": [
+    "playwright",
+    "patchright-core"
+  ]
 }

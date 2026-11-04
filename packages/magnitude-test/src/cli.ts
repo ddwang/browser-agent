@@ -13,7 +13,6 @@ import { logger as coreLogger } from '@ddwang/magnitude-core';
 import logger from '@/logger';
 import { describeModel } from './util';
 import * as dotenv from 'dotenv';
-import { execSync } from 'node:child_process';
 // Removed React import
 // Removed App import
 // Removed render import
@@ -114,16 +113,7 @@ async function initializeProject(force = false, destination = 'tests/magnitude')
         process.exit(1);
     }
 
-    // Run Playwright installation for Chromium
-    console.log(chalk.blueBright('Installing Playwright Chromium...'));
-    try {
-        execSync('npx playwright install chromium', { stdio: 'inherit' });
-        console.log(`${chalk.blueBright('✓')} Playwright Chromium installed successfully`);
-    } catch (error) {
-        console.error('Error installing Playwright Chromium:', error);
-        // Don't exit with error code since the initialization succeeded
-        console.log(chalk.blueBright('You may need to manually run: npx playwright install chromium'));
-    }
+    console.log('Magnitude uses Google Chrome Stable by default. Install Chrome and keep it updated before running tests.');
 
     console.log(`You can now run tests with: ${chalk.blueBright('npx magnitude')}`);
     console.log('Docs:', chalk.blueBright('https://docs.magnitude.run'));

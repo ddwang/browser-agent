@@ -31,7 +31,7 @@ jobs:
       - run: bun run lint
       - run: bun run typecheck
       - name: Install fixture browser
-        run: bun x --no-install patchright install --with-deps chromium
+        run: bun x --no-install patchright install --with-deps chrome
       - run: bun run test:offline
 
   package:

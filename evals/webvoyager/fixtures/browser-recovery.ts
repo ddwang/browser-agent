@@ -427,7 +427,7 @@ test('completion on the final allowed action succeeds', async () => {
 });
 
 try {
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ channel: 'chrome', headless: true });
     for (const { name, check } of cases) { await check(); console.log(`PASS: ${name}`); }
 } finally {
     await browser!?.close();

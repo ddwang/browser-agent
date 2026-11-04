@@ -5,6 +5,7 @@ import logger from "@/logger";
 import { Logger } from 'pino';
 
 const DEFAULT_BROWSER_OPTIONS: LaunchOptions = {
+    channel: 'chrome',
     headless: false,
     args: ["--disable-gpu", "--disable-blink-features=AutomationControlled"],
 };

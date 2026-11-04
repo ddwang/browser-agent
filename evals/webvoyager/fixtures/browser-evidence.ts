@@ -690,7 +690,7 @@ test('unavailable browser fingerprints leave deadlines and session drainage inta
 });
 
 try {
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ channel: 'chrome', headless: true });
     for (const { name, check } of cases.filter(test => test.name.includes(process.argv[2] ?? ''))) {
         await check(); console.log(`PASS: ${name}`);
     }

@@ -3,6 +3,9 @@
 A Model Context Protocol (MCP) server that gives agents the ability to interact with a browser using the [Magnitude](https://github.com/sagekit/magnitude) framework.
 
 ## Requirements
+Install [Google Chrome Stable](https://www.google.com/chrome/) and keep it updated.
+The MCP server uses the installed Chrome; package installation does not download a browser.
+
 Since Magnitude relies on vision-based browser interaction, the agent using this MCP must be **visually grounded**. Generally this means Claude (Sonnet 3.7/4, Opus 4) or Qwen VL series. See [docs](https://docs.magnitude.run/core-concepts/compatible-llms) for more info.
 
 ## Capabilities

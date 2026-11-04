@@ -27,7 +27,16 @@ describe('BrowserProvider.reset()', () => {
         const instance = BrowserProvider.getInstance();
 
         // Create a context which launches a real browser
-        await instance.newContext({ launchOptions: { headless: true } });
+        const context = await instance.newContext({ launchOptions: { headless: true } });
+        const browser = context.browser();
+        expect(browser).not.toBeNull();
+        console.log(`BrowserProvider smoke: Chrome ${browser?.version()}`);
+        // Chromium 156.0.8078.4 in Patchright 1.64.3 predates this security update.
+        expect((browser?.version() ?? '').localeCompare('156.0.8078.47', undefined, { numeric: true })).toBeGreaterThanOrEqual(0);
+        const page = await context.newPage();
+        await page.setContent('<button onclick="this.textContent=\'Clicked\'">Click me</button>');
+        await page.getByRole('button', { name: 'Click me' }).click();
+        expect(await page.getByRole('button').textContent()).toBe('Clicked');
 
         // Verify a browser is tracked
         expect(Object.keys((instance as any).activeBrowsers).length).toBeGreaterThan(0);

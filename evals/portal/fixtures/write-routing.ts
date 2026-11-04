@@ -14,7 +14,7 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', async fetch(request) 
     }
     return new Response('<h1>Synthetic transport fixture</h1>', { headers: { 'content-type': 'text/html' } });
 } });
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
     for (const loseConfirmation of [false, true]) {
         writes = 0; reads = 0;

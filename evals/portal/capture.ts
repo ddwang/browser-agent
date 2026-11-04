@@ -70,7 +70,7 @@ export async function captureEpisode(job: EpisodeJob, directory: string, token: 
     let retiring = false;
     try {
         before = await control(`/runs/${job.runId}/state`);
-        browser = await chromium.launch({ headless: true, handleSIGINT: false, handleSIGTERM: false });
+        browser = await chromium.launch({ channel: 'chrome', headless: true, handleSIGINT: false, handleSIGTERM: false });
         const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, deviceScaleFactor: 1, serviceWorkers: 'block' });
         // Observe submissions even in retrieval tasks, where a write is unauthorized.
         context.on('request', request => {

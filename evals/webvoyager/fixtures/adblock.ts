@@ -49,7 +49,7 @@ async function expectFiltered(page: Page, path: string) {
     assert.equal(await page.getAttribute('body', 'data-tracked'), null, 'blocked script did not run');
 }
 
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
     const context = await browser.newContext(filteredContextOptions);
     const stats = await enableFilterLists(context, runDir, [{ name: 'fixture.txt', sha256: 'unused' }]);
