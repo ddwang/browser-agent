@@ -97,7 +97,7 @@
         "magnitude-mcp": "dist/index.mjs",
       },
       "dependencies": {
-        "@ddwang/magnitude-core": "workspace:^",
+        "@ddwang/magnitude-core": "^0.3.1-ddwang.18",
         "@modelcontextprotocol/sdk": "^1.32.0",
         "patchright": "^1.49.0",
         "zod": "^4.6.6",
@@ -116,7 +116,7 @@
       },
       "dependencies": {
         "@commander-js/extra-typings": "^14.0.0",
-        "@ddwang/magnitude-core": "workspace:^",
+        "@ddwang/magnitude-core": "^0.3.1-ddwang.18",
         "@paralleldrive/cuid2": "^2.2.2",
         "chalk": "^5.4.1",
         "commander": "^14.0.0",

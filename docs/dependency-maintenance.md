@@ -67,9 +67,11 @@ const action = createAction({
 ```
 
 The release changeset coordinates the core, MCP server, and test runner updates.
-The `workspace:^` dependencies must be converted to the released core version
-when packaging. The packed tarballs were checked for resolved dependencies and
-valid entry points. No packages have been published as part of this update.
+The MCP server and runner declare ordinary semver ranges for the core workspace.
+Changesets updates those ranges when versioning releases; its npm publisher does
+not rewrite `workspace:` protocols. Validate the actual release path with npm-packed
+tarballs, including a temporary Changesets version run, and check their dependencies
+and entry points. No packages have been published as part of this update.
 
 ## Validation
 
