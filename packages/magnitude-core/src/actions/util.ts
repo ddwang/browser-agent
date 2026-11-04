@@ -311,12 +311,22 @@ export function convertZodToJsonSchema(schema: Schema): JsonSchema {
             const def = zodSchema._zod.def;
             if (def.type === 'date' && def.coerce) return { type: 'string', format: 'date-time' };
             if (def.type === 'bigint' && def.coerce) return { type: 'integer' };
+            // Keep the converted inner type; bigint defaults remain local Zod behavior.
+            if (def.type === 'default' || def.type === 'prefault') return {};
             return 'throw';
         },
         override: ({ zodSchema, jsonSchema }) => {
             if (zodSchema instanceof z.ZodObject && zodSchema.def.catchall === undefined) {
                 jsonSchema.additionalProperties = false;
             }
+            // Catch wrappers can emit bigint defaults without invoking unrepresentable.
+            let hasBigIntDefault = false;
+            JSON.stringify(jsonSchema.default, (_key, value: unknown) => {
+                if (typeof value !== 'bigint') return value;
+                hasBigIntDefault = true;
+                return null;
+            });
+            if (hasBigIntDefault) delete jsonSchema.default;
         },
     });
 }
