@@ -12,4 +12,4 @@ echo ""
 echo "Publishing @ddwang/magnitude-core@$VERSION. Press enter to continue, Ctrl+C to abort."
 read
 
-npm publish --access public
+npm publish --access public --tag latest
