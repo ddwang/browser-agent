@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { chromium } from 'patchright';
 import { readOracle } from '../oracle';
 
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('<h1>Fixture</h1>', { headers: { 'content-type': 'text/html' } }) });
 try {
     const page = await browser.newPage({ viewport: { width: 1024, height: 768 } });

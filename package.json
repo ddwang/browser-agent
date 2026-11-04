@@ -18,10 +18,12 @@
     "@changesets/changelog-github": "^0.5.1",
     "@changesets/cli": "^2.31.1",
     "@ghostery/adblocker-playwright": "2.18.2",
-    "playwright": "npm:patchright@^1.63.0",
+    "playwright": "npm:patchright@1.64.3",
     "prettier": "^3.5.3",
     "turbo": "^2.9.14",
-    "typescript": "5.8.2"
+    "typescript": "5.8.2",
+    "brace-expansion": "5.0.12",
+    "esbuild": "0.28.2"
   },
   "engines": {
     "node": "^20.19.0 || ^22.13.0 || >=24"
@@ -43,10 +45,14 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@paralleldrive/cuid2": "^2.2.2",
-    "patchright": "^1.63.0"
+    "patchright": "1.64.3"
   },
   "overrides": {
     "minimatch": "^11.0.1",
     "esbuild": "^0.28.2"
+  },
+  "patchedDependencies": {
+    "patchright-core@1.64.3": "patches/patchright-core@1.64.3.patch",
+    "patchright@1.64.3": "patches/patchright@1.64.3.patch"
   }
 }

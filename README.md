@@ -55,6 +55,9 @@ const tasks = await agent.extract(
 For Hermes, Ari, or another host agent, use this fork's `@ddwang/magnitude-core` package and read the [agent integration guide](AGENT_INTEGRATION.md). The guide tracks `ddwang/browser-agent` source and covers a runnable example, execution limits, session ownership, and diagnostics. Upstream packages, scaffolding, and documentation can differ from this fork.
 
 ### Running your first browser automation
+
+Install [Google Chrome Stable](https://www.google.com/chrome/) and keep it updated.
+This fork launches the installed Chrome by default instead of bundled Chromium.
 ```bash
 npx create-magnitude-app
 ```
@@ -103,7 +106,7 @@ bun install --frozen-lockfile --ignore-scripts
 bun run build
 bun run lint
 bun run typecheck
-bun x --no-install patchright install chromium
+bun x --no-install patchright install chrome
 bun run test:offline
 bun run test:package
 ```

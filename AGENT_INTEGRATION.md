@@ -21,10 +21,9 @@ Use Node.js 22 or newer for the examples. Install this scoped package, not upstr
 ```sh
 npm install @ddwang/magnitude-core
 npm install --save-dev tsx
-npx --no-install patchright install chromium
 ```
 
-The SDK uses Patchright through an npm dependency named `playwright`; its browser installer is named `patchright`. Use the installed binary so the browser matches the driver. On Linux, the installer may also need `--with-deps` and permission to install system packages. Commit your lockfile for reproducible installs, and update it deliberately when adopting new releases.
+Install [Google Chrome Stable](https://www.google.com/chrome/) and keep it updated independently of the SDK. The SDK uses Patchright through an npm dependency named `playwright` and launches installed Chrome by default. Explicit `channel`, `executablePath`, and remote browser connections remain supported; the caller must update those browsers. Commit your lockfile for reproducible package installs, and update it deliberately when adopting new releases.
 
 Provide model credentials through the worker environment or your secret manager. The SDK does not load a `.env` file for you. Import the SDK's `z` export for compatible schemas; do not assume a separately installed Zod major version is compatible.
 

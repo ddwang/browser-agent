@@ -6,7 +6,7 @@ The default retrieval suite covers six existing cases: `latest-result`, `older-r
 
 ## Prerequisites
 
-- Install this repository's dependencies and the fixture browser: `bun install --frozen-lockfile --ignore-scripts`, then `bunx patchright install chromium`.
+- Install this repository's dependencies and Chrome Stable: `bun install --frozen-lockfile --ignore-scripts`, then `bun x --no-install patchright install chrome`. Keep Chrome updated.
 - Run the synthetic UCSD portal on web/control ports **4312/4313**. Kaiser uses **4314/4315**. Overrides must remain loopback HTTP origins.
 - Set `SIM_CONTROL_TOKEN` to the selected running simulator's evaluator token. The two services can have different tokens. Never give this token to the actor or Djev.
 - Set the actor provider's key: `BASETEN_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`. Bun can load a gitignored local `.env`.

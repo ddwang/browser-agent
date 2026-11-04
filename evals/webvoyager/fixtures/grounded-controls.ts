@@ -1020,6 +1020,6 @@ test('switching the active page cannot redirect an old reference into the new pa
 });
 
 try {
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ channel: 'chrome', headless: true });
     for (const entry of cases.filter(test => test.name.includes(process.argv[2] ?? ''))) { await entry.check(); console.log(`PASS: ${entry.name}`); }
 } finally { await browser!?.close(); server.stop(true); crossServer.stop(true); }

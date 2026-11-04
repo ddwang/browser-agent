@@ -6,13 +6,15 @@
       "name": "magnitude",
       "dependencies": {
         "@paralleldrive/cuid2": "^2.2.2",
-        "patchright": "^1.63.0",
+        "patchright": "1.64.3",
       },
       "devDependencies": {
         "@changesets/changelog-github": "^0.5.1",
         "@changesets/cli": "^2.31.1",
         "@ghostery/adblocker-playwright": "2.18.2",
-        "playwright": "npm:patchright@^1.63.0",
+        "brace-expansion": "5.0.12",
+        "esbuild": "0.28.2",
+        "playwright": "npm:patchright@1.64.3",
         "prettier": "^3.5.3",
         "turbo": "^2.9.14",
         "typescript": "5.8.2",
@@ -41,7 +43,7 @@
     },
     "packages/magnitude-core": {
       "name": "@ddwang/magnitude-core",
-      "version": "0.3.1-ddwang.18",
+      "version": "0.3.1-ddwang.19",
       "bin": {
         "magnus": "dist/cli.cjs",
       },
@@ -53,9 +55,10 @@
         "eventemitter3": "^5.0.1",
         "magnitude-extract": "0.0.2",
         "object-hash": "^3.0.0",
+        "patchright-core": "1.64.3",
         "pino": "^9.6.0",
         "pino-pretty": "^13.0.0",
-        "playwright": "npm:patchright@^1.63.0",
+        "playwright": "npm:patchright@1.64.3",
         "posthog-node": "^5.1.1",
         "sharp": "^0.35.5",
         "zod": "^4.6.6",
@@ -99,7 +102,8 @@
       "dependencies": {
         "@ddwang/magnitude-core": "^0.3.1-ddwang.18",
         "@modelcontextprotocol/sdk": "^1.32.0",
-        "patchright": "^1.49.0",
+        "patchright": "1.64.3",
+        "patchright-core": "1.64.3",
         "zod": "^4.6.6",
       },
       "devDependencies": {
@@ -127,9 +131,10 @@
         "ink": "^6.0.0",
         "ink-spinner": "^5.0.0",
         "jiti": "^2.4.2",
+        "patchright-core": "1.64.3",
         "pino": "^9.6.0",
         "pino-pretty": "^13.0.0",
-        "playwright": "^1.51.0",
+        "playwright": "npm:patchright@1.64.3",
         "posthog-node": "^4.18.0",
         "react": "^19.1.0",
         "std-env": "^3.9.0",
@@ -138,11 +143,14 @@
       "devDependencies": {
         "@types/node": "^22.13.4",
         "@types/react": "^19.0.0",
-        "playwright": "npm:rebrowser-playwright@^1.52.0",
         "tsup": "^8.5.1",
         "typescript": "~5.7.2",
       },
     },
+  },
+  "patchedDependencies": {
+    "patchright@1.64.3": "patches/patchright@1.64.3.patch",
+    "patchright-core@1.64.3": "patches/patchright-core@1.64.3.patch",
   },
   "overrides": {
     "esbuild": "^0.28.2",
@@ -1023,8 +1031,6 @@
 
     "playwright": ["patchright@1.64.3", "", { "dependencies": { "patchright-core": "1.64.3" }, "bin": { "patchright": "cli.js" } }, "sha512-DjdhKOHRMW2RcvCJJ4MW9B4Mn7dh4Tu5IAkeiYgmoMfVdG6w2klfNdw0Ci8F/jibp870EIfJhzyN14GN6jDVPg=="],
 
-    "playwright-core": ["rebrowser-playwright-core@1.52.0", "", { "bin": { "playwright-core": "cli.js" } }, "sha512-gjrvLNh0RX6B/tg6pWaPNGf+9+z1Jl2EyAh5MXD5xMa2lputGRZ9V2MJ/uofcC5Np3vSOJ3SdVSRqwteC0FjfQ=="],
-
     "postcss-load-config": ["postcss-load-config@6.0.1", "", { "dependencies": { "lilconfig": "^3.1.1" }, "peerDependencies": { "jiti": ">=1.21.0", "postcss": ">=8.0.9", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["jiti", "postcss", "tsx", "yaml"] }, "sha512-oPtTM4oerL+UXmx+93ytZVN82RrlY/wPUV8IeDxFrzIjXOLF1pN+EmKPLbubvKHT2HC20xXsCAH2Z+CKV6Oz/g=="],
 
     "posthog-node": ["posthog-node@5.1.1", "", {}, "sha512-6VISkNdxO24ehXiDA4dugyCSIV7lpGVaEu5kn/dlAj+SJ1lgcDru9PQ8p/+GSXsXVxohd1t7kHL2JKc9NoGb0w=="],
@@ -1322,8 +1328,6 @@
     "magnitude-test/@commander-js/extra-typings": ["@commander-js/extra-typings@14.0.0", "", { "peerDependencies": { "commander": "~14.0.0" } }, "sha512-hIn0ncNaJRLkZrxBIp5AsW/eXEHNKYQBh0aPdoUqNgD+Io3NIykQqpKFyKcuasZhicGaEZJX/JBSIkZ4e5x8Dg=="],
 
     "magnitude-test/commander": ["commander@14.0.0", "", {}, "sha512-2uM9rYjPvyq39NwLRqaiLtWHyDC1FvryJDa2ATTVims5YAS4PupsEQsDvP14FqhFr0P49CYDugi59xaxJlTXRA=="],
-
-    "magnitude-test/playwright": ["rebrowser-playwright@1.52.0", "", { "dependencies": { "playwright-core": "npm:rebrowser-playwright-core@~1.52.0" }, "optionalDependencies": { "fsevents": "2.3.2" }, "bin": { "playwright": "cli.js" } }, "sha512-UjpqfwmF9+XtOuCCxGQ2ZlLeuSaSv//4Z6ZQgYPsJovz3d7nWodCd2hSRQigAswAUnsPmVwnQUpSn+TLKaKV+A=="],
 
     "magnitude-test/posthog-node": ["posthog-node@4.18.0", "", { "dependencies": { "axios": "^1.8.2" } }, "sha512-XROs1h+DNatgKh/AlIlCtDxWzwrKdYDb2mOs58n4yN8BkGN9ewqeQwG5ApS4/IzwCb7HPttUkOVulkYatd2PIw=="],
 

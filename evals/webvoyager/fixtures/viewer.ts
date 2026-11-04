@@ -28,7 +28,7 @@ const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch(request) {
     if (path === '/') return new Response(Bun.file(new URL('../viewer.html', import.meta.url)), { headers: { 'content-type': 'text/html' } });
     return new Response('Not found', { status: 404 });
 } });
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
     const page = await browser.newPage();
     await page.goto(`http://127.0.0.1:${server.port}/`);

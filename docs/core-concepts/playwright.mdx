@@ -4,7 +4,13 @@ description: 'Combine agentic flows with Playwright operations'
 icon: 'pen-tool'
 ---
 
-Magnitude interacts with the browser using Playwright.
+Magnitude uses Patchright, a Playwright-compatible driver. By default, it launches
+installed Google Chrome Stable. Install Chrome before starting an agent and keep
+it updated independently of your npm dependencies.
+
+You can still select a different browser with `launchOptions.channel` or
+`launchOptions.executablePath`, or supply a browser, context, or CDP connection.
+You are responsible for updating explicitly selected and remote browsers.
 
 The agent exposes its `BrowserContext` and the `Page` it's currently on via `agent.context` and `agent.page`.
 
