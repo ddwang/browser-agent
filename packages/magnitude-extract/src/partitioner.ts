@@ -590,7 +590,7 @@ export class DOMPartitioner {
    */
   private extractValue($: cheerio.CheerioAPI, $el: cheerio.Cheerio<AnyNode>): UnstructuredElement | null {
     const tagName = $el.prop('tagName')?.toLowerCase();
-    let text = '';
+    let text: string;
     
     // Extract appropriate text based on element type
     switch (tagName) {

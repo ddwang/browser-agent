@@ -180,7 +180,7 @@ try {
         const schema = z.object({ answer: z.boolean() });
         await assert.rejects(harness.query(context, 'Answer?', schema));
         assert.equal(usage.length, 1);
-        const screenshot = Image.fromBase64('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7mgAAAAASUVORK5CYII=');
+        const screenshot = new Image(sharp({ create: { width: 1, height: 1, channels: 3, background: '#000' } }).png());
         await assert.rejects(harness.extract('Answer?', schema, screenshot, '<p>Fixture</p>'));
         assert.equal(usage.length, 2);
         console.log('PASS: query and extraction parse failures are accounted');

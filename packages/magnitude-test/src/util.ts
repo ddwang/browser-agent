@@ -1,10 +1,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-//import { PlannerClient, TestCaseDefinition } from "magnitude-core";
 import { init } from '@paralleldrive/cuid2';
 import logger from './logger';
-import { LLMClient, LLMClientIdentifier } from 'magnitude-core';
+import { LLMClient, LLMClientIdentifier } from '@ddwang/magnitude-core';
 
 
 

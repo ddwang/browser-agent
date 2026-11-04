@@ -9,7 +9,7 @@ import { MagnitudeConfig } from '@/discovery/types';
 //import chalk from 'chalk';
 import { discoverTestFiles, findConfig, findProjectRoot, isProjectRoot, readConfig } from '@/discovery/util';
 //import { BaseTestRunner, BaseTestRunnerConfig } from './runner/baseRunner';
-import { logger as coreLogger } from 'magnitude-core';
+import { logger as coreLogger } from '@ddwang/magnitude-core';
 import logger from '@/logger';
 import { describeModel } from './util';
 import * as dotenv from 'dotenv';

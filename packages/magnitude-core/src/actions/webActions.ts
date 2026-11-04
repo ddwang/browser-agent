@@ -116,7 +116,7 @@ export const keyboardBackspaceAction = createAction({
 export const keyboardSelectAllAction = createAction({
     name: 'keyboard:select_all',
     description: "Select all content in the active text area (CTRL+A)",
-    resolver: async ({ input: { content }, agent }) => {
+    resolver: async ({ agent }) => {
         await agent.require(BrowserConnector).getHarness().selectAll();
     },
     render: () => `⬚ select all`

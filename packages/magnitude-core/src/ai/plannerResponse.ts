@@ -32,12 +32,12 @@ const planSchema = z.object({
 // Only schema-owned field names and array indices may enter the repair prompt.
 // Record keys, custom refinement paths/messages and received values can contain
 // model output or page text; do not echo them into prompts or persisted errors.
-function diagnosticPath(schema: z.ZodTypeAny, path: (string | number)[], prefix: string): string {
-    let current = schema;
+function diagnosticPath(schema: z.ZodType, path: PropertyKey[], prefix: string): string {
+    let current: z.core.$ZodType = schema;
     for (const part of path.slice(0, 6)) {
         for (let depth = 0; depth < 16; depth++) {
             if (current instanceof z.ZodOptional || current instanceof z.ZodNullable) current = current.unwrap();
-            else if (current instanceof z.ZodEffects) current = current.innerType();
+            else if (current instanceof z.ZodPipe) current = current.in;
             else if (current instanceof z.ZodDefault) current = current.removeDefault();
             else break;
         }
@@ -56,8 +56,8 @@ function diagnosticPath(schema: z.ZodTypeAny, path: (string | number)[], prefix:
 function schemaDiagnostic(error: z.ZodError, schema: z.ZodTypeAny, prefix = '$'): string {
     const details = error.issues.slice(0, 3).map(issue => {
         let constraint = '';
-        if (issue.code === 'invalid_type' && Object.hasOwn(z.ZodParsedType, issue.expected)) {
-            constraint = ` (expected ${issue.expected})`;
+        if (issue.code === 'invalid_type' && ['string', 'number', 'int', 'boolean', 'array', 'object', 'null', 'undefined', 'bigint', 'symbol', 'date', 'map', 'set', 'file', 'function', 'promise', 'never', 'void', 'nan'].includes(issue.expected)) {
+            constraint = ` (expected ${issue.expected === 'int' ? 'integer' : issue.expected})`;
         } else if (issue.code === 'too_big' || issue.code === 'too_small') {
             const limit = issue.code === 'too_big' ? issue.maximum : issue.minimum;
             if (typeof limit === 'number' && Number.isFinite(limit)) {

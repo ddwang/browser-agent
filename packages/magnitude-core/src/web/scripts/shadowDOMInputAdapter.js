@@ -1,5 +1,5 @@
 // Custom Shadow DOM Input Adapter script for browser injection
-module.exports = function getShadowDOMInputAdapterScript() {
+export default function getShadowDOMInputAdapterScript() {
   return function() {
     if (typeof window.magnitudeShadowDOMAdapter !== 'undefined') {
       console.warn('magnitudeShadowDOMAdapter already defined. Cleaning up old one.');

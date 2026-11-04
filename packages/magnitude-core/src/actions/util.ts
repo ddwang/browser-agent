@@ -1,29 +1,9 @@
 import { ActionDefinition } from ".";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import TypeBuilder from "@/ai/baml_client/type_builder";
 import { FieldType, ClassBuilder, ClassPropertyBuilder, EnumBuilder, EnumValueBuilder } from "@boundaryml/baml/native";
 import { Schema, z, ZodObject, ZodSchema } from "zod";
 
-export interface JsonSchema {
-    type?: string;
-    title?: string;
-    description?: string; // This description at the schema's top level is NOT used for Class or Enum descriptions by the Python script
-    default?: any;
-
-    properties?: Record<string, JsonSchema>;
-    required?: string[];
-    additionalProperties?: boolean | JsonSchema;
-
-    items?: JsonSchema;
-
-    enum?: any[];
-
-    $ref?: string;
-
-    anyOf?: JsonSchema[];
-
-    [key: string]: any;
-}
+export type JsonSchema = z.core.JSONSchema.JSONSchema;
 
 function randomName(): string {
     const chars = 'abcdefghijklmnopqrstuvwxyz';
@@ -279,6 +259,10 @@ class SchemaAdder {
 
         const type = jsonSchema.type;
 
+        if (Array.isArray(type)) {
+            return this.tb.union(type.map(type => this.parse({ ...jsonSchema, type })));
+        }
+
         if (type === undefined) {
             console.warn("Type field is missing in JSON schema, defaulting to string (Python script behavior).");
             return this.tb.string();
@@ -327,7 +311,7 @@ function convertJsonSchemaToBaml(tb: TypeBuilder, jsonSchema: JsonSchema): Field
 }
 
 export function convertZodToBaml(tb: TypeBuilder, schema: Schema) {
-    const jsonSchema = zodToJsonSchema(schema) as JsonSchema;
+    const jsonSchema = z.toJSONSchema(schema, { target: "draft-7", io: "input" });
     return convertJsonSchemaToBaml(tb, jsonSchema);
 }
 

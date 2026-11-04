@@ -1,6 +1,6 @@
+import { z } from 'zod';
 import { expect, mock, test } from 'bun:test';
 import type { Agent } from '@/agent';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import { keyboardEscapeAction, scrollCoordAction, waitAction, webActions } from './webActions';
 
 test('Escape is exposed and forwards the Escape command', async () => {
@@ -21,7 +21,7 @@ test('wait validates its duration and uses browser cooldown handling', async () 
 });
 
 test('scroll scale and precision guidance are included in the action schema', () => {
-    const prompt = `${scrollCoordAction.description} ${JSON.stringify(zodToJsonSchema(scrollCoordAction.schema))}`;
+    const prompt = `${scrollCoordAction.description} ${JSON.stringify(z.toJSONSchema(scrollCoordAction.schema, { target: "draft-7" }))}`;
     expect(prompt).toContain('not wheel ticks');
     expect(prompt).toContain('500-600');
     expect(prompt).toContain('600 scrolls down, -600 scrolls up');

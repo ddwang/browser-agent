@@ -1,6 +1,6 @@
 import { RegisteredTest, TestOptions } from "@/discovery/types";
 import { TestResult, TestState } from "@/runner/state";
-import { BrowserOptions, LLMClient } from "magnitude-core";
+import { BrowserOptions, LLMClient } from "@ddwang/magnitude-core";
 import { parentPort, workerData } from "node:worker_threads";
 import { isBun } from 'std-env';
 import EventEmitter from "node:events";

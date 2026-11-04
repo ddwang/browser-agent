@@ -1,5 +1,5 @@
 import { TestCaseAgent } from "@/agent"
-import { Action, LLMClient, LLMClientIdentifier, ModelUsage } from "magnitude-core"
+import { Action, LLMClient, LLMClientIdentifier, ModelUsage } from "@ddwang/magnitude-core"
 import EventEmitter from "eventemitter3";
 
 export interface ActionDescriptor {

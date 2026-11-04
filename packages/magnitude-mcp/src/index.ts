@@ -7,9 +7,8 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import { chromium, BrowserContext } from 'patchright';
-import { WebAction, WebHarness } from 'magnitude-core';
+import { WebAction, WebHarness } from '@ddwang/magnitude-core';
 import * as fs from 'fs';
 import * as path from 'path';
 import { homedir } from 'os';
@@ -27,9 +26,9 @@ if (!fs.existsSync(config.profileDir)) {
     fs.mkdirSync(config.profileDir, { recursive: true });
 }
 
-console.log(`Using browser profile directory: ${config.profileDir}`);
+console.error(`Using browser profile directory: ${config.profileDir}`);
 if (config.stealth) {
-    console.log('Stealth mode enabled - warning banner may appear but anti-detection is improved');
+    console.error('Stealth mode enabled - warning banner may appear but anti-detection is improved');
 }
 
 // Action schemas with discriminated union
@@ -156,12 +155,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             {
                 name: 'open_browser',
                 description: 'Open browser with persistent profile that you can control.',
-                inputSchema: zodToJsonSchema(ConnectBrowserSchema),
+                inputSchema: z.toJSONSchema(ConnectBrowserSchema, { target: "draft-7" }),
             },
             {
                 name: 'act',
                 description: 'Perform actions in the browser. Combine multiple actions at the same time for efficiency. The blue cursor represents the last position you interacted with, however it may sometimes be missing or misplaced even after a successful interaction.',
-                inputSchema: zodToJsonSchema(ActSchema),
+                inputSchema: z.toJSONSchema(ActSchema, { target: "draft-7" }),
             },
             {
                 name: 'screenshot',

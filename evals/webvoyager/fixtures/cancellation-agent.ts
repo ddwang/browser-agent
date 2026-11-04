@@ -308,7 +308,7 @@ console.log('PASS: composite input stops and releases held buttons/keys');
 {
     const entered = Promise.withResolvers<void>(), model = Promise.withResolvers<string>(), controller = new AbortController();
     const agent = new Agent({ llm, telemetry: false, connectors: [{ id: 'fixture', collectObservations: async () => [Observation.fromConnector('fixture', 'value')] }] });
-    agent.models.query = async () => { entered.resolve(); return model.promise; };
+    agent.models.query = async (_context, _query, schema) => { entered.resolve(); return schema.parse(await model.promise); };
     const result = agent.query('query', z.string(), { signal: controller.signal, history: 'full' });
     await entered.promise; controller.abort(); await assert.rejects(result, OperationCancelledError);
     assert.equal(agent.busy, true); model.resolve('late'); await agent.whenIdle();

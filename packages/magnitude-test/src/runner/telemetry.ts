@@ -1,6 +1,6 @@
 import logger from '@/logger';
 import { TestFailure, TestState } from '@/runner/state';
-import { getCodebaseId, getMachineId, LLMClientIdentifier, posthog } from 'magnitude-core';
+import { getCodebaseId, getMachineId, LLMClientIdentifier, posthog } from '@ddwang/magnitude-core';
 import { VERSION } from '@/version';
 
 export interface TelemetryPayload {

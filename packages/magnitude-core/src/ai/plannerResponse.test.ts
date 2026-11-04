@@ -92,7 +92,7 @@ test('primitive and wrapped action inputs retain precise schema paths', () => {
 test('diagnostics omit unknown keys, dynamic record keys, and custom refinement messages', () => {
     const secret = 'REJECTED_RESPONSE_SECRET';
     expect(rejection({ ...plan, [secret]: true }).message).not.toContain(secret);
-    const record = createAction({ name: 'record', schema: z.object({ values: z.record(z.number()) }), resolver: async () => {} });
+    const record = createAction({ name: 'record', schema: z.object({ values: z.record(z.string(), z.number()) }), resolver: async () => {} });
     const error = rejection({ ...plan, actions: [{ variant: 'record', values: { [secret]: 'invalid' } }] }, [record]);
     expect(error.diagnostic).toContain('$.actions[0].values[*]: invalid_type (expected number)');
     expect(error.message).not.toContain(secret);
@@ -103,9 +103,11 @@ test('diagnostics omit unknown keys, dynamic record keys, and custom refinement 
 });
 
 test('diagnostics remain bounded for many errors and enormous malformed text', () => {
-    const error = rejection({ ...plan, memory_updates: Array(100).fill({ key: '', text: '' }) });
+    const error = rejection({ ...plan, memory_updates: Array(3).fill({ key: '', text: '' }) });
     expect(error.diagnostic.length).toBeLessThanOrEqual(1024);
     expect(error.diagnostic).toContain('additional issues omitted');
+    expect(rejection({ ...plan, memory_updates: Array(100).fill({ key: '', text: '' }) }).diagnostic)
+        .toBe('$.memory_updates: too_big (maximum 32, inclusive)');
     const secret = 'REJECTED_RESPONSE_SECRET';
     try { parsePlannerResponse(`${secret.repeat(10000)}{`, vocabulary); }
     catch (error) {
