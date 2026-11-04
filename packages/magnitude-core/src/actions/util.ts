@@ -311,8 +311,8 @@ export function convertZodToJsonSchema(schema: Schema): JsonSchema {
             const def = zodSchema._zod.def;
             if (def.type === 'date' && def.coerce) return { type: 'string', format: 'date-time' };
             if (def.type === 'bigint' && def.coerce) return { type: 'integer' };
-            // Keep the converted inner type; bigint defaults remain local Zod behavior.
-            if (def.type === 'default' || def.type === 'prefault') return {};
+            // Keep the inner wire type; unrepresentable defaults and catches stay local.
+            if (def.type === 'default' || def.type === 'prefault' || def.type === 'catch') return {};
             return 'throw';
         },
         override: ({ zodSchema, jsonSchema }) => {

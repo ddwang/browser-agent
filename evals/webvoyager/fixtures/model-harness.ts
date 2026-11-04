@@ -127,6 +127,7 @@ try {
         ]);
         const screenshot = new Image(sharp({ create: { width: 2, height: 2, channels: 3, background: '#123456' } }).png());
         const date = '2026-11-04T00:00:00.000Z';
+        const fallbackCount = z.number().min(10).catch(ctx => ctx.input === 7 ? 42 : 0);
         for (const structuredOutputs of [false, true]) {
             for (const { schema, value, expected } of [
                 { schema: choice, value: { kind: 'text', text: 'observed' }, expected: { kind: 'text', text: 'observed' } },
@@ -139,6 +140,10 @@ try {
                 { schema: z.coerce.bigint().default(42n), value: 7, expected: 7n },
                 { schema: z.coerce.bigint().catch(42n), value: 7, expected: 7n },
                 { schema: z.coerce.bigint().min(10n).catch(42n), value: 7, expected: 42n },
+                { schema: fallbackCount, value: 14, expected: 14 },
+                { schema: fallbackCount, value: 7, expected: 42 },
+                { schema: z.object({ count: fallbackCount }), value: { count: 7 }, expected: { count: 42 } },
+                { schema: z.array(fallbackCount), value: [7, 14], expected: [42, 14] },
                 { schema: z.object({ count: z.coerce.bigint().default(42n) }), value: { count: 7 }, expected: { count: 7n } },
                 { schema: z.object({ count: z.coerce.bigint().catch(42n) }), value: { count: 7 }, expected: { count: 7n } },
                 { schema: z.array(z.coerce.bigint().default(42n)), value: [7], expected: [7n] },
@@ -161,13 +166,17 @@ try {
             assert.deepEqual(await harness.partialAct(context, 'Record the observed branch.', [], [choose]), expected);
         }
         for (const structuredOutputs of [false, true]) {
-            const schema = z.coerce.bigint().catch(42n);
-            const count = createAction({ name: 'count', schema, resolver: async () => {} });
-            const expected = { reasoning: 'Observed count', memory_updates: [], actions: [{ variant: 'count', input: 7 }] };
-            const { harness } = await fixture([{ text: JSON.stringify(expected) }], false, { structuredOutputs });
-            assert.deepEqual(await harness.partialAct(context, 'Record the count.', [], [count]), expected);
-            assert.equal(schema.parse(expected.actions[0].input), 7n);
-            assert.equal(requests.length, 1);
+            for (const { schema, parsed } of [
+                { schema: z.coerce.bigint().catch(42n), parsed: 7n },
+                { schema: z.number().catch(ctx => ctx.input === 'unknown' ? 42 : 0), parsed: 7 },
+            ]) {
+                const count = createAction<number | bigint>({ name: 'count', schema, resolver: async () => {} });
+                const expected = { reasoning: 'Observed count', memory_updates: [], actions: [{ variant: 'count', input: 7 }] };
+                const { harness } = await fixture([{ text: JSON.stringify(expected) }], false, { structuredOutputs });
+                assert.deepEqual(await harness.partialAct(context, 'Record the count.', [], [count]), expected);
+                assert.equal(schema.parse(expected.actions[0].input), parsed);
+                assert.equal(requests.length, 1);
+            }
         }
         console.log('PASS: discriminated unions and coercing primitives survive real query and extraction parsing');
     }

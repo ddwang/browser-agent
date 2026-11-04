@@ -38,3 +38,15 @@ test('JSON-compatible default annotations remain available to the model', () => 
         expect(convertZodToJsonSchema(schema)).toMatchObject({ type: 'number', default: 42 });
     }
 });
+
+test('context-dependent catches retain their wire type and local fallback behavior', () => {
+    const schema = z.number().catch(ctx => ctx.input === 'unknown' ? 42 : 0);
+    const wire = convertZodToJsonSchema(schema);
+    expect(wire.type).toBe('number');
+    expect(wire).not.toHaveProperty('default');
+    expect(schema.parse(7)).toBe(7);
+    expect(schema.parse('unknown')).toBe(42);
+    expect(schema.parse(null)).toBe(0);
+    const unsupported = z.bigint().catch(ctx => ctx.input === 'unknown' ? 42n : 0n);
+    expect(() => convertZodToJsonSchema(unsupported)).toThrow();
+});
