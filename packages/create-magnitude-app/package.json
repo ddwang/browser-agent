@@ -33,7 +33,7 @@
     "typescript"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsc --noEmit && tsup",
     "check": "tsc --noEmit",
     "cli": "bun ./src/cli.ts"
   },
