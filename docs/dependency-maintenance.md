@@ -93,3 +93,13 @@ reads the Git index's file list.
 Validation covers all five package builds and type checks, lint, the offline test
 suite, and built-package smoke checks for CommonJS/ESM imports, the CLI,
 configuration/test workers, and MCP initialization and tool-schema responses.
+
+## Release automation
+
+`changesets/action@v2` and Changesets CLI 3 are upgraded together. The release
+workflow uses Node.js 24 for CLI 3 and configures npm authentication through
+`actions/setup-node` and `NODE_AUTH_TOKEN`, using the existing `NPM_TOKEN` secret.
+The action uses `publish-script` and `create-github-releases`; the release script
+inherits `CHANGESETS_OUTPUT` so the action can create tags and GitHub releases.
+Local Changesets commands also require a CLI-supported Node.js version
+(`^22.11 || ^24 || >=26`). Published package runtime requirements are unchanged.
