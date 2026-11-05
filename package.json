@@ -26,7 +26,7 @@
     "esbuild": "0.28.2"
   },
   "engines": {
-    "node": "^20.19.0 || ^22.13.0 || >=24"
+    "node": "^22.13.0 || >=24"
   },
   "packageManager": "bun@1.4.4",
   "workspaces": [

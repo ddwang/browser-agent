@@ -10,6 +10,8 @@ export default defineConfig({
     format: ['cjs', 'esm'],
     dts: { entry: ['src/index.ts'] },
     splitting: false,
+    noExternal: ['ink-spinner'],
+    external: ['ink', 'react'],
     shims: true,
     sourcemap: true,
     clean: true,
