@@ -16,7 +16,7 @@ Start with task-level delegation. Add low-level browser tools only if the host n
 
 ## Install
 
-Use Node.js 22 or newer for the examples. Install this scoped package, not upstream `magnitude-core`:
+Use Node.js 22.22 or newer for the examples. The SDK supports Node.js `^20.20.0 || >=22.22.0`. Install this scoped package, not upstream `magnitude-core`:
 
 ```sh
 npm install @ddwang/magnitude-core

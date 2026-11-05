@@ -48,7 +48,7 @@
   ],
   "license": "Apache-2.0",
   "engines": {
-    "node": ">=20.9.0"
+    "node": "^20.20.0 || >=22.22.0"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",
@@ -67,7 +67,7 @@
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",
     "playwright": "npm:patchright@1.64.3",
-    "posthog-node": "^5.61.1",
+    "posthog-node": "5.61.2",
     "sharp": "^0.35.5",
     "zod": "^4.6.6",
     "patchright-core": "1.64.3"

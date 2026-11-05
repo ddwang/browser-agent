@@ -3,6 +3,8 @@
 A Model Context Protocol (MCP) server that gives agents the ability to interact with a browser using the [Magnitude](https://github.com/sagekit/magnitude) framework.
 
 ## Requirements
+Use Node.js 20.20 or later on the 20.x line, or Node.js 22.22 or later.
+
 Install [Google Chrome Stable](https://www.google.com/chrome/) and keep it updated.
 The MCP server uses the installed Chrome; package installation does not download a browser.
 

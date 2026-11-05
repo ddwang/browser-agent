@@ -1,7 +1,7 @@
 # Dependency maintenance
 
 Use Bun 1.4.4 and the root `bun.lock` for this workspace. Node.js must satisfy
-`^22.13.0 || >=24`, as declared in the root package manifest.
+`^22.22.0 || >=24`, as declared in the root package manifest.
 
 ```sh
 bun install --frozen-lockfile
@@ -96,12 +96,25 @@ configuration/test workers, and MCP initialization and tool-schema responses.
 
 ## Terminal renderer
 
-The test runner uses Ink 8 and requires Node.js 22.13 or later. Workspace
-development also requires Node.js 22.13 or later; CI checks Node.js 22 and 24.
-This support-floor change applies to the runner and workspace, not the core
-library. The CLI bundles `ink-spinner`, keeping its React imports on the
-renderer’s React instance even when an npm consumer retains an older hoisted
-spinner. Ink and React remain external dependencies.
+The test runner uses Ink 8 and requires Node.js 22.22 or later. CI checks current
+Node.js 22 and 24 with strict npm engine validation. The CLI bundles `ink-spinner`,
+keeping its React imports on the renderer’s React instance even when an npm
+consumer retains an older hoisted spinner. Ink and React remain external
+dependencies.
+
+## Telemetry runtime requirements
+
+Core and the test runner pin PostHog 5.61.2, with telemetry owned by core's shared
+client. Core and MCP require Node.js `^20.20.0 || >=22.22.0`. The runner requires
+`>=22.22.0`, and the workspace requires `^22.22.0 || >=24`, as declared in their
+package manifests.
+
+PostHog [raised its minimum in 5.22.0](https://github.com/PostHog/posthog-js/releases/tag/posthog-node@5.22.0)
+for a Node.js security fix. Updating to the
+latest SDK deliberately raises Magnitude's supported minimums; a caret range on
+an older SDK would not preserve the previous installation contract. The exact
+pin makes subsequent SDK support changes explicit dependency updates. The release
+changeset records this breaking change for core, MCP, and the runner.
 
 ## Release automation
 
