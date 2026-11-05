@@ -97,3 +97,8 @@ The LLM decides at runtime what to do based on the test case steps, a screenshot
 To get a personalized demo or see how Magnitude can help your company, feel free to reach out to us at founders@magnitude.run
 
 You can also join our Discord community for help or any suggestions! https://discord.gg/VcdpMh9tTy
+
+## Runtime requirements
+
+The test runner requires Node.js 22.13 or later. Ink 8 requires Node.js 22+,
+and the CLI bundles its spinner so it uses the same React instance as the renderer.

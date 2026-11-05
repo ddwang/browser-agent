@@ -1,7 +1,7 @@
 # Dependency maintenance
 
 Use Bun 1.4.4 and the root `bun.lock` for this workspace. Node.js must satisfy
-`^20.19.0 || ^22.13.0 || >=24`, as declared in the root package manifest.
+`^22.13.0 || >=24`, as declared in the root package manifest.
 
 ```sh
 bun install --frozen-lockfile
@@ -93,3 +93,12 @@ reads the Git index's file list.
 Validation covers all five package builds and type checks, lint, the offline test
 suite, and built-package smoke checks for CommonJS/ESM imports, the CLI,
 configuration/test workers, and MCP initialization and tool-schema responses.
+
+## Terminal renderer
+
+The test runner uses Ink 8 and requires Node.js 22.13 or later. Workspace
+development also requires Node.js 22.13 or later; CI checks Node.js 22 and 24.
+This support-floor change applies to the runner and workspace, not the core
+library. The CLI bundles `ink-spinner`, keeping its React imports on the
+renderer’s React instance even when an npm consumer retains an older hoisted
+spinner. Ink and React remain external dependencies.

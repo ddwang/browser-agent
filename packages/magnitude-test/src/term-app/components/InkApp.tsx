@@ -58,7 +58,9 @@ export function InkApp({ tests, config, initialStates, onReady }: InkAppProps) {
         }
     });
 
-    const width = Math.min(stdout?.columns ?? MAX_APP_WIDTH, MAX_APP_WIDTH);
+    const columns = 'columns' in stdout && typeof stdout.columns === 'number'
+        ? stdout.columns : MAX_APP_WIDTH;
+    const width = Math.min(columns, MAX_APP_WIDTH);
     const grouped = useMemo(() => groupRegisteredTestsForDisplay(tests), [tests]);
 
     return (
