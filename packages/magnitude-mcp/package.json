@@ -46,7 +46,7 @@
     "build": "tsc --noEmit && tsup",
     "check": "tsc --noEmit",
     "inspector": "npx @modelcontextprotocol/inspector dist/index.mjs",
-    "postinstall": "patchright install chromium"
+    "prepack": "node ../../scripts/prepare-browser-package.mjs"
   },
   "author": {
     "name": "Magnitude",
@@ -60,13 +60,18 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.0",
-    "patchright": "^1.49.0",
+    "patchright": "1.64.3",
     "zod": "^4.6.6",
-    "@ddwang/magnitude-core": "^0.3.1-ddwang.18"
+    "@ddwang/magnitude-core": "^0.3.1-ddwang.18",
+    "patchright-core": "1.64.3"
   },
   "devDependencies": {
     "@types/node": "^20.17.30",
     "typescript": "^5.8.3",
     "tsup": "^8.5.1"
-  }
+  },
+  "bundledDependencies": [
+    "patchright",
+    "patchright-core"
+  ]
 }

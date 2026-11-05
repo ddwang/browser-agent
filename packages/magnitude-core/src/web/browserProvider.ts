@@ -5,6 +5,7 @@ import logger from "@/logger";
 import { Logger } from 'pino';
 
 const DEFAULT_BROWSER_OPTIONS: LaunchOptions = {
+    channel: 'chrome',
     headless: false,
     args: ["--disable-gpu", "--disable-blink-features=AutomationControlled"],
 };
@@ -70,7 +71,11 @@ export class BrowserProvider {
         if (!(hash in this.activeBrowsers)) {
             this.logger.trace("Launching new browser");
             // Launch new browser, get the PROMISE
-            const launchPromise = chromium.launch({ ...DEFAULT_BROWSER_OPTIONS, ...options });
+            const launchPromise = chromium.launch({
+                ...DEFAULT_BROWSER_OPTIONS,
+                ...options,
+                channel: options.channel ?? DEFAULT_BROWSER_OPTIONS.channel,
+            });
 
             activeBrowser = {
                 browserPromise: launchPromise,

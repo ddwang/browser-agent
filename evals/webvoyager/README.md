@@ -497,7 +497,7 @@ Observed-control targeting is opt-in and is not enabled in the existing live ben
 
 ```sh
 bun test evals/webvoyager/results.test.ts evals/webvoyager/cli.test.ts evals/webvoyager/budget.test.ts evals/webvoyager/tasks.test.ts
-# Requires the bundled browser: bunx patchright install chromium
+# Requires Chrome Stable: bun x --no-install patchright install chrome
 bun test evals/webvoyager/browser-recovery.test.ts
 bun test packages/magnitude-core/src/ai/plannerResponse.test.ts evals/webvoyager/model-harness.test.ts
 bun x --no-install tsc -p evals/webvoyager/tsconfig.json

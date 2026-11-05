@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
@@ -31,7 +31,7 @@ jobs:
       - run: bun run lint
       - run: bun run typecheck
       - name: Install fixture browser
-        run: bun x --no-install patchright install --with-deps chromium
+        run: bun x --no-install patchright install --with-deps chrome
       - run: bun run test:offline
 
   package:
@@ -43,10 +43,10 @@ jobs:
       matrix:
         node: [20, 22]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
       - uses: oven-sh/setup-bun@v2
