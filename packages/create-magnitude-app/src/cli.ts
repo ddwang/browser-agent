@@ -46,7 +46,7 @@ async function establishProjectInfo(info: Partial<ProjectInfo>): Promise<Project
         message: 'What should your project be called?',
         placeholder: 'my-awesome-browser-app',
         validate(value) {
-            if (value.trim().length === 0) return "Project name cannot be empty";
+            if (!value?.trim()) return "Project name cannot be empty";
 
             const projectDir = path.resolve(process.cwd(), value);
 
@@ -127,7 +127,7 @@ async function establishProjectInfo(info: Partial<ProjectInfo>): Promise<Project
                         message: 'Please provide a valid ANTHROPIC_API_KEY',
                         placeholder: 'sk-ant-...',
                         validate(value) {
-                            if (value.trim().length === 0) return "API key cannot be empty";
+                            if (!value?.trim()) return "API key cannot be empty";
                         }
                     });
                     if (isCancel(key)) {
@@ -150,7 +150,7 @@ async function establishProjectInfo(info: Partial<ProjectInfo>): Promise<Project
                 message: 'Please provide a valid OPENROUTER_API_KEY',
                 placeholder: 'sk-or-...',
                 validate(value) {
-                    if (value.trim().length === 0) return "API key cannot be empty";
+                    if (!value?.trim()) return "API key cannot be empty";
                 }
             });
             if (isCancel(key)) {
