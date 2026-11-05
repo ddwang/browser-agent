@@ -55,3 +55,5 @@ jobs:
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run build
       - run: bun run test:package
+        env:
+          npm_config_engine_strict: 'true'

@@ -52,6 +52,8 @@ const tasks = await agent.extract(
 
 ### Integrating into another agent
 
+Core and MCP require Node.js `^20.20.0 || >=22.22.0`. The test runner requires Node.js 22.22 or later.
+
 For Hermes, Ari, or another host agent, use this fork's `@ddwang/magnitude-core` package and read the [agent integration guide](AGENT_INTEGRATION.md). The guide tracks `ddwang/browser-agent` source and covers a runnable example, execution limits, session ownership, and diagnostics. Upstream packages, scaffolding, and documentation can differ from this fork.
 
 ### Running your first browser automation
@@ -99,7 +101,7 @@ For information on how to run tests and integrate into CI/CD see [here](https://
 
 ### Offline verification
 
-PR CI runs builds, lint, typechecks, offline tests, and Node 22/24 package smoke checks without model credentials. Run the same checks locally:
+PR CI runs builds, lint, typechecks, offline tests, and Node 22/24 package smoke checks with strict npm engine validation, without model credentials. Run the same checks locally:
 
 ```bash
 bun install --frozen-lockfile --ignore-scripts

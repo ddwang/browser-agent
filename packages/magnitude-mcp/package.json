@@ -73,5 +73,8 @@
   "bundledDependencies": [
     "patchright",
     "patchright-core"
-  ]
+  ],
+  "engines": {
+    "node": "^20.20.0 || >=22.22.0"
+  }
 }

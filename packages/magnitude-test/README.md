@@ -100,5 +100,5 @@ You can also join our Discord community for help or any suggestions! https://dis
 
 ## Runtime requirements
 
-The test runner requires Node.js 22.13 or later. Ink 8 requires Node.js 22+,
+The test runner requires Node.js 22.22 or later for its PostHog dependency. Ink 8 requires Node.js 22+,
 and the CLI bundles its spinner so it uses the same React instance as the renderer.
