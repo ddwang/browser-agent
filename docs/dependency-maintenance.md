@@ -102,3 +102,14 @@ This support-floor change applies to the runner and workspace, not the core
 library. The CLI bundles `ink-spinner`, keeping its React imports on the
 renderer’s React instance even when an npm consumer retains an older hoisted
 spinner. Ink and React remain external dependencies.
+
+## Release automation
+
+`changesets/action@v2` and Changesets CLI 3 are upgraded together. The release
+workflow uses Node.js 24 for CLI 3 and configures npm authentication through
+`actions/setup-node` and `NODE_AUTH_TOKEN`, using the existing `NPM_TOKEN` secret.
+The action uses `publish-script` and `create-github-releases`; the release script
+inherits `CHANGESETS_OUTPUT` so the action can create tags and GitHub releases.
+Local Changesets commands also require a CLI-supported Node.js version
+(`^22.11 || ^24 || >=26`). The release-tool update does not change published
+package runtime requirements.
