@@ -68,7 +68,7 @@
     "@commander-js/extra-typings": "^14.0.0",
     "@paralleldrive/cuid2": "^2.2.2",
     "chalk": "^5.4.1",
-    "commander": "^14.0.0",
+    "commander": "^15.1.0",
     "dotenv": "^16.5.0",
     "esbuild": "^0.28.2",
     "glob": "^14.0.2",
