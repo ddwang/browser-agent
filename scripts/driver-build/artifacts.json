@@ -1,0 +1,14 @@
+{
+  "playwright/lib/matchers/expect.js": "da085b0d6b780ff5c47e4e62f476c9b184c1026f0ec97f9b11aa4f1bc26daff5",
+  "playwright/lib/matchers/expect.js.LICENSE": "78b2f60563d28cb3f9ea17e4cdc0657681e641e2f72766771d9e2da9ca94c065",
+  "playwright/lib/transform/babelBundle.js": "cd656ca6a9857b3efbbb7e015a2fa3abd4bc0e88956661cc9b14d9d7f142f093",
+  "playwright/lib/transform/babelBundle.js.LICENSE": "2018f402988d0cff56531005b77bce7c2816a34d0c157ecb510043abd41b1ad3",
+  "playwright/lib/transform/esmLoader.js": "a65e56dcce22eb0ef437656c28bcb6fce26b7e2db59c1244f63cb2a5a5d90478",
+  "playwright/lib/transform/esmLoader.js.LICENSE": "867b1427b811fd366d4705a69aa8ac75a2bbb5cbdc86b64016fa38eedc51d151",
+  "playwright/lib/transform/esmLoader.js.txt": "af751e207cd185a5cf5270ad3e1b86354a87df5afd559df121bf26d623f0833e",
+  "patchright-core/lib/serverRegistry.js": "38025f08f335705b099b9f188bf45b5908a56a722825fe895b1e90f56d5595b6",
+  "patchright-core/lib/serverRegistry.js.LICENSE": "3098a6efcbc11752cbdf6075fa65480f5470f78c8d981fab9c0796dc9a41cefe",
+  "patchright-core/lib/utilsBundle.js": "f14a299e5b0534ee00cb3941a432a66b371b0dc86cf72dbe191d592da4dd0765",
+  "patchright-core/lib/utilsBundle.js.LICENSE": "a8e51df755ccc9bd37fbf06676010cfb12fc0705475de2ed49492aacb4e07834",
+  "patchright-core/lib/utilsBundle.js.txt": "0f8b6cd551707ccd7c5707131909a6691d746bd6dc4c220dbcea48b9a7238d89"
+}

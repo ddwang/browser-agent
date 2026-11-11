@@ -1,0 +1,142 @@
+{
+  "sdk": "@ddwang/magnitude-core@0.3.1-ddwang.22",
+  "tarballSha256": "dfff763fdf0321f7a656c143f52d4c839228d3b396590b117e48ed8b8cc09b45",
+  "platform": "darwin-arm64",
+  "browser": "Google Chrome 157.0.8103.50",
+  "runtimes": {
+    "20.20.0": {
+      "exitCode": 0,
+      "checks": [
+        "PASS: CommonJS checkpoint restoration and prompt replacement on v20.20.0",
+        "PASS: CommonJS lifecycle, cancellation, and diagnostics on v20.20.0",
+        "PASS: CommonJS Zod 4 schema and invalid-plan repair through local HTTP on v20.20.0",
+        "PASS: CommonJS browser connection, native actions, dedicated-context cleanup and sibling isolation (157.0.8103.50)",
+        "PASS: CommonJS telemetry:false",
+        "PASS: ESM checkpoint restoration and prompt replacement on v20.20.0",
+        "PASS: ESM lifecycle, cancellation, and diagnostics on v20.20.0",
+        "PASS: ESM Zod 4 schema and invalid-plan repair through local HTTP on v20.20.0",
+        "PASS: ESM browser connection, native actions, dedicated-context cleanup and sibling isolation (157.0.8103.50)",
+        "PASS: ESM telemetry:false"
+      ]
+    },
+    "20.20.2": {
+      "exitCode": 0,
+      "checks": [
+        "PASS: CommonJS checkpoint restoration and prompt replacement on v20.20.2",
+        "PASS: CommonJS lifecycle, cancellation, and diagnostics on v20.20.2",
+        "PASS: CommonJS Zod 4 schema and invalid-plan repair through local HTTP on v20.20.2",
+        "PASS: CommonJS browser connection, native actions, dedicated-context cleanup and sibling isolation (157.0.8103.50)",
+        "PASS: CommonJS telemetry:false",
+        "PASS: ESM checkpoint restoration and prompt replacement on v20.20.2",
+        "PASS: ESM lifecycle, cancellation, and diagnostics on v20.20.2",
+        "PASS: ESM Zod 4 schema and invalid-plan repair through local HTTP on v20.20.2",
+        "PASS: ESM browser connection, native actions, dedicated-context cleanup and sibling isolation (157.0.8103.50)",
+        "PASS: ESM telemetry:false"
+      ]
+    },
+    "22.22.0": {
+      "exitCode": 0,
+      "checks": [
+        "PASS: CommonJS checkpoint restoration and prompt replacement on v22.22.0",
+        "PASS: CommonJS lifecycle, cancellation, and diagnostics on v22.22.0",
+        "PASS: CommonJS Zod 4 schema and invalid-plan repair through local HTTP on v22.22.0",
+        "PASS: CommonJS browser connection, native actions, dedicated-context cleanup and sibling isolation (157.0.8103.50)",
+        "PASS: CommonJS telemetry:false",
+        "PASS: ESM checkpoint restoration and prompt replacement on v22.22.0",
+        "PASS: ESM lifecycle, cancellation, and diagnostics on v22.22.0",
+        "PASS: ESM Zod 4 schema and invalid-plan repair through local HTTP on v22.22.0",
+        "PASS: ESM browser connection, native actions, dedicated-context cleanup and sibling isolation (157.0.8103.50)",
+        "PASS: ESM telemetry:false"
+      ]
+    },
+    "22.22.2": {
+      "exitCode": 0,
+      "checks": [
+        "PASS: CommonJS checkpoint restoration and prompt replacement on v22.22.2",
+        "PASS: CommonJS lifecycle, cancellation, and diagnostics on v22.22.2",
+        "PASS: CommonJS Zod 4 schema and invalid-plan repair through local HTTP on v22.22.2",
+        "PASS: CommonJS browser connection, native actions, dedicated-context cleanup and sibling isolation (157.0.8103.50)",
+        "PASS: CommonJS telemetry:false",
+        "PASS: ESM checkpoint restoration and prompt replacement on v22.22.2",
+        "PASS: ESM lifecycle, cancellation, and diagnostics on v22.22.2",
+        "PASS: ESM Zod 4 schema and invalid-plan repair through local HTTP on v22.22.2",
+        "PASS: ESM browser connection, native actions, dedicated-context cleanup and sibling isolation (157.0.8103.50)",
+        "PASS: ESM telemetry:false"
+      ]
+    },
+    "23.11.1": {
+      "exitCode": 0,
+      "checks": [
+        "PASS: CommonJS checkpoint restoration and prompt replacement on v23.11.1",
+        "PASS: CommonJS lifecycle, cancellation, and diagnostics on v23.11.1",
+        "PASS: CommonJS Zod 4 schema and invalid-plan repair through local HTTP on v23.11.1",
+        "PASS: CommonJS browser connection, native actions, dedicated-context cleanup and sibling isolation (157.0.8103.50)",
+        "PASS: CommonJS telemetry:false",
+        "PASS: ESM checkpoint restoration and prompt replacement on v23.11.1",
+        "PASS: ESM lifecycle, cancellation, and diagnostics on v23.11.1",
+        "PASS: ESM Zod 4 schema and invalid-plan repair through local HTTP on v23.11.1",
+        "PASS: ESM browser connection, native actions, dedicated-context cleanup and sibling isolation (157.0.8103.50)",
+        "PASS: ESM telemetry:false"
+      ]
+    },
+    "24.21.0": {
+      "exitCode": 0,
+      "checks": [
+        "PASS: CommonJS checkpoint restoration and prompt replacement on v24.21.0",
+        "PASS: CommonJS lifecycle, cancellation, and diagnostics on v24.21.0",
+        "PASS: CommonJS Zod 4 schema and invalid-plan repair through local HTTP on v24.21.0",
+        "PASS: CommonJS browser connection, native actions, dedicated-context cleanup and sibling isolation (157.0.8103.50)",
+        "PASS: CommonJS telemetry:false",
+        "PASS: ESM checkpoint restoration and prompt replacement on v24.21.0",
+        "PASS: ESM lifecycle, cancellation, and diagnostics on v24.21.0",
+        "PASS: ESM Zod 4 schema and invalid-plan repair through local HTTP on v24.21.0",
+        "PASS: ESM browser connection, native actions, dedicated-context cleanup and sibling isolation (157.0.8103.50)",
+        "PASS: ESM telemetry:false"
+      ]
+    },
+    "25.9.0": {
+      "exitCode": 0,
+      "checks": [
+        "PASS: CommonJS checkpoint restoration and prompt replacement on v25.9.0",
+        "PASS: CommonJS lifecycle, cancellation, and diagnostics on v25.9.0",
+        "PASS: CommonJS Zod 4 schema and invalid-plan repair through local HTTP on v25.9.0",
+        "PASS: CommonJS browser connection, native actions, dedicated-context cleanup and sibling isolation (157.0.8103.50)",
+        "PASS: CommonJS telemetry:false",
+        "PASS: ESM checkpoint restoration and prompt replacement on v25.9.0",
+        "PASS: ESM lifecycle, cancellation, and diagnostics on v25.9.0",
+        "PASS: ESM Zod 4 schema and invalid-plan repair through local HTTP on v25.9.0",
+        "PASS: ESM browser connection, native actions, dedicated-context cleanup and sibling isolation (157.0.8103.50)",
+        "PASS: ESM telemetry:false"
+      ]
+    },
+    "26.13.0": {
+      "exitCode": 0,
+      "checks": [
+        "PASS: CommonJS checkpoint restoration and prompt replacement on v26.13.0",
+        "PASS: CommonJS lifecycle, cancellation, and diagnostics on v26.13.0",
+        "PASS: CommonJS Zod 4 schema and invalid-plan repair through local HTTP on v26.13.0",
+        "PASS: CommonJS browser connection, native actions, dedicated-context cleanup and sibling isolation (157.0.8103.50)",
+        "PASS: CommonJS telemetry:false",
+        "PASS: ESM checkpoint restoration and prompt replacement on v26.13.0",
+        "PASS: ESM lifecycle, cancellation, and diagnostics on v26.13.0",
+        "PASS: ESM Zod 4 schema and invalid-plan repair through local HTTP on v26.13.0",
+        "PASS: ESM browser connection, native actions, dedicated-context cleanup and sibling isolation (157.0.8103.50)",
+        "PASS: ESM telemetry:false"
+      ]
+    }
+  },
+  "offline": {
+    "passed": 457,
+    "failed": 0
+  },
+  "build": "passed",
+  "lint": "passed",
+  "typecheck": "passed",
+  "cleanCachePatchInstallation": "passed",
+  "strictEngineInstallations": [
+    "20.20.0 core",
+    "22.22.0 core, MCP, test"
+  ],
+  "paidModelCalls": 0,
+  "unresolvedEmbeddedAdvisories": []
+}

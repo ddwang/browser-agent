@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [22, 24]
+        node: ['20.20.0', '22.22.0', 23, 24, 25, 26]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -54,6 +54,9 @@ jobs:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run build
+      - name: Install package fixture browser
+        run: bun x --no-install patchright install --with-deps chrome
       - run: bun run test:package
         env:
           npm_config_engine_strict: 'true'
+          MAGNITUDE_CORE_ONLY: ${{ matrix.node == '20.20.0' && '1' || '' }}

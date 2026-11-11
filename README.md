@@ -101,7 +101,7 @@ For information on how to run tests and integrate into CI/CD see [here](https://
 
 ### Offline verification
 
-PR CI runs builds, lint, typechecks, offline tests, and Node 22/24 package smoke checks with strict npm engine validation, without model credentials. Run the same checks locally:
+PR CI runs builds, lint, typechecks, offline tests, and Node 20.20/22.22/23/24/25/26 package smoke checks with strict npm engine validation, live embedded-dependency scans, and local browser/provider fixtures without paid model calls. Run the same checks locally:
 
 ```bash
 bun install --frozen-lockfile --ignore-scripts
