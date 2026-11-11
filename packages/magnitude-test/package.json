@@ -83,7 +83,7 @@
     "std-env": "^3.9.0",
     "zod": "^4.6.6",
     "@ddwang/magnitude-core": "^0.3.1-ddwang.18",
-    "eventemitter3": "^5.0.1",
+    "eventemitter3": "^5.0.4",
     "patchright-core": "1.64.3"
   },
   "bundledDependencies": [
