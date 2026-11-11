@@ -6,7 +6,7 @@ The published `.21` tarball reproduces **16 advisory/package-version matches** a
 
 ## Advisory dispositions
 
-The baseline IDs and applicability rationale come from the consuming application’s [policy](https://github.com/Ciitizen/prod-ari-ultrafast/blob/main/.github/security/bundled-dependencies.json) and [review](https://github.com/Ciitizen/prod-ari-ultrafast/blob/main/docs/bundled-dependencies.md). Its temporary exceptions concerned optional MCP/static serving, local test patterns, and bounded SOCKS address inputs. Those application-specific arguments were not treated as fixes for SDK consumers.
+The baseline IDs and applicability rationale come from the consuming application's [policy](https://github.com/Ciitizen/prod-ari-ultrafast/blob/main/.github/security/bundled-dependencies.json) and [review](https://github.com/Ciitizen/prod-ari-ultrafast/blob/main/docs/bundled-dependencies.md). Its temporary exceptions concerned optional MCP/static serving, local test patterns, and bounded SOCKS address inputs. Those application-specific arguments were not treated as fixes for SDK consumers.
 
 | Advisory | Embedded component before | Rebuilt version | Disposition |
 | --- | --- | --- | --- |
@@ -27,7 +27,7 @@ The baseline IDs and applicability rationale come from the consuming application
 | [GHSA-g3hv-75wg-m249](https://osv.dev/vulnerability/GHSA-g3hv-75wg-m249) | `minimatch@10.2.5` | `11.0.1` | Fixed; no current OSV match |
 | [GHSA-mrhx-c7xc-m3w5](https://osv.dev/vulnerability/GHSA-mrhx-c7xc-m3w5) | `zod@4.4.3` | `4.6.7` | Fixed; no current OSV match |
 
-All findings occur in `patchright-core/lib/utilsBundle.js`. Minimatch also occurs in `playwright/lib/transform/esmLoader.js` (the SDK’s `playwright` directory is the Patchright wrapper alias). Hono requires the fixed 2.x line; minimatch requires 11.0.1. The rebuilt MCP SDK supports Hono 2.x. Fast-uri remains on its fixed 3.x line. Brace-expansion remains at the previously backported 5.0.12. New transitive components are `@isaacs/nonrecursive-glob-match@1.1.0` and `hono@4.13.17`; both scan clean.
+All findings occur in `patchright-core/lib/utilsBundle.js`. Minimatch also occurs in `playwright/lib/transform/esmLoader.js` (the SDK's `playwright` directory is the Patchright wrapper alias). Hono requires the fixed 2.x line; minimatch requires 11.0.1. The rebuilt MCP SDK supports Hono 2.x. Fast-uri remains on its fixed 3.x line. Brace-expansion remains at the previously backported 5.0.12. New transitive components are `@isaacs/nonrecursive-glob-match@1.1.0` and `hono@4.13.17`; both scan clean.
 
 **Unresolved findings: none in the scanned embedded npm inventory.** This does not attest to unlisted JavaScript, WebP/WASM, host browsers, Node, or operating-system libraries.
 
@@ -52,11 +52,11 @@ The complete [before inventory](driver-before.json) and [after inventory](driver
 
 See the [rebuild instructions](../../patches/README.md) for the pinned source revision, per-input hashes, dependency lockfile, upstream build definitions, and report generation. Both maintained bundles were regenerated twice and reproduced the same code, notices, and input-inventory hashes. A clean Bun installation using a separate empty cache verifies patch application independently of the edited checkout.
 
-Compared with the published `.21` tarball, both `dist/index.cjs` and `dist/index.mjs` are byte-identical. All browser implementation files, browser revisions, and the other three dependency bundles are unchanged. Only the two dependency barrels, notices, and input inventories change; Bun’s package marker files also differ.
+Compared with the published `.21` tarball, both `dist/index.cjs` and `dist/index.mjs` are byte-identical. All browser implementation files, browser revisions, and the other three dependency bundles are unchanged. Only the two dependency bundles, notices, and input inventories change; Bun's package marker files also differ.
 
 ## Packaged verification
 
-The SDK was packed with `npm pack`, installed into a clean npm consumer with lifecycle scripts disabled, scanned, and exercised through its installed public API. Verification uses the saved `.22` tarball, not source imports.
+The [machine-readable verification record](verification.json) ties runtime results to the tarball SHA-256. The SDK was packed with `npm pack`, installed into a clean npm consumer with lifecycle scripts disabled, scanned, and exercised through its installed public API. Verification uses the saved `.22` tarball, not source imports.
 
 - CJS and ESM imports, checkpoint restoration, lifecycle and cancellation/draining checks.
 - Zod 4 JSON schema generation and real BAML schema conversion through a local OpenAI-compatible fixture.
@@ -69,10 +69,10 @@ The SDK was packed with `npm pack`, installed into a clean npm consumer with lif
 - Core-only clean package installation passes strict npm engine validation on Node 20.20.0; all three packages pass it on Node 22.22.0.
 - All three browser packages retain patched bundles in clean npm installations; their ESM test loader discovers a fixture and brace-expansion adversarial probes pass.
 
-The live scanner inventories every `*.js.LICENSE` under the SDK’s embedded wrapper/core and requires all five known notices. It queries every declared component against OSV, rejects incomplete/paginated/error responses, and fails on any finding. Notice versions are backed by the maintained source lockfile and esbuild-generated input reports; hashes enforce the reviewed build.
+The live scanner inventories every `*.js.LICENSE` under the SDK's embedded wrapper/core and requires all five known notices. It queries every declared component against OSV, rejects incomplete/paginated/error responses, and fails on any finding. Notice versions are backed by the maintained source lockfile and esbuild-generated input reports; hashes enforce the reviewed build.
 
 **Requirements unchanged:** Core supports Node `^20.20.0 || >=22.22.0`; the test runner requires Node 22.22 or later. Default launches use installed Google Chrome Stable. No browser revision or browser-selection behavior changes. No paid model calls were made.
 
 ## Release
 
-The PR prepares `.22` for the repository’s existing manual core publisher (`scripts/publish.sh`), which now accepts the exact verified tarball as an optional argument. It also includes a Changesets entry for all three packages sharing these patches. The separate automated Changesets workflow currently plans **1.0.0** because existing major entries are pending; it does not produce `.22`. Local npm authentication initially returned E401, and no repository release secret was configured. Publication and CI status are recorded in the PR; candidate verification alone is not a publication claim.
+The PR prepares `.22` for the repository's existing manual core publisher (`scripts/publish.sh`), which now accepts the exact verified tarball as an optional argument. It also includes a Changesets entry for all three packages sharing these patches. The separate automated Changesets workflow currently plans **1.0.0** because existing major entries are pending; it does not produce `.22`. Local npm authentication initially returned E401, and no repository release secret was configured. Publication and CI status are recorded in the PR; candidate verification alone is not a publication claim.

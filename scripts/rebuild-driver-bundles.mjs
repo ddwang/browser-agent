@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Only rebuild dependency barrels. Patchright's browser implementation stays intact.
+// Only rebuild dependency bundles. Patchright's browser implementation stays intact.
 const configuration = fileURLToPath(new URL('./driver-build/', import.meta.url));
 assert(process.argv[2], 'Usage: node scripts/rebuild-driver-bundles.mjs <extracted-upstream-source>');
 const source = resolve(process.argv[2]);

@@ -15,9 +15,9 @@ See [the advisory dispositions and artifact verification](../docs/security/embed
 The public Patchright 1.64.3 npm metadata records Playwright commit
 `cfe490d941f992655948eee8fd4fd94e1c4234bf` (Playwright 1.64.1). Its
 `utils/build/build.js` defines both dependency bundles, the `raw-body` alias,
-externals, Node 20 target, and the generated license/input reports. These barrels
+externals, Node 20 target, and the generated license/input reports. These source entry points
 do not contain Patchright's browser patches. The existing Patchright package
-supplies the browser implementation; only the dependency barrels and their
+supplies the browser implementation; only the dependency bundles and their
 reports are replaced.
 
 `scripts/driver-build/source.json` pins every upstream source input plus the
