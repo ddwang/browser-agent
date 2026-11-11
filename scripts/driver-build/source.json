@@ -1,0 +1,27 @@
+{
+  "repository": "microsoft/playwright",
+  "commit": "cfe490d941f992655948eee8fd4fd94e1c4234bf",
+  "files": {
+    "packages/isomorphic/assert.ts": "77da2cbefd2665d0385c48b03817a453f42d39db764ebe25bdab37cc1d6383d4",
+    "packages/isomorphic/rtti.ts": "5c2937d3d38ff70243dfe6c7355361ea575712d055eaf747a3bd7e6800226865",
+    "packages/isomorphic/stringUtils.ts": "4ef81deedff640b6b12d55ae496252fb8b5825fc0925738096bd164c787e75f9",
+    "packages/playwright-core/src/utilsBundle.ts": "88e482fab0c25bc07ab970ab2a58e1ffd4650857df9add035c82f8e8ce999c7d",
+    "packages/playwright/src/transform/compilationCache.ts": "973165a04defceaabc990df9d850f3a0388d69b02115eb9e6dca007812a58984",
+    "packages/playwright/src/transform/esmLoader.ts": "37d1187007afd0a57a49a6f17414cfc067448d34b851c66ba085b594881b4e9e",
+    "packages/playwright/src/transform/esmLoaderSync.ts": "88225453ae3717f54cfdc8b90e72f9d10d876ba798cd0e5f3c0ec178a54bfc48",
+    "packages/playwright/src/transform/pirates.ts": "f1522142efd44e28d18eac4f1ab6828cc372c8a9c6a6badb5f3165d41d1e9422",
+    "packages/playwright/src/transform/portTransport.ts": "7274fb0db53bb8d1458161f817a4c6f82d3f9d167b58170827399f9c07f964ab",
+    "packages/playwright/src/transform/transform.ts": "4554f7e2ec6891ecb1b3acde99836dbc96b248b6df3ad1e01ee1b1d3c301329f",
+    "packages/playwright/src/transform/tsconfig-loader.ts": "bae4d895a8211950042bf3dada7cbeacdc0579d5d73b480444eede3c717d5ad3",
+    "packages/playwright/src/util.ts": "fdfdca775ba5b109e144f230c6dc72b67c3a2be59eb584a1f9aca0c18adfd7a3",
+    "packages/utils/crypto.ts": "fa96383f164b0b7a806e628668e39d2ea70f9c72cf47f05d8ce0078ed9cb0488",
+    "packages/utils/debug.ts": "5d6e4c366eaf57bef3c0744d28dfdbf35477ffcab1051becdcdc602642663ebb",
+    "packages/utils/env.ts": "d31d8946ddbf5c68b8c23a39a3b5f113b65246a21c5593d6b4e9326f2392b903",
+    "packages/utils/fileUtils.ts": "e9ab94af6c46e1d864e1b1898fa7b35f2fa20869dc74730d76ce6fe26e3c84e1",
+    "packages/utils/stackTrace.ts": "fd74bd690ad37498ad3b676025129b38c08c5bffb190c8d96f228a2be7b5210b",
+    "utils/build/bundle_report.js": "4a97ac533d2d6acb79e341fb44991f07540fef6101a3e83cfe102def49a1fe83",
+    "utils/build/raw-body.ts": "062c5bbe1c9301273172c19f83a764edf8c3ca0b30bf43f3d70e9300cbaba0c4",
+    "tsconfig.json": "a7f96e890610681237289de72716e723f2791848ea6b04086e837e8f870c74d6",
+    "utils/build/build.js": "ad294e5e4ba51068c19440391b7a9733e7d1491b6c5fb7f0b10bc47bbbfd060e"
+  }
+}
