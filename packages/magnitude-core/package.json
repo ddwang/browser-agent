@@ -69,7 +69,7 @@
     "playwright": "npm:patchright@1.64.3",
     "posthog-node": "5.61.2",
     "sharp": "^0.35.5",
-    "zod": "^4.6.6",
+    "zod": "^4.6.7",
     "patchright-core": "1.64.3"
   },
   "type": "module",
